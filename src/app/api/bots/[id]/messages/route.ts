@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
 import { handleError, HttpError, requireUser } from "@/lib/auth";
-import { getBot, insertGreeting } from "@/lib/bots";
+import { getBot, greetingPreview, insertGreeting } from "@/lib/bots";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (!bot) throw new HttpError(404, "Bot not found.");
     await db.delete(messages).where(and(eq(messages.botId, id), eq(messages.userId, user.id)));
     await insertGreeting(user.id, id, bot.name);
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, preview: greetingPreview(bot.name) });
   } catch (e) {
     return handleError(e);
   }

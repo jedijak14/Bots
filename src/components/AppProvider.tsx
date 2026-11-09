@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { BotDTO } from "@/lib/bots";
+import { previewText } from "@/lib/preview";
 import type { PublicSettings } from "@/lib/settings";
 import { PrefsContext } from "./prefs";
 
@@ -13,13 +14,16 @@ type Toast = { id: number; msg: string; kind: "ok" | "err" };
 type AppCtx = {
   user: AppUser;
   setUserName: (n: string) => void;
-  setUserAvatar: (url: string) => void;
+  setUserAvatar: (url: string | null) => void;
   bots: BotDTO[];
   addBot: (b: BotDTO) => void;
   upsertBot: (b: Partial<BotDTO> & { id: string }) => void;
   removeBot: (id: string) => void;
   setPreview: (id: string, text: string) => void;
   celebrateId: string | null;
+  /** The bot that is busy right now, and what it is doing (shown in the sidebar). */
+  working: { id: string; label: string } | null;
+  setWorking: (w: { id: string; label: string } | null) => void;
   settings: PublicSettings;
   setSettings: (s: PublicSettings) => void;
   patchSettings: (p: Partial<Pick<PublicSettings, "followMouse" | "animations" | "voiceReplies" | "defaultModel">>) => Promise<void>;
@@ -64,6 +68,7 @@ export function AppProvider({
   const [name, setName] = useState(user.displayName);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl);
   const [celebrateId, setCelebrateId] = useState<string | null>(null);
+  const [working, setWorkingState] = useState<AppCtx["working"]>(null);
   const [botDialog, setBotDialog] = useState<{ id: string | null } | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -97,6 +102,10 @@ export function AppProvider({
     },
     [settings, toast],
   );
+
+  const setWorking = useCallback<AppCtx["setWorking"]>((w) => {
+    setWorkingState((cur) => (cur?.id === w?.id && cur?.label === w?.label ? cur : w));
+  }, []);
 
   const confirm = useCallback(
     (o: ConfirmOpts) => new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve })),
@@ -138,11 +147,13 @@ export function AppProvider({
         setBots((l) =>
           l.map((x) =>
             x.id === id
-              ? { ...x, preview: text.replace(/[#*_`>~\-\[\]()]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || x.preview }
+              ? { ...x, preview: previewText(text) || x.preview }
               : x,
           ),
         ),
       celebrateId,
+      working,
+      setWorking,
       settings,
       setSettings,
       patchSettings,
@@ -162,7 +173,7 @@ export function AppProvider({
       confirmState,
       setConfirmState,
     }),
-    [user, name, avatarUrl, bots, celebrateId, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState],
+    [user, name, avatarUrl, bots, celebrateId, working, setWorking, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState],
   );
 
   return (

@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { bots } from "@/db/schema";
 import { handleError, HttpError, requireUser } from "@/lib/auth";
-import { insertGreeting, toBotDTO } from "@/lib/bots";
+import { greetingPreview, insertGreeting, toBotDTO } from "@/lib/bots";
 import { isColor, isShape } from "@/lib/shapes";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       .values({ userId: user.id, name, shape, color, instructions: String(b.instructions ?? "").slice(0, 4000) })
       .returning();
     await insertGreeting(user.id, bot.id, name);
-    return Response.json({ bot: toBotDTO(bot, "What would you like me to help with first?") });
+    return Response.json({ bot: toBotDTO(bot, greetingPreview(name)) });
   } catch (e) {
     return handleError(e);
   }
