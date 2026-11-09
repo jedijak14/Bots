@@ -198,19 +198,62 @@ button:disabled {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 12px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: none;
   }
+}
+.toast-in {
+  animation: toast-in 0.3s ease-out both;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tip-in {
+  animation: tip-in 0.12s ease-out both;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-in {
+  animation: menu-in 0.14s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.soft-pulse {
+  animation: soft-pulse 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .bot-wobble,
   .bot-orbit,
   .shimmer-text,
-  .wave-bar {
+  .wave-bar,
+  .soft-pulse {
     animation: none;
   }
 }
