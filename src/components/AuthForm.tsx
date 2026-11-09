@@ -96,6 +96,19 @@ export function AuthForm({
             {mode === "signin" ? "Sign in" : "Create account"}
           </button>
         </form>
+
+        <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-[0.18em] text-neutral-600">
+          <span className="h-px flex-1 bg-white/[0.08]" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-white/[0.08]" />
+        </div>
+        <a
+          href="/api/auth/google"
+          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] py-3 text-[14px] font-medium text-white transition hover:bg-white/[0.09]"
+        >
+          <span aria-hidden="true" className="text-base font-semibold">G</span>
+          Continue with Google
+        </a>
       </div>
     </div>
   );
