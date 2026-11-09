@@ -24,8 +24,8 @@ export async function PATCH(req: Request) {
     if (body.newPassword !== undefined) {
       if (body.newPassword.length < 8) throw new HttpError(400, "New password must be at least 8 characters.");
       const [row] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
-      if (!(await verifyPassword(body.currentPassword ?? "", row.passwordHash))) {
-        throw new HttpError(400, "Current password is incorrect.");
+      if (!row || !(await verifyPassword(body.currentPassword ?? "", row.passwordHash))) {
+        throw new HttpError(400, "Current password is incorrect. This account uses Google sign-in.");
       }
       await db.update(users).set({ passwordHash: await hashPassword(body.newPassword) }).where(eq(users.id, user.id));
       const token = (await cookies()).get("bot_session")?.value;
@@ -45,8 +45,8 @@ export async function DELETE(req: Request) {
     const user = await requireUser();
     const body = (await req.json().catch(() => ({}))) as { password?: string };
     const [row] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
-    if (!(await verifyPassword(body.password ?? "", row.passwordHash))) {
-      throw new HttpError(400, "Password is incorrect.");
+    if (!row || !(await verifyPassword(body.password ?? "", row.passwordHash))) {
+      throw new HttpError(400, "Password is incorrect or unavailable for Google accounts.");
     }
     await db.delete(users).where(eq(users.id, user.id));
     (await cookies()).delete("bot_session");

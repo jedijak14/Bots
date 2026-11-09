@@ -10,6 +10,7 @@ export type ProviderId =
   | "together"
   | "fireworks"
   | "cerebras"
+  | "nvidia"
   | "custom";
 
 export type ProviderInfo = {
@@ -34,6 +35,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   together: { label: "Together AI", baseUrl: "https://api.together.xyz/v1", kind: "openai" },
   fireworks: { label: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", kind: "openai" },
   cerebras: { label: "Cerebras", baseUrl: "https://api.cerebras.ai/v1", kind: "openai" },
+  nvidia: { label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", kind: "openai" },
   custom: { label: "OpenAI-compatible", baseUrl: "", kind: "openai" },
 };
 
@@ -53,6 +55,7 @@ export function guessByPrefix(key: string): ProviderId | null {
   if (k.startsWith("gsk_")) return "groq";
   if (k.startsWith("xai-")) return "xai";
   if (k.startsWith("csk-")) return "cerebras";
+  if (k.startsWith("nvapi-")) return "nvidia";
   if (k.startsWith("fw_")) return "fireworks";
   if (k.startsWith("tgp_")) return "together";
   if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-") || k.startsWith("sk-admin-")) return "openai";
@@ -100,7 +103,7 @@ export async function listModels(
   return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
 }
 
-const PROBE_ORDER: ProviderId[] = ["openai", "deepseek", "mistral", "groq", "xai", "together", "fireworks", "cerebras", "google"];
+const PROBE_ORDER: ProviderId[] = ["openai", "deepseek", "mistral", "groq", "xai", "together", "fireworks", "cerebras", "nvidia", "google"];
 
 export type Detection = { provider: ProviderId; models: string[] };
 
@@ -140,6 +143,7 @@ export function pickDefaultModel(provider: ProviderId, models: string[]): string
     groq: [/llama-3\.3-70b/, /llama/],
     xai: [/^grok-/],
     deepseek: [/chat/],
+    nvidia: [/llama-3\.1-nemotron/, /llama/, /mistral/, /./],
     openrouter: [/^openai\/gpt-4o-mini$/, /^anthropic\/claude.*sonnet/, /./],
   };
   for (const re of prefs[provider] ?? []) {

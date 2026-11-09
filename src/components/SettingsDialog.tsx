@@ -164,7 +164,7 @@ function AiTab() {
   }
 
   return (
-    <Section title="AI Provider" desc="Bring your own key. Paste it and we'll detect the provider automatically — OpenAI, Anthropic, Google AI Studio, OpenRouter, Groq, xAI and more.">
+    <Section title="AI Provider" desc="Bring your own key. Paste it and we'll detect the provider automatically — OpenAI, Anthropic, Google AI Studio, NVIDIA NIM, OpenRouter, Groq, xAI and more.">
       <StatusPill ok={s.hasAiKey}>
         {s.hasAiKey ? (
           <>
@@ -177,7 +177,7 @@ function AiTab() {
       </StatusPill>
 
       <div>
-        <Label hint={s.hasAiKey ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…"}>API key</Label>
+        <Label hint={s.hasAiKey ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, nvapi-…, gsk_…, xai-…, sk-or-…"}>API key</Label>
         <SecretInput value={key} onChange={setKey} placeholder={s.hasAiKey ? "Saved — paste a new key to replace it" : "Paste your API key"} label="AI API key" />
       </div>
 
