@@ -115,14 +115,14 @@ export async function destroySession() {
   jar.delete(COOKIE);
 }
 
-export type SessionUser = { id: string; email: string; displayName: string };
+export type SessionUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
 
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
   const rows = await db
-    .select({ id: users.id, email: users.email, displayName: users.displayName })
+    .select({ id: users.id, email: users.email, displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, new Date())))

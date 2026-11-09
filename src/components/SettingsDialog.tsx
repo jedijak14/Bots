@@ -377,6 +377,25 @@ function AccountTab() {
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadAvatar(file: File) {
+    setUploading(true);
+    setErr(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/account/avatar", { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Couldn't upload that image.");
+      app.setUserAvatar(json.avatarUrl);
+      app.toast("Profile picture updated.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't upload that image.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function call(kind: string, body: unknown, method = "PATCH") {
     setBusy(kind);
@@ -404,6 +423,19 @@ function AccountTab() {
 
   return (
     <Section title="Account">
+      <div>
+        <Label>Profile picture</Label>
+        <div className="flex items-center gap-3">
+          <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#3a3f66] to-[#1d2038] text-lg font-semibold">
+            {app.user.avatarUrl ? <img src={app.user.avatarUrl} alt="Your profile" className="size-full object-cover" /> : app.user.displayName.charAt(0).toUpperCase()}
+          </div>
+          <label className={cx(btnGhost, "cursor-pointer", uploading && "pointer-events-none opacity-50")}>
+            {uploading ? "Uploading…" : "Choose image"}
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadAvatar(file); e.currentTarget.value = ""; }} />
+          </label>
+          <span className="text-[12px] text-neutral-500">JPG, PNG, or WebP up to 5 MB</span>
+        </div>
+      </div>
       <div>
         <Label>Email</Label>
         <input value={app.user.email} readOnly aria-label="Email" className={cx(inputCls, "text-neutral-400")} />
