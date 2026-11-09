@@ -1,5 +1,5 @@
 {
-  "id": "b0992124-7968-4d01-a519-d981ed06ab66",
+  "id": "eb05058a-7fd6-4696-a743-895c77a515a3",
   "prevId": "f9fa40bd-034f-4c63-9493-6cc8fcfee26c",
   "version": "7",
   "dialect": "postgresql",
@@ -440,19 +440,19 @@
           "name": "password_hash",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "google_subject": {
-          "name": "google_subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "display_name": {
           "name": "display_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -471,13 +471,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
-        },
-        "users_google_subject_unique": {
-          "name": "users_google_subject_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "google_subject"
           ]
         }
       },

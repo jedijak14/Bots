@@ -19,8 +19,7 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
-export async function verifyPassword(password: string, stored: string | null): Promise<boolean> {
-  if (!stored) return false;
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [alg, saltB64, hashB64] = stored.split("$");
   if (alg !== "scrypt" || !saltB64 || !hashB64) return false;
   const expected = Buffer.from(hashB64, "base64");
@@ -116,14 +115,14 @@ export async function destroySession() {
   jar.delete(COOKIE);
 }
 
-export type SessionUser = { id: string; email: string; displayName: string };
+export type SessionUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
 
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
   const rows = await db
-    .select({ id: users.id, email: users.email, displayName: users.displayName })
+    .select({ id: users.id, email: users.email, displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, new Date())))

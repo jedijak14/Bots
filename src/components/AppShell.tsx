@@ -208,7 +208,7 @@ function Sidebar() {
 
       <div className="flex items-center gap-2.5 border-t border-white/[0.04] px-4 py-3.5">
         <button onClick={() => app.openSettings("account")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full text-left transition hover:opacity-80" aria-label="Account settings">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#3a3f66] to-[#1d2038] text-[14px] font-semibold">{initial}</span>
+          <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#3a3f66] to-[#1d2038] text-[14px] font-semibold">{app.user.avatarUrl ? <img src={app.user.avatarUrl} alt="" className="size-full object-cover" /> : initial}</span>
           <span className="truncate text-[14px] font-medium">{app.user.displayName}</span>
         </button>
         <RoundBtn label="All bots" onClick={() => router.push("/")}>

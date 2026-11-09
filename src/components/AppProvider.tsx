@@ -5,7 +5,7 @@ import type { BotDTO } from "@/lib/bots";
 import type { PublicSettings } from "@/lib/settings";
 import { PrefsContext } from "./prefs";
 
-export type AppUser = { id: string; email: string; displayName: string };
+export type AppUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
 export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data";
 type ConfirmOpts = { title: string; body: string; confirmLabel?: string; danger?: boolean };
 type Toast = { id: number; msg: string; kind: "ok" | "err" };
@@ -13,6 +13,7 @@ type Toast = { id: number; msg: string; kind: "ok" | "err" };
 type AppCtx = {
   user: AppUser;
   setUserName: (n: string) => void;
+  setUserAvatar: (url: string) => void;
   bots: BotDTO[];
   addBot: (b: BotDTO) => void;
   upsertBot: (b: Partial<BotDTO> & { id: string }) => void;
@@ -61,6 +62,7 @@ export function AppProvider({
   const [bots, setBots] = useState(initialBots);
   const [settings, setSettings] = useState(initialSettings);
   const [name, setName] = useState(user.displayName);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl);
   const [celebrateId, setCelebrateId] = useState<string | null>(null);
   const [botDialog, setBotDialog] = useState<{ id: string | null } | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
@@ -121,8 +123,9 @@ export function AppProvider({
 
   const value = useMemo<AppCtx>(
     () => ({
-      user: { ...user, displayName: name },
+      user: { ...user, displayName: name, avatarUrl },
       setUserName: setName,
+      setUserAvatar: setAvatarUrl,
       bots,
       addBot: (b) => {
         setBots((l) => [...l, b]);
@@ -159,7 +162,7 @@ export function AppProvider({
       confirmState,
       setConfirmState,
     }),
-    [user, name, bots, celebrateId, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState],
+    [user, name, avatarUrl, bots, celebrateId, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState],
   );
 
   return (

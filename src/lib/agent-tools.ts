@@ -24,6 +24,14 @@ const ASK: Tool = {
   ),
 };
 
+const CORE_TOOLS: Tool[] = [
+  {
+    name: "get_current_time",
+    description: "Get the current date and time in a requested IANA timezone, such as America/New_York or Europe/London.",
+    parameters: obj({ timezone: { type: "string" } }, ["timezone"]),
+  },
+];
+
 const COMPUTER_TOOLS: Tool[] = [
   {
     name: "run_command",
@@ -104,7 +112,7 @@ export function buildToolset(opts: {
   const { bot, e2bKey, ev } = opts;
   let desktop: Sandbox | null = null;
 
-  const tools: Tool[] = e2bKey ? [ASK, ...COMPUTER_TOOLS] : [ASK];
+  const tools: Tool[] = e2bKey ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS] : [ASK, ...CORE_TOOLS];
 
   async function getDesktop(): Promise<Sandbox> {
     if (desktop) return desktop;
@@ -160,6 +168,14 @@ export function buildToolset(opts: {
     }
     const sb = await getDesktop();
     switch (name) {
+      case "get_current_time": {
+        const timezone = String(a.timezone ?? "UTC");
+        try {
+          return { output: new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(new Date()) };
+        } catch {
+          return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` };
+        }
+      }
       case "run_command": {
         const cmd = String(a.command ?? "");
         const r = await sb.commands
