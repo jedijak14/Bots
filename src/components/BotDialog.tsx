@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { COLOR_ROWS, COLORS, SHAPE_LABELS, SHAPE_ROWS, type ColorId, type ShapeId } from "@/lib/shapes";
 import { useApp } from "./AppProvider";
@@ -19,6 +19,7 @@ export function BotDialog({ botId }: { botId: string | null }) {
   const [instructions, setInstructions] = useState(editing?.instructions ?? "");
   const [showInstr, setShowInstr] = useState(!!editing?.instructions);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -63,6 +64,10 @@ export function BotDialog({ botId }: { botId: string | null }) {
     });
     if (!ok) return;
     setBusy(true);
+    if (app.settings.animations) {
+      setDeleting(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    }
     const res = await fetch(`/api/bots/${editing.id}`, { method: "DELETE" });
     if (!res.ok) {
       setBusy(false);
@@ -78,8 +83,12 @@ export function BotDialog({ botId }: { botId: string | null }) {
     <Modal onClose={app.closeBotDialog} width={430} label={editing ? "Edit Bot" : "Create New Bot"}>
       <ModalHeader title={editing ? "Edit Bot" : "Create New Bot"} onClose={app.closeBotDialog} />
       <div className="max-h-[calc(100dvh-9rem)] overflow-y-auto px-6 pb-2 pt-6">
-        <div className="flex h-[124px] items-center justify-center">
-          <BotAvatar shape={shape} color={color} size={112} />
+        <div className={cx("relative flex h-[124px] items-center justify-center", deleting && "bot-delete-stage")} aria-live="polite">
+          {deleting ? (
+            <div className="bot-pixels" aria-label="Saying goodbye">
+              {Array.from({ length: 18 }, (_, i) => <i key={i} style={{ "--i": i } as CSSProperties} />)}
+            </div>
+          ) : <BotAvatar shape={shape} color={color} size={112} />}
         </div>
 
         <input
