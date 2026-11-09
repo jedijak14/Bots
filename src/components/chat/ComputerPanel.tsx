@@ -125,7 +125,11 @@ export function ComputerPanel({
       aria-label={mode === "computer" ? "Computer" : mode === "preview" ? "Website preview" : "Files"}
     >
       <div className="flex shrink-0 items-center justify-between px-5 pb-3.5 pt-5">
-        <h2 className="text-[16px] font-semibold tracking-tight">{mode === "computer" ? "Computer" : mode === "preview" ? "Preview" : "Files"}</h2>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className={cx("size-2 rounded-full", mode === "computer" && active ? "bg-emerald-400" : "bg-neutral-600")} aria-hidden="true" />
+          <h2 className="truncate text-[16px] font-semibold tracking-tight">{mode === "computer" ? "Computer" : mode === "preview" ? "Preview" : "Files"}</h2>
+          {mode === "computer" && <span className="rounded-full border border-white/[0.08] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-neutral-500">Live</span>}
+        </div>
         <div className="flex items-center gap-1 text-neutral-400">
           <button
             onClick={() => (mode === "computer" ? call({ action: "screenshot" }) : setFilesTick((n) => n + 1))}
@@ -170,7 +174,12 @@ export function ComputerPanel({
             </p>
           </div>
 
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-4 rounded-2xl border border-white/[0.06] bg-[#101010] p-3">
+            <div className="mb-2 flex items-center justify-between text-[11px] text-neutral-500">
+              <span>Browser session</span>
+              <span className={cx("flex items-center gap-1.5", active ? "text-emerald-400" : "text-neutral-500")}><span className="size-1.5 rounded-full bg-current" />{active ? "Connected" : "Standby"}</span>
+            </div>
+            <div className="flex items-center gap-2">
             <button
               disabled={busy}
               onClick={() => call({ action: "restart" }, active ? "working" : "starting")}
@@ -182,6 +191,7 @@ export function ComputerPanel({
               {busy && <Spinner size={12} />}
               {status === "ready" ? (active ? "Ready" : "Ready") : status === "starting" ? "Starting…" : status === "working" ? "Working…" : "Error"}
             </span>
+            </div>
           </div>
 
           <form

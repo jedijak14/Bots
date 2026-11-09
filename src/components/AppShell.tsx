@@ -102,6 +102,7 @@ function Sidebar() {
   const pathname = usePathname();
   const activeId = pathname.startsWith("/bot/") ? pathname.split("/")[2] : null;
   const [menu, setMenu] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     app.setSidebarOpen(false);
@@ -129,42 +130,50 @@ function Sidebar() {
   return (
     <aside
       className={cx(
-        "z-40 flex w-[300px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0c0c0c] transition-transform duration-300 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:w-[290px]",
+        "z-40 flex shrink-0 flex-col border-r border-white/[0.06] bg-[#0c0c0c] transition-[width,transform] duration-300 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:w-[290px]",
+        collapsed ? "w-[76px]" : "w-[300px]",
         app.sidebarOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
       )}
     >
-      <div className="flex items-center gap-2 px-4 pb-3 pt-4">
+      <div className={cx("flex items-center gap-2 pb-3 pt-4", collapsed ? "flex-col px-3" : "px-4")}>
         <RoundBtn label="All bots" onClick={() => router.push("/")} className={pathname === "/" ? "!bg-[#2a2a2a] text-white" : ""}>
           <Icon name="grid" size={17} />
         </RoundBtn>
-        <RoundBtn label="Search (Ctrl+K)" onClick={() => app.setSearchOpen(true)}>
+        {!collapsed && <RoundBtn label="Collapse sidebar" onClick={() => setCollapsed(true)}>
+          <Icon name="chevron-left" size={16} />
+        </RoundBtn>}
+        {collapsed && <RoundBtn label="Expand sidebar" onClick={() => setCollapsed(false)}>
+          <Icon name="chevron-right" size={16} />
+        </RoundBtn>}
+        {!collapsed && <RoundBtn label="Search (Ctrl+K)" onClick={() => app.setSearchOpen(true)}>
           <Icon name="search" size={17} />
-        </RoundBtn>
-        <RoundBtn label="New bot" onClick={() => app.openBotDialog(null)}>
+        </RoundBtn>}
+        {!collapsed && <RoundBtn label="New bot" onClick={() => app.openBotDialog(null)}>
           <Icon name="plus" size={18} />
-        </RoundBtn>
+        </RoundBtn>}
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 py-1" aria-label="Bots">
+      <nav className={cx("min-h-0 flex-1 space-y-0.5 overflow-y-auto py-1", collapsed ? "px-2" : "px-3")} aria-label="Bots">
         {app.bots.map((b) => {
           const active = b.id === activeId;
           return (
             <div key={b.id} className="group relative">
               <Link
                 href={`/bot/${b.id}`}
+                title={collapsed ? b.name : undefined}
                 className={cx(
-                  "flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition",
+                  "flex items-center gap-3 rounded-xl py-2.5 transition",
+                  collapsed ? "justify-center px-2" : "px-2.5",
                   active ? "bg-[#171717]" : "hover:bg-[#131313]",
                   app.celebrateId === b.id && "pop-in",
-                )}
-              >
+                )}>
                 <BotAvatar shape={b.shape} color={b.color} size={30} celebrate={app.celebrateId === b.id} />
-                <span className="min-w-0 flex-1">
+                {!collapsed && <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium leading-tight">{b.name}</span>
                   <span className="mt-0.5 block truncate pr-5 text-[12.5px] leading-tight text-neutral-500">{b.preview}</span>
-                </span>
+                </span>}
               </Link>
-              <button
+              {!collapsed && <button
                 aria-label={`Options for ${b.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -176,21 +185,11 @@ function Sidebar() {
                 )}
               >
                 <Icon name="dots" size={16} />
-              </button>
-              {menu === b.id && (
+              </button>}
+              {menu === b.id && !collapsed && (
                 <div className="modal-in absolute right-2 top-[calc(50%+16px)] z-20 w-44 overflow-hidden rounded-xl border border-white/10 bg-[#1b1b1b] p-1 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                  {[
-                    { l: "Edit look & name", i: "pencil", f: () => app.openBotDialog(b.id) },
-                    { l: "Clear conversation", i: "eraser", f: () => clearChat(b) },
-                  ].map((m) => (
-                    <button
-                      key={m.l}
-                      onClick={() => {
-                        setMenu(null);
-                        m.f();
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-neutral-200 transition hover:bg-white/[0.07]"
-                    >
+                  {[{ l: "Edit look & name", i: "pencil", f: () => app.openBotDialog(b.id) }, { l: "Clear conversation", i: "eraser", f: () => clearChat(b) }].map((m) => (
+                    <button key={m.l} onClick={() => { setMenu(null); m.f(); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-neutral-200 transition hover:bg-white/[0.07]">
                       <Icon name={m.i} size={15} /> {m.l}
                     </button>
                   ))}
@@ -206,14 +205,14 @@ function Sidebar() {
         )}
       </nav>
 
-      <div className="flex items-center gap-2.5 border-t border-white/[0.04] px-4 py-3.5">
+      <div className={cx("flex items-center gap-2.5 border-t border-white/[0.04] py-3.5", collapsed ? "flex-col px-3" : "px-4")}>
         <button onClick={() => app.openSettings("account")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full text-left transition hover:opacity-80" aria-label="Account settings">
           <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#3a3f66] to-[#1d2038] text-[14px] font-semibold">{app.user.avatarUrl ? <img src={app.user.avatarUrl} alt="" className="size-full object-cover" /> : initial}</span>
-          <span className="truncate text-[14px] font-medium">{app.user.displayName}</span>
+          {!collapsed && <span className="truncate text-[14px] font-medium">{app.user.displayName}</span>}
         </button>
-        <RoundBtn label="All bots" onClick={() => router.push("/")}>
+        {!collapsed && <RoundBtn label="All bots" onClick={() => router.push("/")}>
           <Icon name="grid" size={16} />
-        </RoundBtn>
+        </RoundBtn>}
         <button
           onClick={() => app.openSettings(app.settings.hasAiKey ? "preferences" : "ai")}
           aria-label="Settings"
