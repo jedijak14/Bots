@@ -23,7 +23,7 @@ export function ComputerPanel({
 }: {
   botId: string;
   hasE2b: boolean;
-  mode: "computer" | "files";
+  mode: "computer" | "files" | "preview";
   agentBusy: boolean;
   externalShot: { n: number; data: string } | null;
   expanded: boolean;
@@ -122,10 +122,10 @@ export function ComputerPanel({
         "flex min-h-0 flex-col border-l border-white/[0.06] bg-[#0b0b0b]",
         expanded ? "absolute inset-0 top-[68px] z-20 w-full" : "w-[min(420px,100%)] shrink-0 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:top-[68px] max-lg:shadow-[-20px_0_60px_rgba(0,0,0,0.6)]",
       )}
-      aria-label={mode === "computer" ? "Computer" : "Files"}
+      aria-label={mode === "computer" ? "Computer" : mode === "preview" ? "Website preview" : "Files"}
     >
       <div className="flex shrink-0 items-center justify-between px-5 pb-3.5 pt-5">
-        <h2 className="text-[16px] font-semibold tracking-tight">{mode === "computer" ? "Computer" : "Files"}</h2>
+        <h2 className="text-[16px] font-semibold tracking-tight">{mode === "computer" ? "Computer" : mode === "preview" ? "Preview" : "Files"}</h2>
         <div className="flex items-center gap-1 text-neutral-400">
           <button
             onClick={() => (mode === "computer" ? call({ action: "screenshot" }) : setFilesTick((n) => n + 1))}
@@ -154,8 +154,8 @@ export function ComputerPanel({
             Add E2B key
           </button>
         </div>
-      ) : mode === "files" ? (
-        <FilesView botId={botId} tick={filesTick} />
+      ) : mode === "files" || mode === "preview" ? (
+        <FilesView botId={botId} tick={filesTick} preview={mode === "preview"} />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-4">
           <div className="flex items-center gap-3">
@@ -299,8 +299,9 @@ export function ComputerPanel({
 
 type Entry = { name: string; path: string; type: "file" | "dir"; size: number };
 
-function FilesView({ botId, tick }: { botId: string; tick: number }) {
+function FilesView({ botId, tick, preview }: { botId: string; tick: number; preview: boolean }) {
   const [path, setPath] = useState("/home/user");
+  const [selected, setSelected] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -328,8 +329,10 @@ function FilesView({ botId, tick }: { botId: string; tick: number }) {
   const parts = path.split("/").filter(Boolean);
   const fmt = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : n > 1000 ? `${Math.round(n / 1000)} KB` : `${n} B`);
 
+  const selectedUrl = selected ? `/api/bots/${botId}/files?download=1&path=${encodeURIComponent(selected)}` : null;
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+    <div className={cx("min-h-0 flex-1 overflow-hidden", preview ? "flex flex-col" : "overflow-y-auto px-4 py-4")}>
       <div className="mb-3 flex flex-wrap items-center gap-1 px-1 text-[12.5px] text-neutral-400">
         <button onClick={() => setPath("/home/user")} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
           ~
@@ -354,25 +357,48 @@ function FilesView({ botId, tick }: { botId: string; tick: number }) {
       ) : !entries.length ? (
         <p className="px-2 py-10 text-center text-[13px] text-neutral-500">No files here yet. Ask your bot to create something.</p>
       ) : (
-        <ul className="space-y-0.5">
-          {entries.map((e) => (
-            <li key={e.path}>
-              {e.type === "dir" ? (
-                <button onClick={() => setPath(e.path)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]">
-                  <Icon name="folder" size={17} className="text-[#6aa9ff]" />
-                  <span className="truncate text-[13.5px]">{e.name}</span>
-                </button>
+        <div className={cx(preview && "flex min-h-0 flex-1 flex-col")}>
+          <ul className={cx("space-y-0.5", preview && "min-h-0 overflow-y-auto px-4") }>
+            {entries.map((e) => (
+              <li key={e.path}>
+                {e.type === "dir" ? (
+                  <button onClick={() => setPath(e.path)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]">
+                    <Icon name="folder" size={17} className="text-[#6aa9ff]" />
+                    <span className="truncate text-[13.5px]">{e.name}</span>
+                  </button>
+                ) : preview ? (
+                  <button onClick={() => setSelected(e.path)} className={cx("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]", selected === e.path && "bg-white/[0.08]")}>
+                    <Icon name="file" size={17} className="text-neutral-400" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{e.name}</span>
+                    <span className="text-[11.5px] text-neutral-500">{fmt(e.size)}</span>
+                  </button>
+                ) : (
+                  <a href={`/api/bots/${botId}/files?download=1&path=${encodeURIComponent(e.path)}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-white/[0.05]">
+                    <Icon name="file" size={17} className="text-neutral-400" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{e.name}</span>
+                    <span className="text-[11.5px] text-neutral-500">{fmt(e.size)}</span>
+                    <Icon name="download" size={14} className="text-neutral-500" />
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+          {preview && (
+            <div className="mt-2 min-h-0 flex-1 border-t border-white/[0.06] bg-[#080808]">
+              {selectedUrl ? (
+                <>
+                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 text-[12px] text-neutral-400">
+                    <span className="truncate">{selected}</span>
+                    <a href={selectedUrl} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg px-2 py-1 hover:bg-white/[0.08] hover:text-white">Open in new tab</a>
+                  </div>
+                  <iframe title={`Preview of ${selected}`} src={selectedUrl} className="h-[min(420px,60vh)] w-full border-0 bg-white" />
+                </>
               ) : (
-                <a href={`/api/bots/${botId}/files?download=1&path=${encodeURIComponent(e.path)}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-white/[0.05]">
-                  <Icon name="file" size={17} className="text-neutral-400" />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px]">{e.name}</span>
-                  <span className="text-[11.5px] text-neutral-500">{fmt(e.size)}</span>
-                  <Icon name="download" size={14} className="text-neutral-500" />
-                </a>
+                <div className="grid h-full min-h-40 place-items-center px-8 text-center text-[13px] text-neutral-500">Select an HTML file to preview it here. Your bot can create a website in the workspace.</div>
               )}
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

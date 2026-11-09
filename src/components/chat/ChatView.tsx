@@ -55,7 +55,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [panel, setPanel] = useState<null | "computer" | "files">(null);
+  const [panel, setPanel] = useState<null | "computer" | "files" | "preview">(null);
   const [expanded, setExpanded] = useState(false);
   const [shot, setShot] = useState<{ n: number; data: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -285,6 +285,11 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
         <span className="hidden sm:block">
           <Pill dim active={panel === "files"} onClick={() => setPanel(panel === "files" ? null : "files")}>
             Files
+          </Pill>
+        </span>
+        <span className="hidden sm:block">
+          <Pill dim active={panel === "preview"} onClick={() => setPanel(panel === "preview" ? null : "preview")}>
+            Preview
           </Pill>
         </span>
         <Pill active={panel === "computer"} onClick={() => setPanel(panel === "computer" ? null : "computer")}>

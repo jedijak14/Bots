@@ -44,14 +44,6 @@ button:disabled {
 }
 
 /* ---------- Bot avatar animations ---------- */
-.bot-delete-stage { animation: bot-sad 0.9s ease-in both; }
-.bot-pixels { position: relative; width: 112px; height: 112px; animation: bot-explode 0.9s ease-in both; }
-.bot-pixels::before { content: ""; position: absolute; inset: 25px; border-radius: 42% 58% 55% 45%; background: linear-gradient(135deg, #6e8cff, #a5b4fc); filter: saturate(.8); }
-.bot-pixels i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 1px; background: #9eaeff; transform: rotate(calc(var(--i) * 37deg)) translateY(-42px); animation: pixel-fly 0.9s ease-in both; animation-delay: calc(var(--i) * 12ms); }
-@keyframes bot-sad { 0%, 55% { transform: translateY(0) rotate(0); } 18% { transform: translateY(5px) rotate(-4deg); } 36% { transform: translateY(5px) rotate(4deg); } 100% { transform: translateY(0) rotate(0); opacity: .2; } }
-@keyframes bot-explode { 0%, 55% { transform: scale(1); } 100% { transform: scale(.25); opacity: 0; } }
-@keyframes pixel-fly { 0% { opacity: 0; } 25% { opacity: 1; } 100% { transform: rotate(calc(var(--i) * 37deg)) translateY(calc(-42px - var(--i) * 2px)); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .bot-delete-stage, .bot-pixels, .bot-pixels i { animation-duration: 1ms; } }
 @keyframes bot-orbit {
   to {
     transform: rotate(360deg);
