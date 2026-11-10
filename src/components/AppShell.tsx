@@ -167,7 +167,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     const j = (await res.json().catch(() => ({}))) as { preview?: string };
     if (j.preview) app.setPreview(b.id, j.preview);
     app.toast("Conversation cleared.");
-    if (b.id === activeId) router.refresh();
+    if (b.id === activeId) {
+      window.dispatchEvent(new CustomEvent("bots:chat-cleared", { detail: { botId: b.id } }));
+      router.refresh();
+    }
   }
 
   async function deleteBot(b: BotDTO) {

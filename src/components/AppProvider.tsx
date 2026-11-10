@@ -120,7 +120,7 @@ export function AppProvider({
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
     const timer = window.setTimeout(() => {
       setSettingsTab("connections");
-      toast(result === "failed" ? "Connection failed or was cancelled. Please try again." : `${result === "gmail" ? "Gmail" : "YouTube"} connected.`, result === "failed" ? "err" : "ok");
+      toast(result === "failed" ? "Connection failed or was cancelled. Please try again." : `${result === "gmail" ? "Gmail" : result === "github" ? "GitHub" : "YouTube"} connected.`, result === "failed" ? "err" : "ok");
     }, 0);
     return () => window.clearTimeout(timer);
   }, [toast]);

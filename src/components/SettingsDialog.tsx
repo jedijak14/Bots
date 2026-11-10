@@ -617,18 +617,19 @@ function SkillsTab() {
 function ConnectionsTab() {
   const [connected, setConnected] = useState<string[]>([]);
   const [configured, setConfigured] = useState(false);
+  const [githubConfigured, setGithubConfigured] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   useEffect(() => {
     fetch("/api/connections").then(async (r) => {
       if (!r.ok) throw new Error("Couldn't load connections.");
-      const j = await r.json(); setConfigured(j.googleConfigured); setConnected(j.connections.map((c: { service: string }) => c.service));
+      const j = await r.json(); setConfigured(j.googleConfigured); setGithubConfigured(j.githubConfigured); setConnected(j.connections.map((c: { service: string }) => c.service));
     }).catch(() => setError("Couldn't load connections."));
   }, []);
   async function connect(service: string) {
     setBusy(service); setError("");
     try {
-      const r = await fetch("/api/connections/google/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ service, returnPath: window.location.pathname }) });
+      const r = await fetch(`/api/connections/${service === "github" ? "github" : "google"}/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ service, returnPath: window.location.pathname }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Couldn't start connection.");
       window.location.assign(j.url);
@@ -645,11 +646,12 @@ function ConnectionsTab() {
   }
   return <Section title="Connections" desc="Connect through the provider&#39;s consent screen, not the bot's computer. Your bot can see data you ask it to retrieve, but not your OAuth tokens.">
     {!configured && <p className="text-sm text-amber-300">Google OAuth is not configured on this deployment. An administrator must configure it before connecting.</p>}
-    {[{ id: "gmail", name: "Gmail", desc: "Search and read email; prepare emails for your approval." }, { id: "youtube", name: "YouTube", desc: "Read your playlists." }].map((service) => <div key={service.id} className="flex items-center justify-between gap-4 rounded-xl border border-white/10 p-3">
+    {[{ id: "gmail", name: "Gmail", desc: "Search and read email; prepare emails for your approval." }, { id: "youtube", name: "YouTube", desc: "Read your playlists." }, { id: "github", name: "GitHub", desc: "List accessible repositories (read-only)." }].map((service) => <div key={service.id} className="flex items-center justify-between gap-4 rounded-xl border border-white/10 p-3">
       <div><strong>{service.name}</strong><p className="text-xs text-neutral-400">{service.desc}</p><p className="mt-1 text-xs text-neutral-500">{connected.includes(service.id) ? "Connected" : "Not connected"}</p></div>
-      {connected.includes(service.id) ? <button className={btnGhost} disabled={!!busy} onClick={() => void disconnect(service.id)}>Disconnect</button> : <button className={btnWhite} disabled={!configured || !!busy} onClick={() => void connect(service.id)}>Connect</button>}
+      {connected.includes(service.id) ? <button className={btnGhost} disabled={!!busy} onClick={() => void disconnect(service.id)}>Disconnect</button> : <button className={btnWhite} disabled={!(service.id === "github" ? githubConfigured : configured) || !!busy} onClick={() => void connect(service.id)}>Connect</button>}
     </div>)}
-    <p className="text-xs text-neutral-500">Disconnect removes the saved token here. To revoke Google access completely, also remove this app from your Google account&#39;s third-party connections. GitHub, Notion, Spotify and Vercel connections are not yet available.</p>
+    {!githubConfigured && <p className="text-sm text-amber-300">GitHub OAuth is not configured on this deployment.</p>}
+    <p className="text-xs text-neutral-500">Disconnect removes the saved token here. To revoke Google access completely, also remove this app from your Google account&#39;s third-party connections. Revoke GitHub access in your GitHub authorized OAuth apps. Notion, Spotify and Vercel connections are not yet available.</p>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
   </Section>;
 }

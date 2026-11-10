@@ -46,10 +46,13 @@ key (and optionally an E2B key) under Settings.
 ## Conversations, skills, and desktop safety
 
 Clearing an individual bot conversation archives its visible messages instead of
-removing them. They remain in the account export, and up to the latest 40 messages
+removing them and leaves the chat blank; the welcome question is shown only when
+a bot is first created. They remain in the account export, and up to the latest 40 messages
 (including archived ones) are sent to that same bot as context. This is bounded
 context, not a guarantee that the bot remembers every past conversation. The bot
-can also search its own saved history for matching text. The
+can also search its own saved history for matching text, list saved chat artifacts,
+and read older messages in pages. This does not preserve files from an expired
+computer sandbox. The
 Data settings' **Clear all conversations** permanently deletes both active and
 archived messages. Deleting a bot also deletes its history.
 
@@ -99,6 +102,12 @@ but only the signed-in user can approve and send the exact displayed draft.
 Sending is not retried automatically if delivery is uncertain; check Sent before
 trying again. YouTube access is read-only and currently lists playlists. Disconnect
 removes the stored token locally; revoke the grant in your Google account as well.
-GitHub, Notion, Spotify, and Vercel OAuth integrations are not yet implemented.
+GitHub supports listing accessible repositories using a GitHub OAuth App with the
+`read:user` scope (not the `repo` scope, so private repositories are not granted).
+Set `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`, and register
+`APP_ORIGIN/api/connections/github/callback` as the callback URL. Tokens are
+encrypted at rest and kept on the server. Disconnect removes the local token;
+revoke the app in GitHub settings separately. Notion, Spotify, and Vercel
+integrations are not yet implemented.
 
 Run `npm run db:migrate` when upgrading to create the archive and skills schema.

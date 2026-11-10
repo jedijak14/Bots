@@ -39,7 +39,7 @@ function formatWhen(iso: string): string {
 }
 
 /** Tools that don't touch the bot's computer, so they shouldn't bring the Computer panel up. */
-const NO_COMPUTER = new Set(["ask_user", "get_current_time", "search_history", "request_connection", "search_gmail", "read_gmail_message", "prepare_email", "list_youtube_playlists"]);
+const NO_COMPUTER = new Set(["ask_user", "get_current_time", "search_history", "read_history_message", "list_history_artifacts", "request_connection", "search_gmail", "read_gmail_message", "prepare_email", "list_youtube_playlists", "list_github_repos"]);
 
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
@@ -75,6 +75,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
 
   const acc = useRef<Live>({ text: "", steps: [], choices: null });
   const abortRef = useRef<AbortController | null>(null);
+  const clearVersion = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -93,6 +94,24 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
     },
     [setWorking],
   );
+
+  useEffect(() => {
+    const onClear = (event: Event) => {
+      if ((event as CustomEvent<{ botId: string }>).detail?.botId !== botId) return;
+      clearVersion.current++;
+      abortRef.current?.abort();
+      if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
+      acc.current = { text: "", steps: [], choices: null };
+      setMessages([]);
+      setLive(null);
+      setBusy(false);
+      setError(null);
+      setWorking(null);
+    };
+    window.addEventListener("bots:chat-cleared", onClear);
+    return () => window.removeEventListener("bots:chat-cleared", onClear);
+  }, [botId, setWorking]);
 
   const closePanel = useCallback(() => {
     panelDismissed.current = true;
@@ -149,12 +168,14 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
       panelDismissed.current = false;
 
       const ac = new AbortController();
+      const generation = clearVersion.current;
       abortRef.current = ac;
       let finalized = false;
 
       const finalize = (info: { id: string; createdAt: string } | null) => {
         if (finalized) return;
         finalized = true;
+        if (generation !== clearVersion.current) return;
         if (frame.current) {
           cancelAnimationFrame(frame.current);
           frame.current = 0;
@@ -180,6 +201,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
       };
 
       const handle = (ev: StreamEvent) => {
+        if (generation !== clearVersion.current) return;
         switch (ev.t) {
           case "start":
             setMessages((m) => m.map((x) => (x.id === tmpId ? { ...x, id: ev.userMessage.id, createdAt: ev.userMessage.createdAt } : x)));
@@ -230,6 +252,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
           body: JSON.stringify({ content, wantShots: app.settings.hasE2bKey }),
           signal: ac.signal,
         });
+        if (generation !== clearVersion.current) return;
         if (!res.ok || !res.body) {
           const j = await res.json().catch(() => ({}));
           setError({ message: j.error || "Couldn't reach the server.", code: j.code });
@@ -259,7 +282,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
           }
         }
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === "AbortError")) {
+        if (generation === clearVersion.current && !(e instanceof DOMException && e.name === "AbortError")) {
           setError({ message: "The connection was interrupted." });
         }
       } finally {
@@ -403,7 +426,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
                 <AssistantBlock text={live.text} steps={live.steps} choices={live.choices} choicesDisabled onPick={() => {}} streaming />
               )}
 
-              <div className="flex items-center gap-4 pb-2 pl-1 pt-5">
+              {(messages.length > 0 || busy) && <div className="flex items-center gap-4 pb-2 pl-1 pt-5">
                 <BotAvatar shape={bot.shape} color={bot.color} size={52} working={busy} />
                 {busy && (
                   <span className="shimmer-text text-[14px] font-medium">
@@ -413,7 +436,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
                     })()}
                   </span>
                 )}
-              </div>
+              </div>}
 
               {error && (
                 <div role="alert" className="fade-up flex max-w-[min(740px,100%)] items-start gap-3 rounded-2xl border border-[#4a1c22] bg-[#241013] px-4 py-3 text-[13.5px] text-[#ff9aa6]">

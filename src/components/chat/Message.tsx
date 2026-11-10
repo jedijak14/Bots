@@ -95,7 +95,7 @@ export function StepList({ steps }: { steps: LiveStep[] }) {
           </button>
           {s.name === "request_connection" && s.status === "done" && s.output?.includes("Settings > Connections") && (
             <div className="mt-2 rounded-xl border border-blue-400/20 bg-blue-400/[0.06] p-3 text-sm text-neutral-200">
-              <p>Connect through Google in your own browser. Your password is not entered into the bot desktop or chat.</p>
+              <p>Connect through the provider in your own browser. Your password is not entered into the bot desktop or chat.</p>
               <button type="button" onClick={() => app.openSettings("connections")} className="mt-3 rounded-full bg-white px-4 py-2 font-semibold text-black hover:bg-neutral-200">Open Connections</button>
             </div>
           )}
