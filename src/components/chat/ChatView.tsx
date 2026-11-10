@@ -8,6 +8,7 @@ import { useApp } from "../AppProvider";
 import { BotAvatar } from "../BotAvatar";
 import { Icon } from "../icons";
 import { cx } from "../ui";
+import { EmailApprovals } from "./EmailApprovals";
 import { Composer, type Attachment } from "./Composer";
 import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
 import { AssistantBlock, UserBubble, type LiveStep } from "./Message";
@@ -38,7 +39,7 @@ function formatWhen(iso: string): string {
 }
 
 /** Tools that don't touch the bot's computer, so they shouldn't bring the Computer panel up. */
-const NO_COMPUTER = new Set(["ask_user", "get_current_time"]);
+const NO_COMPUTER = new Set(["ask_user", "get_current_time", "search_history", "request_connection", "search_gmail", "read_gmail_message", "prepare_email", "list_youtube_playlists"]);
 
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
@@ -439,6 +440,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
                 </button>
               </div>
             )}
+            <EmailApprovals botId={botId} busy={busy} />
             <Composer
               value={input}
               onChange={setInput}

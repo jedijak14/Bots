@@ -11,6 +11,8 @@ import { btnDanger, btnGhost, btnWhite, cx, inputCls, Modal, Toggle } from "./ui
 const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
   { id: "ai", label: "AI Provider", icon: "grid" },
   { id: "computer", label: "Computer", icon: "monitor" },
+  { id: "connections", label: "Connections", icon: "globe" },
+  { id: "skills", label: "Skills", icon: "grid" },
   { id: "preferences", label: "Preferences", icon: "gear" },
   { id: "account", label: "Account", icon: "pencil" },
   { id: "data", label: "Data", icon: "download" },
@@ -50,6 +52,8 @@ export function SettingsDialog() {
           {tab === "ai" && <AiTab />}
           {tab === "computer" && <ComputerTab />}
           {tab === "preferences" && <PreferencesTab />}
+          {tab === "skills" && <SkillsTab />}
+          {tab === "connections" && <ConnectionsTab />}
           {tab === "account" && <AccountTab />}
           {tab === "data" && <DataTab />}
         </div>
@@ -532,7 +536,7 @@ function DataTab() {
       <div className="flex items-center justify-between gap-6">
         <div>
           <div className="text-[14px] font-medium">Export everything</div>
-          <div className="mt-0.5 text-[12.5px] text-neutral-500">Download all bots and conversations as JSON.</div>
+          <div className="mt-0.5 text-[12.5px] text-neutral-500">Download all bots and conversations, including archived messages, as JSON.</div>
         </div>
         <a href="/api/export" className={btnGhost}>
           <Icon name="download" size={15} /> Export
@@ -541,7 +545,7 @@ function DataTab() {
       <div className="flex items-center justify-between gap-6">
         <div>
           <div className="text-[14px] font-medium">Clear all conversations</div>
-          <div className="mt-0.5 text-[12.5px] text-neutral-500">Keeps your bots, removes every message.</div>
+          <div className="mt-0.5 text-[12.5px] text-neutral-500">Permanently deletes all messages, including archived history.</div>
         </div>
         <button
           className={btnDanger}
@@ -561,4 +565,91 @@ function DataTab() {
       </div>
     </Section>
   );
+}
+
+
+type Skill = { id: string; name: string; instructions: string };
+function SkillsTab() {
+  const [items, setItems] = useState<Skill[]>([]);
+  const [name, setName] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch("/api/settings/skills").then(async (r) => {
+      if (!r.ok) throw new Error("Couldn't load skills.");
+      setItems(await r.json());
+    }).catch(() => setError("Couldn't load skills."));
+  }, []);
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError("");
+    try {
+      const r = await fetch("/api/settings/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, instructions }) });
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.error || "Couldn't save skill.");
+      setItems((old) => [...old, result]); setName(""); setInstructions("");
+    } catch (e) { setError(e instanceof Error ? e.message : "Couldn't save skill."); }
+    finally { setBusy(false); }
+  }
+  async function remove(id: string) {
+    setError("");
+    try {
+      const r = await fetch(`/api/settings/skills?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Couldn't delete skill.");
+      setItems((old) => old.filter((s) => s.id !== id));
+    } catch (e) { setError(e instanceof Error ? e.message : "Couldn't delete skill."); }
+  }
+  return <Section title="Skills" desc="Reusable instructions shared with your bots on every request. Do not put passwords or secrets here.">
+    <form onSubmit={create} className="space-y-3">
+      <input className={inputCls} aria-label="Skill name" placeholder="Skill name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} required />
+      <textarea className={inputCls} aria-label="Skill instructions" placeholder="Describe when and how the bot should use this skill" rows={4} maxLength={4000} value={instructions} onChange={(e) => setInstructions(e.target.value)} required />
+      <button className={btnWhite} disabled={busy || !name.trim() || !instructions.trim()}>{busy ? "Saving…" : "Add skill"}</button>
+    </form>
+    {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+    {items.map((s) => <div key={s.id} className="rounded-xl border border-white/10 p-3">
+      <div className="flex items-center justify-between gap-2"><strong>{s.name}</strong><button type="button" className={btnGhost} onClick={() => void remove(s.id)}>Delete</button></div>
+      <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-400">{s.instructions}</p>
+    </div>)}
+  </Section>;
+}
+
+
+function ConnectionsTab() {
+  const [connected, setConnected] = useState<string[]>([]);
+  const [configured, setConfigured] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    fetch("/api/connections").then(async (r) => {
+      if (!r.ok) throw new Error("Couldn't load connections.");
+      const j = await r.json(); setConfigured(j.googleConfigured); setConnected(j.connections.map((c: { service: string }) => c.service));
+    }).catch(() => setError("Couldn't load connections."));
+  }, []);
+  async function connect(service: string) {
+    setBusy(service); setError("");
+    try {
+      const r = await fetch("/api/connections/google/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ service, returnPath: window.location.pathname }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Couldn't start connection.");
+      window.location.assign(j.url);
+    } catch (e) { setError(e instanceof Error ? e.message : "Couldn't start connection."); setBusy(""); }
+  }
+  async function disconnect(service: string) {
+    setBusy(service); setError("");
+    try {
+      const r = await fetch(`/api/connections?service=${encodeURIComponent(service)}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Couldn't disconnect.");
+      setConnected((old) => old.filter((s) => s !== service));
+    } catch (e) { setError(e instanceof Error ? e.message : "Couldn't disconnect."); }
+    finally { setBusy(""); }
+  }
+  return <Section title="Connections" desc="Connect through the provider&#39;s consent screen, not the bot's computer. Your bot can see data you ask it to retrieve, but not your OAuth tokens.">
+    {!configured && <p className="text-sm text-amber-300">Google OAuth is not configured on this deployment. An administrator must configure it before connecting.</p>}
+    {[{ id: "gmail", name: "Gmail", desc: "Search and read email; prepare emails for your approval." }, { id: "youtube", name: "YouTube", desc: "Read your playlists." }].map((service) => <div key={service.id} className="flex items-center justify-between gap-4 rounded-xl border border-white/10 p-3">
+      <div><strong>{service.name}</strong><p className="text-xs text-neutral-400">{service.desc}</p><p className="mt-1 text-xs text-neutral-500">{connected.includes(service.id) ? "Connected" : "Not connected"}</p></div>
+      {connected.includes(service.id) ? <button className={btnGhost} disabled={!!busy} onClick={() => void disconnect(service.id)}>Disconnect</button> : <button className={btnWhite} disabled={!configured || !!busy} onClick={() => void connect(service.id)}>Connect</button>}
+    </div>)}
+    <p className="text-xs text-neutral-500">Disconnect removes the saved token here. To revoke Google access completely, also remove this app from your Google account&#39;s third-party connections. GitHub, Notion, Spotify and Vercel connections are not yet available.</p>
+    {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+  </Section>;
 }

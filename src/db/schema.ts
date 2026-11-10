@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  uniqueIndex,
   jsonb,
   pgTable,
   text,
@@ -81,6 +82,7 @@ export const messages = pgTable(
     content: text("content").notNull().default(""),
     steps: jsonb("steps").$type<StepRecord[]>(),
     choices: jsonb("choices").$type<ChoicesRecord>(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_bot_idx").on(t.botId, t.createdAt), index("messages_user_idx").on(t.userId)],
@@ -98,3 +100,41 @@ export type ChoicesRecord = {
   question: string;
   options: string[];
 };
+
+// Reusable user-authored instructions, shared by the user's bots.
+export const skills = pgTable("skills", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  instructions: text("instructions").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("skills_user_idx").on(t.userId)]);
+
+export const oauthStates = pgTable("oauth_states", {
+  stateHash: text("state_hash").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  service: text("service").notNull(),
+  verifierEnc: text("verifier_enc").notNull(),
+  returnPath: text("return_path").notNull().default("/"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+export const connections = pgTable("connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  service: text("service").notNull(),
+  refreshTokenEnc: text("refresh_token_enc").notNull(),
+  scopes: text("scopes").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("connections_user_idx").on(t.userId), uniqueIndex("connections_user_service_idx").on(t.userId, t.service)]);
+
+export const emailDrafts = pgTable("email_drafts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  botId: uuid("bot_id").notNull().references(() => bots.id, { onDelete: "cascade" }),
+  recipient: text("recipient").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

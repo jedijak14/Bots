@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bots, messages, type ChoicesRecord, type StepRecord } from "@/db/schema";
 import { previewText } from "./preview";
@@ -30,7 +30,7 @@ export async function listBots(userId: string): Promise<BotDTO[]> {
       bot: bots,
       // `${bots.id}` renders as a bare "id" here, which Postgres resolves to the
       // inner `messages.id` and never matches. The outer table must be named.
-      preview: sql<string | null>`(select coalesce(nullif(left(m.content, 600), ''), m.choices->>'question') from ${messages} m where m.bot_id = ${bots}.id order by m.created_at desc limit 1)`,
+      preview: sql<string | null>`(select coalesce(nullif(left(m.content, 600), ''), m.choices->>'question') from ${messages} m where m.bot_id = ${bots}.id and m.archived_at is null order by m.created_at desc limit 1)`,
     })
     .from(bots)
     .where(eq(bots.userId, userId))
@@ -65,7 +65,7 @@ export async function listMessages(userId: string, botId: string, limit = 500): 
   const rows = await db
     .select()
     .from(messages)
-    .where(and(eq(messages.botId, botId), eq(messages.userId, userId)))
+    .where(and(eq(messages.botId, botId), eq(messages.userId, userId), isNull(messages.archivedAt)))
     .orderBy(desc(messages.createdAt))
     .limit(limit);
   return rows.reverse().map((m) => ({

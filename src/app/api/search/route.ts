@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bots, messages } from "@/db/schema";
 import { handleError, requireUser } from "@/lib/auth";
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       })
       .from(messages)
       .innerJoin(bots, eq(bots.id, messages.botId))
-      .where(and(eq(messages.userId, user.id), or(ilike(messages.content, like))))
+      .where(and(eq(messages.userId, user.id), isNull(messages.archivedAt), or(ilike(messages.content, like))))
       .orderBy(desc(messages.createdAt))
       .limit(15);
     return Response.json({

@@ -9,7 +9,7 @@ import type { Computer } from "./useComputer";
 
 /** Height reserved above (status / address bar) and below (control pill) the screen. */
 const BAR_H = 44;
-const PILL_H = 60;
+const PILL_H = 100;
 
 const NAMED_KEYS: Record<string, string> = {
   Enter: "enter",
@@ -368,6 +368,9 @@ export function ComputerScreen({
           )}
         </div>
 
+        <p className="mt-2 text-center text-[11px] leading-snug text-amber-300/80" role="note">
+          Take control is not Privacy Mode. The bot can access this computer and its browser session afterward. Do not enter passwords or sensitive credentials here.
+        </p>
         <div className="flex shrink-0 items-center justify-center" style={{ height: PILL_H }}>
           {live && (
             <div className={cx("fade-up flex h-10 items-center rounded-full border bg-[#151515] pl-4 pr-1 text-[13px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]", driving ? "border-[#3b8cff]/40" : "border-white/[0.08]")}>

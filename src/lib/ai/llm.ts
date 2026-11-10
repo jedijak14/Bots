@@ -156,13 +156,11 @@ async function openaiLoop(o: AgentOptions) {
       content: text || null,
       tool_calls: real.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.args || "{}" } })),
     });
-    let stop = false;
     for (const c of real) {
       const r = await o.runTool(c.name, safeJson(c.args), c.id);
       msgs.push({ role: "tool", tool_call_id: c.id, content: r.output });
-      if (r.stop) stop = true;
+      if (r.stop) return;
     }
-    if (stop) return;
   }
 }
 
@@ -249,13 +247,11 @@ async function anthropicLoop(o: AgentOptions) {
 
     msgs.push({ role: "assistant", content });
     const results: unknown[] = [];
-    let stop = false;
     for (const u of uses) {
       const r = await o.runTool(u.name, safeJson(u.json), u.id);
       results.push({ type: "tool_result", tool_use_id: u.id, content: r.output });
-      if (r.stop) stop = true;
+      if (r.stop) return;
     }
     msgs.push({ role: "user", content: results });
-    if (stop) return;
   }
 }

@@ -7,7 +7,7 @@ import type { PublicSettings } from "@/lib/settings";
 import { PrefsContext } from "./prefs";
 
 export type AppUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
-export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data";
+export type SettingsTab = "account" | "ai" | "computer" | "connections" | "skills" | "preferences" | "data";
 type ConfirmOpts = { title: string; body: string; confirmLabel?: string; danger?: boolean };
 type Toast = { id: number; msg: string; kind: "ok" | "err" };
 
@@ -111,6 +111,19 @@ export function AppProvider({
     (o: ConfirmOpts) => new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve })),
     [],
   );
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("connection");
+    if (!result) return;
+    url.searchParams.delete("connection");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    const timer = window.setTimeout(() => {
+      setSettingsTab("connections");
+      toast(result === "failed" ? "Connection failed or was cancelled. Please try again." : `${result === "gmail" ? "Gmail" : "YouTube"} connected.`, result === "failed" ? "err" : "ok");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   // A session can expire while the tab stays open. Every API call then answers
   // 401, so send the user back to the sign-in page instead of leaving them

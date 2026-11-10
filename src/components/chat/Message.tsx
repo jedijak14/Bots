@@ -4,6 +4,7 @@ import { useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChoicesRecord } from "@/db/schema";
+import { useApp } from "../AppProvider";
 import { Icon, Spinner } from "../icons";
 import { cx } from "../ui";
 
@@ -71,6 +72,7 @@ export function Markdown({ text }: { text: string }) {
 
 export function StepList({ steps }: { steps: LiveStep[] }) {
   const [open, setOpen] = useState<string | null>(null);
+  const app = useApp();
   if (!steps.length) return null;
   return (
     <div className="mb-2 flex flex-col items-start gap-1.5">
@@ -91,6 +93,12 @@ export function StepList({ steps }: { steps: LiveStep[] }) {
             </span>
             <span className="truncate font-mono text-[12px]">{s.label}</span>
           </button>
+          {s.name === "request_connection" && s.status === "done" && s.output?.includes("Settings > Connections") && (
+            <div className="mt-2 rounded-xl border border-blue-400/20 bg-blue-400/[0.06] p-3 text-sm text-neutral-200">
+              <p>Connect through Google in your own browser. Your password is not entered into the bot desktop or chat.</p>
+              <button type="button" onClick={() => app.openSettings("connections")} className="mt-3 rounded-full bg-white px-4 py-2 font-semibold text-black hover:bg-neutral-200">Open Connections</button>
+            </div>
+          )}
           {open === s.id && s.output && (
             <pre className="fade-up mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-[#0b0b0b] p-3 font-mono text-[12px] leading-relaxed text-neutral-400">{s.output}</pre>
           )}
@@ -153,6 +161,21 @@ export function UserBubble({ text }: { text: string }) {
   );
 }
 
+// Only the explicit artifact fence becomes a document; Markdown is rendered without raw HTML.
+function AssistantContent({ text }: { text: string }) {
+  const parts = text.split(/```artifact\s*\n([\s\S]*?)```/gi);
+  return <>{parts.map((part, i) => {
+    if (i % 2 === 0) return part.trim() ? <Markdown key={i} text={part} /> : null;
+    const [first, ...rest] = part.trim().split("\n");
+    const title = first?.replace(/^#+\s*/, "").trim() || "Untitled artifact";
+    const body = rest.join("\n").trim();
+    return <details key={i} className="my-3 w-full rounded-xl border border-white/15 bg-[#101010] p-4" open>
+      <summary className="cursor-pointer font-semibold">Artifact · {title}</summary>
+      <div className="mt-3"><Markdown text={body || title} /></div>
+    </details>;
+  })}</>;
+}
+
 export function AssistantBlock({
   text,
   steps,
@@ -176,7 +199,7 @@ export function AssistantBlock({
       {text.trim() && (
         <>
           <div className="max-w-[min(760px,100%)] rounded-[24px] border border-white/[0.03] bg-[#151515] px-5 py-3.5">
-            <Markdown text={text} />
+            <AssistantContent text={text} />
           </div>
           {!streaming && <CopyLink text={text} />}
         </>

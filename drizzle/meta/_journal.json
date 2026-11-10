@@ -15,6 +15,27 @@
       "when": 1794249798489,
       "tag": "0001_spooky_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794321392008,
+      "tag": "0002_peaceful_baron_strucker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794321812019,
+      "tag": "0003_brown_maximus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794325180778,
+      "tag": "0004_clever_the_hunter",
+      "breakpoints": true
     }
   ]
 }

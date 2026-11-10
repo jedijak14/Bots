@@ -66,48 +66,48 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const { sb, fresh } = await ensureDesktop(ref, key);
       switch (b.action) {
         case "start":
-          if (fresh) await sleep(1200);
+          if (fresh) await sleep(100);
           break;
         case "navigate":
           await openInBrowser(sb, String(b.url ?? ""));
-          await sleep(fresh ? 4000 : 2500);
+          await sleep(fresh ? 1200 : 500);
           break;
         case "restart":
           await restartBrowser(sb);
           await openInBrowser(sb, "about:blank");
-          await sleep(2500);
+          await sleep(100);
           break;
         case "type":
           await sb.write(String(b.text ?? "").slice(0, 2000));
           if (b.enter) await sb.press("enter");
-          await sleep(500);
+          await sleep(100);
           break;
         case "key":
           await sb.press(keysFrom(b.key));
-          await sleep(400);
+          await sleep(100);
           break;
         case "click":
           await sb.leftClick(coord(b.x), coord(b.y));
-          await sleep(500);
+          await sleep(100);
           break;
         case "doubleClick":
           await sb.doubleClick(coord(b.x), coord(b.y));
-          await sleep(500);
+          await sleep(100);
           break;
         case "rightClick":
           await sb.rightClick(coord(b.x), coord(b.y));
-          await sleep(400);
+          await sleep(100);
           break;
         case "drag":
           await sb.drag([coord(b.x), coord(b.y)], [coord(b.toX), coord(b.toY)]);
-          await sleep(400);
+          await sleep(100);
           break;
         case "scroll": {
           // Scrolling happens under the pointer, so move it to where the person is pointing first.
           if (b.x !== undefined && b.y !== undefined) await sb.moveMouse(coord(b.x), coord(b.y));
           const amount = Math.max(1, Math.min(15, Math.round(Number(b.amount) || 3)));
           await sb.scroll(b.direction === "up" ? "up" : "down", amount);
-          await sleep(300);
+          await sleep(100);
           break;
         }
         default:

@@ -158,7 +158,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     tip.bind(label, collapsed ? { hint, side: "right", when: isDesktop } : { hint, side: "bottom", align, when: isDesktop });
 
   async function clearChat(b: BotDTO) {
-    if (!(await app.confirm({ title: `Clear chat with ${b.name}?`, body: "All messages in this conversation will be deleted.", confirmLabel: "Clear", danger: true }))) return;
+    if (!(await app.confirm({ title: `Clear chat with ${b.name}?`, body: "Messages will be archived, not deleted. Recent history can still be included when this bot replies. Export your data to view archived messages.", confirmLabel: "Clear", danger: true }))) return;
     const res = await fetch(`/api/bots/${b.id}/messages`, { method: "DELETE" }).catch(() => null);
     if (!res?.ok) {
       app.toast("Couldn't clear that conversation.", "err");

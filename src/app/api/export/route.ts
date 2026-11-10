@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { bots, messages } from "@/db/schema";
+import { bots, messages, skills } from "@/db/schema";
 import { handleError, requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +10,11 @@ export async function GET() {
     const user = await requireUser();
     const b = await db.select().from(bots).where(eq(bots.userId, user.id)).orderBy(asc(bots.createdAt));
     const m = await db.select().from(messages).where(eq(messages.userId, user.id)).orderBy(asc(messages.createdAt));
+    const savedSkills = await db.select({ name: skills.name, instructions: skills.instructions }).from(skills).where(eq(skills.userId, user.id));
     const data = {
       exportedAt: new Date().toISOString(),
       email: user.email,
+      skills: savedSkills,
       bots: b.map((bot) => ({
         name: bot.name,
         shape: bot.shape,
@@ -20,7 +22,7 @@ export async function GET() {
         instructions: bot.instructions,
         messages: m
           .filter((x) => x.botId === bot.id)
-          .map((x) => ({ role: x.role, content: x.content, choices: x.choices, steps: x.steps, at: x.createdAt })),
+          .map((x) => ({ role: x.role, content: x.content, choices: x.choices, steps: x.steps, archivedAt: x.archivedAt, at: x.createdAt })),
       })),
     };
     return new Response(JSON.stringify(data, null, 2), {
