@@ -27,8 +27,8 @@ const WATCH_MS = 3000;
 const CONTROL_MS = 1500;
 const MAX_QUEUE = 24;
 
-async function post(botId: string, body: ComputerAction): Promise<Reply> {
-  const res = await fetch(`/api/bots/${botId}/computer`, {
+async function post(botId: string, body: ComputerAction, privateMode: boolean): Promise<Reply> {
+  const res = await fetch(privateMode ? "/api/privacy/computer" : `/api/bots/${botId}/computer`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -51,6 +51,7 @@ export function useComputer({
   agentBusy,
   externalShot,
   onActionError,
+  privateMode = false,
 }: {
   botId: string;
   /** False when there is no E2B key: nothing is fetched. */
@@ -62,6 +63,7 @@ export function useComputer({
   /** Screenshots pushed by the bot while it works. */
   externalShot: { n: number; data: string } | null;
   onActionError: (message: string) => void;
+  privateMode?: boolean;
 }) {
   // Start from the last screenshot the bot sent, if there is one, so reopening the panel is instant.
   const [phase, setPhase] = useState<ComputerPhase>(externalShot ? "on" : "loading");
@@ -109,7 +111,7 @@ export function useComputer({
     looking.current = true;
     const at = version.current;
     try {
-      const r = await post(botId, { action: "screenshot" });
+      const r = await post(botId, { action: "screenshot" }, privateMode);
       if (!alive.current || at !== version.current || running.current) return;
       fails.current = 0;
       if (!r.active) {
@@ -134,7 +136,7 @@ export function useComputer({
     } finally {
       looking.current = false;
     }
-  }, [botId]);
+  }, [botId, privateMode]);
 
   const pump = useCallback(async () => {
     if (running.current) return;
@@ -143,7 +145,7 @@ export function useComputer({
     while (queue.current.length && alive.current) {
       const a = queue.current.shift()!;
       try {
-        const r = await post(botId, a);
+        const r = await post(botId, a, privateMode);
         version.current++;
         fails.current = 0;
         if (!alive.current) break;
@@ -166,7 +168,7 @@ export function useComputer({
     }
     running.current = false;
     if (alive.current) setBusy(false);
-  }, [botId]);
+  }, [botId, privateMode]);
 
   /** Queue an action. Typing and scrolling that pile up while the computer is busy are merged. */
   const act = useCallback(

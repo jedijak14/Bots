@@ -14,11 +14,28 @@ type Body = {
   url?: string;
   text?: string;
   enter?: boolean;
-  key?: string;
+  key?: string | string[];
   x?: number;
   y?: number;
+  toX?: number;
+  toY?: number;
+  amount?: number;
   direction?: "up" | "down";
 };
+
+const KEY_NAME = /^[A-Za-z0-9_]{1,20}$/;
+
+function keysFrom(input: Body["key"]): string | string[] {
+  const parts = (Array.isArray(input) ? input : [input ?? "enter"]).map((key) => String(key));
+  if (!parts.length || parts.length > 5 || !parts.every((key) => KEY_NAME.test(key))) throw new HttpError(400, "Unknown key.");
+  return parts.length === 1 ? parts[0] : parts;
+}
+
+function coord(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) throw new HttpError(400, "Invalid position.");
+  return Math.max(0, Math.min(8192, n));
+}
 
 export async function POST(req: Request) {
   try {
@@ -30,7 +47,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as Body;
     const sessionRef = { ...session };
     const action = body.action ?? "screenshot";
-    const supportedActions = new Set(["start", "screenshot", "navigate", "restart", "type", "key", "click", "scroll"]);
+    const supportedActions = new Set(["start", "screenshot", "navigate", "restart", "type", "key", "click", "doubleClick", "rightClick", "drag", "scroll"]);
     if (!supportedActions.has(action)) throw new HttpError(400, "Unknown action.");
 
     if (action === "screenshot") {
@@ -59,21 +76,32 @@ export async function POST(req: Request) {
         await sleep(300);
         break;
       case "key":
-        await sb.press(String(body.key ?? "enter").slice(0, 32));
+        await sb.press(keysFrom(body.key));
         await sleep(250);
         break;
-      case "click": {
-        const x = Number(body.x);
-        const y = Number(body.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1024 || y < 0 || y > 768) throw new HttpError(400, "Invalid screen coordinates.");
-        await sb.leftClick(Math.round(x), Math.round(y));
+      case "click":
+        await sb.leftClick(coord(body.x), coord(body.y));
         await sleep(250);
         break;
-      }
-      case "scroll":
-        await sb.scroll(body.direction === "up" ? "up" : "down", 3);
+      case "doubleClick":
+        await sb.doubleClick(coord(body.x), coord(body.y));
+        await sleep(250);
+        break;
+      case "rightClick":
+        await sb.rightClick(coord(body.x), coord(body.y));
+        await sleep(250);
+        break;
+      case "drag":
+        await sb.drag([coord(body.x), coord(body.y)], [coord(body.toX), coord(body.toY)]);
+        await sleep(250);
+        break;
+      case "scroll": {
+        if (body.x !== undefined && body.y !== undefined) await sb.moveMouse(coord(body.x), coord(body.y));
+        const amount = Math.max(1, Math.min(15, Math.round(Number(body.amount) || 3)));
+        await sb.scroll(body.direction === "up" ? "up" : "down", amount);
         await sleep(200);
         break;
+      }
       default:
         throw new HttpError(400, "Unknown action.");
     }

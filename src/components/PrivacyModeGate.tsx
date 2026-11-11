@@ -51,6 +51,6 @@ export function PrivacyModeGate({ initialActive, initialBotId }: { initialActive
     </header>
     {error && <p role="alert" className="px-5 pt-3 text-sm text-rose-300">{error}</p>}
     <p className="px-5 py-3 text-xs text-neutral-500">After you press Take Control, I will go into Privacy Mode. Only you can interact with the sandbox while the Bot is paused.</p>
-    {bot ? <div className="relative min-h-0 flex-1"><ComputerPanel botId={bot.id} hasE2b={app.settings.hasE2bKey} mode="computer" agentBusy={false} externalShot={null} expanded onToggleExpand={() => {}} onClose={() => {}} onOpenSettings={() => {}} privateMode /></div> : <div className="grid flex-1 place-items-center text-sm text-neutral-500">Open a Bot to choose its sandbox before taking control.</div>}
+    {bot ? <div className="relative min-h-0 flex-1"><ComputerPanel bot={bot} hasE2b={app.settings.hasE2bKey} tab="screen" onTab={() => {}} agentBusy={false} activity={null} externalShot={null} expanded onToggleExpand={() => {}} onClose={() => {}} onOpenSettings={() => {}} onPhase={() => {}} onError={setError} privateMode /></div> : <div className="grid flex-1 place-items-center text-sm text-neutral-500">Open a Bot to choose its sandbox before taking control.</div>}
   </main>;
 }
