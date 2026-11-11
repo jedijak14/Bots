@@ -101,7 +101,7 @@ const COMPUTER_TOOLS: Tool[] = [
   },
   {
     name: "write_file",
-    description: "Write a text file on your computer. Relative paths are inside /home/user. Files appear in the user's Files panel.",
+    description: "Write a text file on your computer. Relative paths are inside /home/user. Files appear in the Files tab of the user's Computer panel, and .html files can be viewed in its Preview tab.",
     parameters: obj({ path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
   },
   {

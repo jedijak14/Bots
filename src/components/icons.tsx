@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from "react";
 
-const P: Record<string, ReactNode> = {
+const P = {
   grid: (
     <>
       <rect x="3.5" y="3.5" width="7" height="7" rx="2" />
@@ -55,9 +55,43 @@ const P: Record<string, ReactNode> = {
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   back: <path d="M19 12H5M12 19l-7-7 7-7" />,
   x: <path d="M18 6 6 18M6 6l12 12" />,
-};
+  "chevron-left": <path d="m15 6-6 6 6 6" />,
+  "chevron-right": <path d="m9 6 6 6-6 6" />,
+  sidebar: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="3.5" />
+      <path d="M9.5 4v16" />
+    </>
+  ),
+  monitor: (
+    <>
+      <rect x="2.5" y="4" width="19" height="12.5" rx="2.5" />
+      <path d="M8.5 20.5h7M12 16.5v4" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z" />
+    </>
+  ),
+  external: <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />,
+  collapse: <path d="M4 14h6v6M20 10h-6V4M14 10l6.5-6.5M3.5 20.5 10 14" />,
+  maximize: <path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5" />,
+  "arrow-right": <path d="M5 12h14M13 6l6 6-6 6" />,
+  cursor: <path d="M5 3.5 11.2 20l2.3-6.7 6.7-2.3z" />,
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <circle cx="9" cy="10" r="1.7" />
+      <path d="m4 18 5.5-5 4 3.5 2.5-2.2L20 18" />
+    </>
+  ),
+} satisfies Record<string, ReactNode>;
 
-export function Icon({ name, size = 18, ...rest }: { name: keyof typeof P | string; size?: number } & SVGProps<SVGSVGElement>) {
+export type IconName = keyof typeof P;
+
+export function Icon({ name, size = 18, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {
   return (
     <svg
       width={size}

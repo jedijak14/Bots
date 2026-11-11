@@ -22,7 +22,7 @@ function systemPrompt(name: string, instructions: string, hasComputer: boolean, 
     `Current date/time (UTC): ${now}.`,
     "When you need the user to choose between a few directions, call the ask_user tool with 2-5 short options instead of listing them in prose. You can use get_current_time for reliable timezone-aware dates and times.",
     hasComputer
-      ? "You have your own Linux desktop computer (Ubuntu + Chrome) with tools: run_command, web_search, fetch_page, open_url, write_file, read_file, click, type_text, press_key. Use it to research, browse, run code and create files in /home/user. The user can watch it live in the Computer panel and browse files you create in the Files panel. After using tools, summarise what you found or did."
+      ? "You have your own Linux desktop computer (Ubuntu + Chrome) with tools: run_command, web_search, fetch_page, open_url, write_file, read_file, click, type_text, press_key. Use it to research, browse, run code and create files in /home/user. The user can watch it live in the Computer panel, which also has a Files tab listing what you create and a Preview tab that shows web pages you build (save them as .html files). After using tools, summarise what you found or did."
       : "You do not currently have a computer. If asked to browse the web or run code, explain that the user can connect an E2B API key in Settings to give you one.",
   ]
     .filter(Boolean)

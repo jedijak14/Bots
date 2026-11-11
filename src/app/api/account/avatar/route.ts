@@ -29,3 +29,15 @@ export async function POST(req: Request) {
     return handleError(e);
   }
 }
+
+export async function DELETE() {
+  try {
+    const user = await requireUser();
+    const [current] = await db.select({ avatarUrl: users.avatarUrl }).from(users).where(eq(users.id, user.id)).limit(1);
+    await db.update(users).set({ avatarUrl: null }).where(eq(users.id, user.id));
+    if (current?.avatarUrl) await del(current.avatarUrl).catch(() => undefined);
+    return Response.json({ avatarUrl: null });
+  } catch (e) {
+    return handleError(e);
+  }
+}

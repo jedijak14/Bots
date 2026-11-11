@@ -20,5 +20,7 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
     await insertGreeting(user.id, bot.id, bot.name);
     messages = await listMessages(user.id, bot.id);
   }
-  return <ChatView key={bot.id} botId={bot.id} initialMessages={messages} initialPrivacyMode={!!activePrivacy} />;
+  // Keyed on the first message too, so clearing a conversation (which starts a
+  // new one with a fresh greeting) remounts the chat on the next refresh.
+  return <ChatView key={`${bot.id}:${messages[0]?.id ?? ""}`} botId={bot.id} initialMessages={messages} initialPrivacyMode={!!activePrivacy} />;
 }

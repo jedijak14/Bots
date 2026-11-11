@@ -1,421 +1,302 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Icon, Spinner } from "../icons";
-import { btnGhost, cx } from "../ui";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import type { BotDTO } from "@/lib/bots";
+import { Icon } from "../icons";
+import { Menu, placeMenu, type MenuPosition } from "../Menu";
+import { useTooltip } from "../Tooltip";
+import { cx } from "../ui";
+import { ComputerFiles } from "./ComputerFiles";
+import { ComputerPreview } from "./ComputerPreview";
+import { ComputerScreen } from "./ComputerScreen";
+import { useComputer, type ComputerPhase } from "./useComputer";
 
-type Status = "ready" | "starting" | "working" | "error";
-type Body = Record<string, unknown> & { action: string };
+export type ComputerTab = "screen" | "files" | "preview";
 
-const SCREEN_W = 1024;
-const SCREEN_H = 768;
+const TABS: { id: ComputerTab; label: string }[] = [
+  { id: "screen", label: "Screen" },
+  { id: "files", label: "Files" },
+  { id: "preview", label: "Preview" },
+];
 
+const WIDTH_KEY = "bots.computer-panel-width";
+const MIN_WIDTH = 360;
+/** Room always left for the conversation next to the panel. */
+const MIN_CHAT = 380;
+const DEFAULT_WIDTH = "clamp(380px, 46%, 680px)";
+
+function storedWidth(): number | null {
+  try {
+    const n = Number(window.localStorage.getItem(WIDTH_KEY));
+    return Number.isFinite(n) && n >= MIN_WIDTH ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The bot's computer, beside the conversation: its screen, its files and a
+ * preview of pages it has built. One panel, three tabs, and as few controls as
+ * the job needs.
+ */
 export function ComputerPanel({
-  botId,
+  bot,
   hasE2b,
-  mode,
+  tab,
+  onTab,
   agentBusy,
+  activity,
   externalShot,
   expanded,
   onToggleExpand,
   onClose,
   onOpenSettings,
+  onPhase,
+  onError,
   privateMode = false,
 }: {
-  botId: string;
+  bot: Pick<BotDTO, "id" | "name" | "shape" | "color">;
   hasE2b: boolean;
   privateMode?: boolean;
-  mode: "computer" | "files" | "preview";
+  tab: ComputerTab;
+  onTab: (t: ComputerTab) => void;
   agentBusy: boolean;
+  /** What the bot is doing right now, shown above the screen. */
+  activity: string | null;
   externalShot: { n: number; data: string } | null;
   expanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
   onOpenSettings: () => void;
+  onPhase: (phase: ComputerPhase) => void;
+  onError: (message: string) => void;
 }) {
-  const [image, setImage] = useState<string | null>(null);
-  const [active, setActive] = useState(false);
-  const [status, setStatus] = useState<Status>("ready");
-  const [error, setError] = useState<string | null>(null);
   const [control, setControl] = useState(false);
-  const [addr, setAddr] = useState("");
-  const [typed, setTyped] = useState("");
-  const [ripple, setRipple] = useState<{ x: number; y: number; k: number } | null>(null);
-  const [filesTick, setFilesTick] = useState(0);
-  const inflight = useRef(false);
-  const imgRef = useRef<HTMLDivElement>(null);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [width, setWidth] = useState<number | null>(storedWidth);
+  const [menu, setMenu] = useState<{ position: MenuPosition; trigger: HTMLElement } | null>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const drag = useRef<{ startX: number; startW: number; max: number } | null>(null);
+  const tip = useTooltip();
 
-  const call = useCallback(
-    async (body: Body, label: Status = "working") => {
-      const quiet = body.action === "screenshot";
-      if (quiet && inflight.current) return;
-      inflight.current = true;
-      if (!quiet) setStatus(label);
-      try {
-        const res = await fetch(privateMode ? "/api/privacy/computer" : `/api/bots/${botId}/computer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || "The computer isn't responding.");
-        setActive(!!j.active);
-        if (j.image) setImage(j.image);
-        setStatus("ready");
-        setError(null);
-      } catch (e) {
-        if (!quiet) {
-          setStatus("error");
-          setError(e instanceof Error ? e.message : "The computer isn't responding.");
-        }
-      } finally {
-        inflight.current = false;
-      }
-    },
-    [botId, privateMode],
-  );
+  const computer = useComputer({
+    botId: bot.id,
+    enabled: hasE2b,
+    watching: tab === "screen",
+    inControl: control,
+    agentBusy,
+    externalShot,
+    onActionError: onError,
+    privateMode,
+  });
+  const { phase } = computer;
 
-  // initial look + gentle polling while the panel is open
+  // The person only holds the controls while the screen is live and the bot is idle.
+  if (control && (agentBusy || phase !== "on" || tab !== "screen")) setControl(false);
+
   useEffect(() => {
-    if (!hasE2b || mode !== "computer") return;
-    const initial = window.setTimeout(() => void call({ action: "screenshot" }), 0);
-    const t = setInterval(() => {
-      if (!document.hidden && !agentBusy) call({ action: "screenshot" });
-    }, 3000);
-    return () => {
-      window.clearTimeout(initial);
-      clearInterval(t);
+    onPhase(phase);
+  }, [phase, onPhase]);
+
+  // Esc leaves the full view, unless the person is driving (then Esc belongs to the computer) or a dialog is open.
+  useEffect(() => {
+    if (!expanded || control) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]')) return;
+      onToggleExpand();
     };
-  }, [hasE2b, mode, agentBusy, call]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, control, onToggleExpand]);
 
-  // screenshots pushed from the agent while it works
-  useEffect(() => {
-    if (!externalShot) return;
-    // The agent stream is an external source that must update the interactive panel.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setImage(externalShot.data);
-    setActive(true);
-    setFilesTick((n) => n + 1);
-  }, [externalShot]);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
-  const busy = status === "starting" || status === "working";
+  const selectTab = (t: ComputerTab) => {
+    tip.hide();
+    onTab(t);
+  };
 
-  function navigate() {
-    if (!addr.trim() || busy) return;
-    call({ action: "navigate", url: addr }, active ? "working" : "starting");
-  }
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (next === -1 || (e.key.startsWith("Arrow") && (next < 0 || next >= TABS.length))) return;
+    e.preventDefault();
+    onTab(TABS[next].id);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  };
 
-  function onScreenClick(e: React.MouseEvent) {
-    if (!control || busy || !imgRef.current) return;
-    const r = imgRef.current.getBoundingClientRect();
-    const fx = (e.clientX - r.left) / r.width;
-    const fy = (e.clientY - r.top) / r.height;
-    setRipple({ x: fx * 100, y: fy * 100, k: Date.now() });
-    call({ action: "click", x: fx * SCREEN_W, y: fy * SCREEN_H });
-  }
+  /* ---- resizing: drag the left edge, or use the arrow keys on it ---- */
+  const limit = () => Math.max(MIN_WIDTH, (asideRef.current?.parentElement?.clientWidth ?? 1200) - MIN_CHAT);
+  const clampWidth = (w: number, max: number) => Math.round(Math.max(MIN_WIDTH, Math.min(max, w)));
+  const saveWidth = (w: number | null) => {
+    try {
+      if (w === null) window.localStorage.removeItem(WIDTH_KEY);
+      else window.localStorage.setItem(WIDTH_KEY, String(w));
+    } catch {
+      /* private mode: the width simply isn't remembered */
+    }
+  };
 
-  function onWheel(e: React.WheelEvent) {
-    if (!control) return;
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    const dir = e.deltaY > 0 ? "down" : "up";
-    scrollTimer.current = setTimeout(() => call({ action: "scroll", direction: dir }), 120);
-  }
+  const onResizeDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !asideRef.current) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startX: e.clientX, startW: asideRef.current.getBoundingClientRect().width, max: limit() };
+  };
+  const onResizeMove = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (d) setWidth(clampWidth(d.startW + (d.startX - e.clientX), d.max));
+  };
+  const onResizeUp = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    drag.current = null;
+    saveWidth(clampWidth(d.startW + (d.startX - e.clientX), d.max));
+  };
+  const onResizeKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const now = asideRef.current?.getBoundingClientRect().width ?? MIN_WIDTH;
+    const next = clampWidth(now + (e.key === "ArrowLeft" ? 32 : -32), limit());
+    setWidth(next);
+    saveWidth(next);
+  };
+  const resetWidth = () => {
+    setWidth(null);
+    saveWidth(null);
+  };
+
+  const headBtn = "grid size-8 shrink-0 place-items-center rounded-full text-neutral-400 transition hover:bg-white/[0.07] hover:text-white";
+  const filesTick = `${externalShot?.n ?? 0}:${agentBusy ? 1 : 0}:${phase === "on" ? 1 : 0}`;
+  const pagesTick = `${agentBusy ? 1 : 0}:${phase === "on" ? 1 : 0}`;
+  const waking = phase === "waking";
 
   return (
     <aside
+      ref={asideRef}
+      id="computer-panel"
+      aria-label={`${bot.name}'s computer`}
+      style={{ "--panel-w": width ? `min(${width}px, calc(100% - ${MIN_CHAT}px))` : DEFAULT_WIDTH } as React.CSSProperties}
       className={cx(
-        "flex min-h-0 flex-col border-l border-white/[0.06] bg-[#0b0b0b]",
-        expanded ? "absolute inset-0 top-[68px] z-20 w-full" : "w-[min(420px,100%)] shrink-0 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:top-[68px] max-lg:shadow-[-20px_0_60px_rgba(0,0,0,0.6)]",
+        "flex min-h-0 flex-col bg-[#0b0b0b]",
+        expanded ? "absolute inset-0 z-30" : "relative shrink-0 border-l border-white/[0.06] max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:border-l-0 lg:w-[var(--panel-w)] lg:min-w-[360px]",
       )}
-      aria-label={mode === "computer" ? "Computer" : mode === "preview" ? "Website preview" : "Files"}
     >
-      <div className="flex shrink-0 items-center justify-between px-5 pb-3.5 pt-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className={cx("size-2 rounded-full", mode === "computer" && active ? "bg-emerald-400" : "bg-neutral-600")} aria-hidden="true" />
-          <h2 className="truncate text-[16px] font-semibold tracking-tight">{mode === "computer" ? "Computer" : mode === "preview" ? "Preview" : "Files"}</h2>
-          {mode === "computer" && <span className="rounded-full border border-white/[0.08] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-neutral-500">Live</span>}
+      {!expanded && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the computer panel"
+          tabIndex={0}
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+          onPointerCancel={onResizeUp}
+          onKeyDown={onResizeKey}
+          onDoubleClick={resetWidth}
+          className="group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize touch-none outline-none max-lg:hidden"
+        >
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-white/25 group-focus-visible:bg-[#3b8cff] group-active:bg-[#3b8cff]" />
         </div>
-        <div className="flex items-center gap-1 text-neutral-400">
-          <button
-            onClick={() => (mode === "computer" ? call({ action: "screenshot" }) : setFilesTick((n) => n + 1))}
-            className="rounded-lg px-2.5 py-1.5 text-[12.5px] transition hover:bg-white/[0.07] hover:text-white"
-          >
-            Refresh
-          </button>
-          <button onClick={onToggleExpand} aria-label={expanded ? "Collapse" : "Expand"} className="grid size-8 place-items-center rounded-lg transition hover:bg-white/[0.07] hover:text-white">
-            <Icon name="expand" size={16} />
-          </button>
-          <button onClick={onClose} aria-label="Close panel" className="grid size-8 place-items-center rounded-lg transition hover:bg-white/[0.07] hover:text-white">
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="h-px shrink-0 bg-white/[0.06]" />
+      )}
 
-      {!hasE2b ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-          <div className="grid size-12 place-items-center rounded-full bg-[#171717] text-neutral-400">
-            <Icon name="expand" size={20} />
-          </div>
-          <h3 className="text-[15px] font-semibold">Give your bots a computer</h3>
-          <p className="text-[13px] leading-relaxed text-neutral-500">Add your E2B API key in Settings and every bot gets its own cloud desktop to browse, research and run code.</p>
-          <button onClick={onOpenSettings} className={btnGhost}>
-            Add E2B key
-          </button>
-        </div>
-      ) : mode === "files" || mode === "preview" ? (
-        <FilesView botId={botId} tick={filesTick} preview={mode === "preview"} />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setControl((c) => !c)}
-              className={cx("shrink-0 rounded-full px-4 py-2.5 text-[13px] font-medium transition active:scale-95", control ? "bg-[#2b7fff] text-white" : "bg-[#1a1a1a] text-white hover:bg-[#232323]")}
-            >
-              {control ? "Hand back" : "Take control"}
-            </button>
-            <p className="text-[12px] leading-snug text-neutral-500">
-              {control ? "You're in control. Click the screen, scroll, or type below." : "Live view · Take control to use the mouse and keyboard."}
-            </p>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-white/[0.06] bg-[#101010] p-3">
-            <div className="mb-2 flex items-center justify-between text-[11px] text-neutral-500">
-              <span>Browser session</span>
-              <span className={cx("flex items-center gap-1.5", active ? "text-emerald-400" : "text-neutral-500")}><span className="size-1.5 rounded-full bg-current" />{active ? "Connected" : "Standby"}</span>
-            </div>
-            <div className="flex items-center gap-2">
-            <button
-              disabled={busy}
-              onClick={() => call({ action: "restart" }, active ? "working" : "starting")}
-              className="rounded-full bg-white px-4 py-2.5 text-[13px] font-semibold text-black transition hover:bg-neutral-200 active:scale-95 disabled:opacity-50"
-            >
-              Restart browser
-            </button>
-            <span className={cx("flex items-center gap-2 text-[12.5px]", status === "error" ? "text-[#ff6b7a]" : "text-neutral-400")}>
-              {busy && <Spinner size={12} />}
-              {status === "ready" ? (active ? "Ready" : "Ready") : status === "starting" ? "Starting…" : status === "working" ? "Working…" : "Error"}
-            </span>
-            </div>
-          </div>
-
-          <form
-            className="mt-4 flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              navigate();
-            }}
-          >
-            <input
-              value={addr}
-              onChange={(e) => setAddr(e.target.value)}
-              placeholder="Search or enter a web address"
-              aria-label="Address"
-              className="min-w-0 flex-1 rounded-xl border border-white/[0.06] bg-[#111] px-3.5 py-3 text-[13px] outline-none placeholder:text-neutral-500 focus:border-white/20"
-            />
-            <button type="submit" disabled={busy || !addr.trim()} className="rounded-xl bg-[#171717] px-3.5 text-[13px] font-semibold transition hover:bg-[#222] disabled:opacity-40">
-              Go
-            </button>
-          </form>
-
-          <div
-            ref={imgRef}
-            onClick={onScreenClick}
-            onWheel={onWheel}
-            className={cx(
-              "relative mt-4 aspect-[4/3] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-[#050505]",
-              control && image && "cursor-crosshair ring-1 ring-[#2b7fff]/60",
-            )}
-          >
-            {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`data:image/png;base64,${image}`} alt={privateMode ? "Your private computer screen" : "Your bot's computer screen"} className="size-full select-none object-contain" draggable={false} />
-            ) : (
-              <div className="absolute inset-0 grid place-items-center px-6 text-center">
-                {busy ? (
-                  <div className="flex flex-col items-center gap-3 text-neutral-400">
-                    <Spinner size={22} />
-                    <p className="text-[12.5px]">{status === "starting" ? "Starting your computer… first boot takes a few seconds." : "Working…"}</p>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="mx-auto mb-3 size-4 rounded-full border-[3px] border-white/80" />
-                    <p className="text-[13px] font-semibold">Your computer is ready</p>
-                    <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-500">Ask your bot to browse, research, or work with files. You can also open a website using the address bar.</p>
-                    {!active && (
-                      <button onClick={() => call({ action: "start" }, "starting")} className="mt-4 rounded-full bg-[#1c1c1c] px-4 py-2 text-[12.5px] font-medium transition hover:bg-[#262626]">
-                        Start computer
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {image && busy && (
-              <div className="absolute right-2 top-2 rounded-full bg-black/70 p-1.5 text-white">
-                <Spinner size={14} />
-              </div>
-            )}
-            {ripple && (
-              <span
-                key={ripple.k}
-                className="pointer-events-none absolute size-8 rounded-full border-2 border-[#2b7fff] bg-[#2b7fff]/30"
-                style={{ left: `${ripple.x}%`, top: `${ripple.y}%`, animation: "click-ripple .6s ease-out forwards" }}
-              />
-            )}
-          </div>
-          <p className="mt-2 text-[11.5px] text-neutral-500">Your computer</p>
-
-          {error && <p className="mt-3 rounded-xl bg-[#2a1215] px-3.5 py-2.5 text-[12.5px] text-[#ff8b98]">{error}</p>}
-
-          <form
-            className="mt-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!typed || busy) return;
-              call({ action: "type", text: typed, enter: true });
-              setTyped("");
-            }}
-          >
-            <input
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              placeholder="Type into the browser"
-              aria-label="Type into the browser"
-              className="w-full rounded-xl border border-white/[0.06] bg-[#111] px-3.5 py-3 text-[13px] outline-none placeholder:text-neutral-500 focus:border-white/20"
-            />
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      <div className="flex h-[60px] shrink-0 items-center gap-2 pl-4 pr-3">
+        {!privateMode && (
+          <div role="tablist" aria-label="Computer" onKeyDown={onTabKey} className="flex items-center rounded-full bg-[#151515] p-[3px]">
+            {TABS.map((t) => (
               <button
+                key={t.id}
                 type="button"
-                disabled={!typed || busy}
-                onClick={() => {
-                  call({ action: "type", text: typed });
-                  setTyped("");
-                }}
-                className="rounded-xl bg-[#171717] px-4 py-2.5 text-[13px] font-medium transition hover:bg-[#222] disabled:opacity-40"
+                role="tab"
+                id={`computer-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls="computer-tabpanel"
+                tabIndex={tab === t.id ? 0 : -1}
+                onClick={() => selectTab(t.id)}
+                className={cx("h-[30px] rounded-full px-3.5 text-[13px] transition-colors", tab === t.id ? "bg-[#2a2a2a] font-medium text-white" : "text-neutral-400 hover:text-white")}
               >
-                Type
+                {t.label}
               </button>
-              {["Enter", "Tab", "Escape", "BackSpace"].map((k) => (
-                <button key={k} type="button" disabled={busy || !active} onClick={() => call({ action: "key", key: k })} className="rounded-xl px-2.5 py-2 text-[12px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-30">
-                  {k === "BackSpace" ? "Backspace" : k}
-                </button>
-              ))}
-            </div>
-          </form>
-          <p className="mt-4 text-[12px] leading-relaxed text-neutral-500">
-            {privateMode ? "This computer is isolated from your bot and will be destroyed when you press I'm Done." : <>Take control to click and type yourself, then hand it back to your bot. Files your bot creates show up under <b className="font-medium text-neutral-300">Files</b>.</>}
-          </p>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-type Entry = { name: string; path: string; type: "file" | "dir"; size: number };
-
-function FilesView({ botId, tick, preview }: { botId: string; tick: number; preview: boolean }) {
-  const [path, setPath] = useState("/home/user");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [active, setActive] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let dead = false;
-    fetch(`/api/bots/${botId}/files?path=${encodeURIComponent(path)}`)
-      .then(async (r) => ({ ok: r.ok, j: await r.json() }))
-      .then(({ ok, j }) => {
-        if (dead) return;
-        if (!ok) throw new Error(j.error || "Couldn't load files.");
-        setEntries(j.entries ?? []);
-        setActive(j.active !== false);
-        setError(null);
-      })
-      .catch((e) => !dead && setError(e instanceof Error ? e.message : "Couldn't load files."))
-      .finally(() => !dead && setLoading(false));
-    return () => {
-      dead = true;
-    };
-  }, [botId, path, tick]);
-
-  const parts = path.split("/").filter(Boolean);
-  const navigateTo = (nextPath: string) => { setLoading(true); setPath(nextPath); };
-  const fmt = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : n > 1000 ? `${Math.round(n / 1000)} KB` : `${n} B`);
-
-  const selectedUrl = selected ? `/api/bots/${botId}/files?download=1&path=${encodeURIComponent(selected)}` : null;
-
-  return (
-    <div className={cx("min-h-0 flex-1 overflow-hidden", preview ? "flex flex-col" : "overflow-y-auto px-4 py-4")}>
-      <div className="mb-3 flex flex-wrap items-center gap-1 px-1 text-[12.5px] text-neutral-400">
-        <button onClick={() => navigateTo("/home/user")} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
-          ~
-        </button>
-        {parts.slice(2).map((p, i) => (
-          <span key={i} className="flex items-center gap-1">
-            <span className="text-neutral-600">/</span>
-            <button onClick={() => navigateTo("/" + parts.slice(0, i + 3).join("/"))} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
-              {p}
-            </button>
-          </span>
-        ))}
-      </div>
-      {loading && !entries.length ? (
-        <div className="grid place-items-center py-10 text-neutral-500">
-          <Spinner />
-        </div>
-      ) : error ? (
-        <p className="rounded-xl bg-[#2a1215] px-3.5 py-2.5 text-[12.5px] text-[#ff8b98]">{error}</p>
-      ) : !active ? (
-        <p className="px-2 py-10 text-center text-[13px] text-neutral-500">Your computer isn&apos;t running yet. Ask your bot to do something and it will start.</p>
-      ) : !entries.length ? (
-        <p className="px-2 py-10 text-center text-[13px] text-neutral-500">No files here yet. Ask your bot to create something.</p>
-      ) : (
-        <div className={cx(preview && "flex min-h-0 flex-1 flex-col")}>
-          <ul className={cx("space-y-0.5", preview && "min-h-0 overflow-y-auto px-4") }>
-            {entries.map((e) => (
-              <li key={e.path}>
-                {e.type === "dir" ? (
-                  <button onClick={() => navigateTo(e.path)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]">
-                    <Icon name="folder" size={17} className="text-[#6aa9ff]" />
-                    <span className="truncate text-[13.5px]">{e.name}</span>
-                  </button>
-                ) : preview ? (
-                  <button onClick={() => setSelected(e.path)} className={cx("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]", selected === e.path && "bg-white/[0.08]")}>
-                    <Icon name="file" size={17} className="text-neutral-400" />
-                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{e.name}</span>
-                    <span className="text-[11.5px] text-neutral-500">{fmt(e.size)}</span>
-                  </button>
-                ) : (
-                  <a href={`/api/bots/${botId}/files?download=1&path=${encodeURIComponent(e.path)}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-white/[0.05]">
-                    <Icon name="file" size={17} className="text-neutral-400" />
-                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{e.name}</span>
-                    <span className="text-[11.5px] text-neutral-500">{fmt(e.size)}</span>
-                    <Icon name="download" size={14} className="text-neutral-500" />
-                  </a>
-                )}
-              </li>
             ))}
-          </ul>
-          {preview && (
-            <div className="mt-2 min-h-0 flex-1 border-t border-white/[0.06] bg-[#080808]">
-              {selectedUrl ? (
-                <>
-                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 text-[12px] text-neutral-400">
-                    <span className="truncate">{selected}</span>
-                    <a href={selectedUrl} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg px-2 py-1 hover:bg-white/[0.08] hover:text-white">Open in new tab</a>
-                  </div>
-                  <iframe title={`Preview of ${selected}`} src={selectedUrl} className="h-[min(420px,60vh)] w-full border-0 bg-white" />
-                </>
-              ) : (
-                <div className="grid h-full min-h-40 place-items-center px-8 text-center text-[13px] text-neutral-500">Select an HTML file to preview it here. Your bot can create a website in the workspace.</div>
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+        <div className="flex-1" />
+        {tab === "screen" && hasE2b && phase === "on" && (
+          <button
+            type="button"
+            aria-label="More"
+            aria-haspopup="menu"
+            aria-expanded={!!menu}
+            onClick={(e) => {
+              tip.hide();
+              if (menu) return setMenu(null);
+              setMenu({ position: placeMenu(e.currentTarget.getBoundingClientRect(), 2), trigger: e.currentTarget });
+            }}
+            className={cx(headBtn, menu && "bg-white/[0.07] text-white")}
+            {...tip.bind("More")}
+          >
+            <Icon name="dots" size={16} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            tip.hide();
+            onToggleExpand();
+          }}
+          aria-label={expanded ? "Exit full view" : "Full view"}
+          className={cx(headBtn, "max-lg:hidden")}
+          {...tip.bind(expanded ? "Exit full view" : "Full view", expanded && !control ? { hint: "Esc" } : {})}
+        >
+          <Icon name={expanded ? "collapse" : "maximize"} size={15} />
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close computer" className={headBtn} {...tip.bind("Close", { align: "end" })}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+
+      <div id="computer-tabpanel" role="tabpanel" aria-labelledby={`computer-tab-${tab}`} className="flex min-h-0 flex-1 flex-col">
+        {tab === "screen" || !hasE2b ? (
+          <ComputerScreen
+            bot={bot}
+            computer={computer}
+            hasE2b={hasE2b}
+            agentBusy={agentBusy}
+            activity={activity}
+            control={control}
+            onControl={setControl}
+            centered={expanded}
+            onOpenSettings={onOpenSettings}
+          />
+        ) : tab === "files" ? (
+          <ComputerFiles
+            bot={bot}
+            tick={filesTick}
+            waking={waking}
+            onWake={computer.wake}
+            onPreview={(p) => {
+              setPreviewPath(p);
+              onTab("preview");
+            }}
+          />
+        ) : (
+          <ComputerPreview bot={bot} tick={pagesTick} path={previewPath} onPath={setPreviewPath} waking={waking} onWake={computer.wake} />
+        )}
+      </div>
+
+      {menu && (
+        <Menu
+          label="Computer options"
+          position={menu.position}
+          trigger={menu.trigger}
+          onClose={closeMenu}
+          items={[
+            { label: "Refresh screen", icon: "refresh", onSelect: () => void computer.refresh() },
+            { label: "Restart browser", icon: "globe", disabled: agentBusy, onSelect: () => computer.act({ action: "restart" }) },
+          ]}
+        />
       )}
-    </div>
+      {tip.node}
+    </aside>
   );
 }

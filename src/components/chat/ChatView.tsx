@@ -10,9 +10,10 @@ import { BotAvatar } from "../BotAvatar";
 import { Icon } from "../icons";
 import { cx } from "../ui";
 import { Composer, type Attachment } from "./Composer";
-import { ComputerPanel } from "./ComputerPanel";
+import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
 import { AssistantBlock, UserBubble, type LiveStep } from "./Message";
 import { ModelPicker } from "./ModelPicker";
+import type { ComputerPhase } from "./useComputer";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
 type StreamEvent =
@@ -37,18 +38,17 @@ function formatWhen(iso: string): string {
   return `${d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" })} ${time}`;
 }
 
-const noSubscription = () => () => {};
-const isClient = () => true;
-const isServer = () => false;
-const readPrivacy = async () => {
-  const response = await fetch("/api/privacy", { cache: "no-store" });
+/** Tools that don't touch the bot's computer, so they shouldn't bring the Computer panel up. */
+const NO_COMPUTER = new Set(["ask_user", "get_current_time"]);
+
+const subscribeNothing = () => () => {};
+/** False during server rendering and hydration, true afterwards. */
+const useHydrated = () => useSyncExternalStore(subscribeNothing, () => true, () => false);
+const readPrivacy = async (url: string) => {
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error("Could not verify Privacy Mode.");
   return response.json() as Promise<{ status: "active" | "idle" }>;
 };
-
-function Pill({ children, active, onClick, dim }: { children: React.ReactNode; active?: boolean; onClick: () => void; dim?: boolean }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx("rounded-full border border-white/[0.05] px-3.5 py-2 text-[13px] transition active:scale-95", active ? "bg-[#262626] text-white" : "bg-[#141414] hover:bg-[#1b1b1b] hover:text-white", dim && !active ? "text-neutral-500" : !active && "text-neutral-200")}>{children}</button>;
-}
 
 function speak(markdown: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -60,6 +60,7 @@ function speak(markdown: string) {
 
 export function ChatView({ botId, initialMessages, initialPrivacyMode = false }: { botId: string; initialMessages: MessageDTO[]; initialPrivacyMode?: boolean }) {
   const app = useApp();
+  const { setWorking, toast } = app;
   const router = useRouter();
   const bot = app.bots.find((b) => b.id === botId);
   const { data: privacyState } = useSWR("/api/privacy", readPrivacy, { fallbackData: initialPrivacyMode ? { status: "active" as const } : undefined, revalidateOnFocus: true });
@@ -71,11 +72,13 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [panel, setPanel] = useState<null | "computer" | "files" | "preview">(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [tab, setTab] = useState<ComputerTab>("screen");
   const [expanded, setExpanded] = useState(false);
   const [shot, setShot] = useState<{ n: number; data: string } | null>(null);
+  const [computerOn, setComputerOn] = useState(!!bot?.hasSandbox);
   const [shareOpen, setShareOpen] = useState(false);
-  const mounted = useSyncExternalStore(noSubscription, isClient, isServer);
+  const mounted = useHydrated();
 
   const acc = useRef<Live>({ text: "", steps: [], choices: null });
   const abortRef = useRef<AbortController | null>(null);
@@ -84,16 +87,35 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const frame = useRef(0);
   const shareRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef(panel);
-  panelRef.current = panel;
+  /** Set when the person closes the panel mid-run, so the next step doesn't pop it back open. */
+  const panelDismissed = useRef(false);
 
   useEffect(() => {
     if (privacyActive) abortRef.current?.abort();
   }, [privacyActive]);
+
   useEffect(() => {
     if (!bot) router.replace("/");
   }, [bot, router]);
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      setWorking(null);
+    },
+    [setWorking],
+  );
+
+  const closePanel = useCallback(() => {
+    panelDismissed.current = true;
+    setPanelOpen(false);
+    setExpanded(false);
+  }, []);
+  const toggleExpanded = useCallback(() => setExpanded((e) => !e), []);
+  const onComputerPhase = useCallback((p: ComputerPhase) => {
+    if (p === "on") setComputerOn(true);
+    else if (p === "asleep") setComputerOn(false);
+  }, []);
+  const onComputerError = useCallback((message: string) => toast(message, "err"), [toast]);
 
   useEffect(() => {
     if (!shareOpen) return;
@@ -107,7 +129,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [messages, live, busy, error]);
+    // `mounted` is here because the timestamps appear after hydration and push the last message down.
+  }, [messages, live, busy, error, mounted]);
 
   const flush = useCallback(() => {
     if (frame.current) return;
@@ -133,6 +156,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       acc.current = { text: "", steps: [], choices: null };
       setLive({ text: "", steps: [], choices: null });
       setBusy(true);
+      setWorking({ id: botId, label: "Thinking…" });
+      panelDismissed.current = false;
 
       const ac = new AbortController();
       abortRef.current = ac;
@@ -149,6 +174,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         if (privacyActive) {
           setLive(null);
           setBusy(false);
+          setWorking(null);
           return;
         }
         if (a.text.trim() || a.steps.length || a.choices) {
@@ -167,6 +193,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         }
         setLive(null);
         setBusy(false);
+        setWorking(null);
       };
 
       const handle = (ev: StreamEvent) => {
@@ -176,11 +203,14 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             break;
           case "text":
             acc.current.text += ev.d;
+            setWorking({ id: botId, label: "Writing…" });
             flush();
             break;
           case "step":
             acc.current.steps.push({ id: ev.id, name: ev.name, label: ev.label, status: "running" });
-            if (ev.name !== "ask_user" && !panelRef.current) setPanel("computer");
+            setWorking({ id: botId, label: ev.label });
+            // Bring the computer into view the first time the bot reaches for it in this run.
+            if (!NO_COMPUTER.has(ev.name) && !panelDismissed.current) setPanelOpen(true);
             flush();
             break;
           case "step_done": {
@@ -189,11 +219,13 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               s.status = ev.ok ? "done" : "error";
               s.output = ev.output;
             }
+            setWorking({ id: botId, label: "Thinking…" });
             flush();
             break;
           }
           case "shot":
             setShot({ n: Date.now(), data: ev.data });
+            setComputerOn(true);
             break;
           case "choices":
             acc.current.choices = { question: ev.question, options: ev.options };
@@ -223,6 +255,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           finalized = true;
           setLive(null);
           setBusy(false);
+          setWorking(null);
           return;
         }
         const reader = res.body.getReader();
@@ -250,7 +283,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         finalize(null);
       }
     },
-    [app, bot, botId, busy, flush, privacyActive],
+    [app, bot, botId, busy, flush, privacyActive, setWorking],
   );
 
   const stop = () => abortRef.current?.abort();
@@ -275,6 +308,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const awaiting = lastMsg?.role === "assistant" && !!lastMsg.choices && !busy;
   const placeholder = awaiting ? "Type your answer, or talk about something else" : `Message ${bot.name}`;
 
+  const runningStep = busy ? (live?.steps.filter((x) => x.status === "running").pop() ?? null) : null;
+  const usingComputer = !!runningStep && !NO_COMPUTER.has(runningStep.name);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <header className="relative z-10 flex h-[68px] shrink-0 items-center gap-2 px-4">
@@ -291,19 +327,21 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         </button>
         <div className="flex-1" />
         <ModelPicker botId={bot.id} />
-        <span className="hidden sm:block">
-          <Pill dim active={panel === "files"} onClick={() => setPanel(panel === "files" ? null : "files")}>
-            Files
-          </Pill>
-        </span>
-        <span className="hidden sm:block">
-          <Pill dim active={panel === "preview"} onClick={() => setPanel(panel === "preview" ? null : "preview")}>
-            Preview
-          </Pill>
-        </span>
-        <Pill active={panel === "computer"} onClick={() => setPanel(panel === "computer" ? null : "computer")}>
-          Computer
-        </Pill>
+        <button
+          type="button"
+          onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}
+          aria-pressed={panelOpen}
+          aria-label={`Computer${usingComputer ? `, ${bot.name} is using it` : computerOn ? ", on" : ""}`}
+          title={usingComputer ? `${bot.name} is using its computer` : computerOn ? `${bot.name}'s computer is on` : `${bot.name}'s computer`}
+          className={cx(
+            "flex shrink-0 items-center gap-2 rounded-full border border-white/[0.05] px-3.5 py-2 text-[13px] transition active:scale-95",
+            panelOpen ? "bg-[#262626] text-white" : "bg-[#141414] text-neutral-200 hover:bg-[#1b1b1b] hover:text-white",
+          )}
+        >
+          {/* The icon lights up while the computer is on, and pulses while the bot is using it. */}
+          <Icon name="monitor" size={15} className={cx("transition-colors", computerOn || usingComputer ? "text-emerald-400" : "text-neutral-500", usingComputer && "soft-pulse")} />
+          <span className="max-sm:sr-only">Computer</span>
+        </button>
         <div ref={shareRef} className="relative hidden sm:block">
           <button onClick={() => setShareOpen((s) => !s)} className="rounded-full bg-[#171717] px-4 py-2 text-[14px] font-medium transition hover:bg-[#202020] active:scale-95">
             Share
@@ -339,7 +377,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1">
+      {/* Not `relative` on purpose: the computer panel's full view is positioned against the whole chat, header included. */}
+      <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
           <div
             ref={scrollRef}
@@ -440,21 +479,21 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           </div>
         </section>
 
-        {panel && (
+        {panelOpen && (
           <ComputerPanel
-            key={panel}
-            botId={bot.id}
+            bot={bot}
             hasE2b={app.settings.hasE2bKey}
-            mode={panel}
+            tab={tab}
+            onTab={setTab}
             agentBusy={busy}
+            activity={usingComputer ? runningStep.label : null}
             externalShot={shot}
             expanded={expanded}
-            onToggleExpand={() => setExpanded((e) => !e)}
-            onClose={() => {
-              setPanel(null);
-              setExpanded(false);
-            }}
+            onToggleExpand={toggleExpanded}
+            onClose={closePanel}
             onOpenSettings={() => app.openSettings("computer")}
+            onPhase={onComputerPhase}
+            onError={onComputerError}
           />
         )}
       </div>

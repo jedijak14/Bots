@@ -5,16 +5,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
 import { signOutAction } from "@/lib/auth-actions";
 import { useApp, type SettingsTab } from "./AppProvider";
-import { Icon, Spinner } from "./icons";
+import { Icon, Spinner, type IconName } from "./icons";
 import { btnDanger, btnGhost, btnWhite, cx, inputCls, Modal, Toggle } from "./ui";
 import { PrivacyTab, SkillsTab } from "./SecureSettingsTabs";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { HistoryPanel } from "./HistoryPanel";
 
-const TABS: { id: SettingsTab; label: string; icon: string }[] = [
+const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
   { id: "ai", label: "AI Provider", icon: "grid" },
-  { id: "computer", label: "Computer", icon: "expand" },
+  { id: "computer", label: "Computer", icon: "monitor" },
   { id: "preferences", label: "Preferences", icon: "gear" },
   { id: "account", label: "Account", icon: "pencil" },
   { id: "data", label: "Data", icon: "download" },
@@ -394,7 +394,7 @@ function AccountTab() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   async function uploadAvatar(file: File) {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -420,21 +420,19 @@ function AccountTab() {
     }
   }
 
-  async function generateAvatar() {
-    const prompt = window.prompt("Describe the profile picture to generate:", "A friendly abstract blue fox");
-    if (!prompt?.trim()) return;
-    setGenerating(true);
+  async function removeAvatar() {
+    setRemoving(true);
     setErr(null);
     try {
-      const res = await fetch("/api/account/avatar/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't generate that image.");
-      app.setUserAvatar(json.avatarUrl);
-      app.toast("Generated profile picture updated.");
+      const res = await fetch("/api/account/avatar", { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Couldn't remove your picture.");
+      app.setUserAvatar(null);
+      app.toast("Profile picture removed.");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't generate that image.");
+      setErr(e instanceof Error ? e.message : "Couldn't remove your picture.");
     } finally {
-      setGenerating(false);
+      setRemoving(false);
     }
   }
 
@@ -465,19 +463,21 @@ function AccountTab() {
   return (
     <Section title="Account">
       <div>
-        <Label>Profile picture</Label>
-        <div className="flex items-center gap-3">
+        <Label hint="JPG, PNG, WebP or HEIC, up to 5 MB.">Profile picture</Label>
+        <div className="flex flex-wrap items-center gap-3">
           <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#3a3f66] to-[#1d2038] text-lg font-semibold">
-            {app.user.avatarUrl ? <img src={app.user.avatarUrl} alt="Your profile" className="size-full object-cover" /> : app.user.displayName.charAt(0).toUpperCase()}
+            {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded blob of unknown size */}
+            {app.user.avatarUrl ? <img src={app.user.avatarUrl} alt="Your profile" className="size-full object-cover" /> : (app.user.displayName || app.user.email).charAt(0).toUpperCase()}
           </div>
-          <label className={cx(btnGhost, "cursor-pointer", (uploading || generating) && "pointer-events-none opacity-50")}>
-            {uploading ? "Uploading…" : "Choose image"}
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" className="sr-only" disabled={uploading || generating} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadAvatar(file); e.currentTarget.value = ""; }} />
+          <label className={cx(btnGhost, "cursor-pointer focus-within:ring-2 focus-within:ring-white/40", (uploading || removing) && "pointer-events-none opacity-50")}>
+            {uploading ? "Uploading…" : app.user.avatarUrl ? "Change picture" : "Choose picture"}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" className="sr-only" disabled={uploading || removing} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadAvatar(file); e.currentTarget.value = ""; }} />
           </label>
-          <button type="button" onClick={() => void generateAvatar()} disabled={uploading || generating} className={btnGhost}>
-            {generating ? "Generating…" : "Generate with code"}
-          </button>
-          <span className="text-[12px] text-neutral-500">JPG, PNG, WebP, HEIC up to 5 MB</span>
+          {app.user.avatarUrl && (
+            <button type="button" onClick={() => void removeAvatar()} disabled={uploading || removing} className="rounded-full px-3 py-2 text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40">
+              {removing ? "Removing…" : "Remove"}
+            </button>
+          )}
         </div>
       </div>
       <div>
