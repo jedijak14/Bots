@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes, type MouseEvent, type ReactNode } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { BotDTO } from "@/lib/bots";
@@ -11,16 +12,23 @@ import { BotDialog } from "./BotDialog";
 import { Menu, placeMenu, type MenuItem, type MenuPosition } from "./Menu";
 import { SearchDialog } from "./SearchDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { PrivacyModeGate } from "./PrivacyModeGate";
 import { useTooltip } from "./Tooltip";
 import { Icon } from "./icons";
 import { btnDanger, btnGhost, btnWhite, cx, Modal } from "./ui";
 
 const isDesktop = () => window.matchMedia("(min-width: 768px)").matches;
 
-export function AppShell({ children, initialCollapsed = false }: { children: ReactNode; initialCollapsed?: boolean }) {
+export function AppShell({ children, initialCollapsed = false, initialPrivacyMode = false, privacyBotId = null }: { children: ReactNode; initialCollapsed?: boolean; initialPrivacyMode?: boolean; privacyBotId?: string | null }) {
   const app = useApp();
   const { setSearchOpen, sidebarOpen, setSidebarOpen } = app;
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const { data: privacy } = useSWR<{ status: "active" | "idle" }>("/api/privacy", async (url: string) => {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not verify Privacy Mode.");
+    return response.json();
+  }, { fallbackData: initialPrivacyMode ? { status: "active" } : undefined, revalidateOnFocus: true });
+  const privacyActive = privacy?.status === "active";
 
   const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
@@ -51,7 +59,8 @@ export function AppShell({ children, initialCollapsed = false }: { children: Rea
   }, [setSearchOpen, setSidebarOpen, sidebarOpen, toggleCollapsed]);
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-[#0a0a0a]">
+    <>
+    <div className="relative flex h-dvh overflow-hidden bg-[#0a0a0a]" inert={privacyActive} aria-hidden={privacyActive}>
       {/* mobile sidebar scrim */}
       <div
         aria-hidden="true"
@@ -81,6 +90,8 @@ export function AppShell({ children, initialCollapsed = false }: { children: Rea
         ))}
       </div>
     </div>
+    <PrivacyModeGate initialActive={initialPrivacyMode} initialBotId={privacyBotId} />
+    </>
   );
 }
 
@@ -158,15 +169,15 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     tip.bind(label, collapsed ? { hint, side: "right", when: isDesktop } : { hint, side: "bottom", align, when: isDesktop });
 
   async function clearChat(b: BotDTO) {
-    if (!(await app.confirm({ title: `Clear chat with ${b.name}?`, body: "All messages in this conversation will be deleted.", confirmLabel: "Clear", danger: true }))) return;
+    if (!(await app.confirm({ title: `Archive chat with ${b.name}?`, body: "This starts a fresh conversation, but safely saves the current chat to History.", confirmLabel: "Archive & clear", danger: true }))) return;
     const res = await fetch(`/api/bots/${b.id}/messages`, { method: "DELETE" }).catch(() => null);
     if (!res?.ok) {
-      app.toast("Couldn't clear that conversation.", "err");
+      app.toast("Couldn't archive that conversation.", "err");
       return;
     }
-    const j = (await res.json().catch(() => ({}))) as { preview?: string };
+    const j = (await res.json().catch(() => ({}))) as { archived?: boolean; preview?: string };
     if (j.preview) app.setPreview(b.id, j.preview);
-    app.toast("Conversation cleared.");
+    app.toast(j.archived ? "Conversation archived. A fresh chat is ready." : "A fresh chat is ready.");
     if (b.id === activeId) router.refresh();
   }
 

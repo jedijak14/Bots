@@ -7,7 +7,7 @@ import type { PublicSettings } from "@/lib/settings";
 import { PrefsContext } from "./prefs";
 
 export type AppUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
-export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data";
+export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data" | "connections" | "skills" | "privacy" | "artifacts" | "history";
 type ConfirmOpts = { title: string; body: string; confirmLabel?: string; danger?: boolean };
 type Toast = { id: number; msg: string; kind: "ok" | "err" };
 

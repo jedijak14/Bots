@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import type { ChoicesRecord } from "@/db/schema";
 import type { MessageDTO } from "@/lib/bots";
@@ -43,6 +44,11 @@ const NO_COMPUTER = new Set(["ask_user", "get_current_time"]);
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
 const useHydrated = () => useSyncExternalStore(subscribeNothing, () => true, () => false);
+const readPrivacy = async (url: string) => {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error("Could not verify Privacy Mode.");
+  return response.json() as Promise<{ status: "active" | "idle" }>;
+};
 
 function speak(markdown: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -52,11 +58,13 @@ function speak(markdown: string) {
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.slice(0, 1500)));
 }
 
-export function ChatView({ botId, initialMessages }: { botId: string; initialMessages: MessageDTO[] }) {
+export function ChatView({ botId, initialMessages, initialPrivacyMode = false }: { botId: string; initialMessages: MessageDTO[]; initialPrivacyMode?: boolean }) {
   const app = useApp();
   const { setWorking, toast } = app;
   const router = useRouter();
   const bot = app.bots.find((b) => b.id === botId);
+  const { data: privacyState } = useSWR("/api/privacy", readPrivacy, { fallbackData: initialPrivacyMode ? { status: "active" as const } : undefined, revalidateOnFocus: true });
+  const privacyActive = privacyState?.status === "active" || (initialPrivacyMode && privacyState?.status !== "idle");
 
   const [messages, setMessages] = useState<MessageDTO[]>(initialMessages);
   const [live, setLive] = useState<Live | null>(null);
@@ -81,6 +89,10 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
   const shareRef = useRef<HTMLDivElement>(null);
   /** Set when the person closes the panel mid-run, so the next step doesn't pop it back open. */
   const panelDismissed = useRef(false);
+
+  useEffect(() => {
+    if (privacyActive) abortRef.current?.abort();
+  }, [privacyActive]);
 
   useEffect(() => {
     if (!bot) router.replace("/");
@@ -130,7 +142,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
 
   const send = useCallback(
     async (raw: string, atts: Attachment[] = []) => {
-      if (busy || !bot) return;
+      if (busy || !bot || privacyActive) return;
       let content = raw.trim();
       for (const a of atts) content += `\n\n[Attached file: ${a.name}]\n\`\`\`\n${a.content}\n\`\`\``;
       content = content.trim();
@@ -159,6 +171,12 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
           frame.current = 0;
         }
         const a = acc.current;
+        if (privacyActive) {
+          setLive(null);
+          setBusy(false);
+          setWorking(null);
+          return;
+        }
         if (a.text.trim() || a.steps.length || a.choices) {
           const msg: MessageDTO = {
             id: info?.id ?? `local-${Date.now()}`,
@@ -265,7 +283,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
         finalize(null);
       }
     },
-    [app, bot, botId, busy, flush, setWorking],
+    [app, bot, botId, busy, flush, privacyActive, setWorking],
   );
 
   const stop = () => abortRef.current?.abort();

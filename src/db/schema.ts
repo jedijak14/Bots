@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -98,3 +100,75 @@ export type ChoicesRecord = {
   question: string;
   options: string[];
 };
+
+export const conversationArchives = pgTable(
+  "conversation_archives",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    botId: uuid("bot_id").notNull().references(() => bots.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default("Archived conversation"),
+    messages: jsonb("messages").$type<Array<{ role: string; content: string; createdAt: string }>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("conversation_archives_user_idx").on(t.userId, t.createdAt), index("conversation_archives_bot_idx").on(t.botId, t.createdAt)],
+);
+
+export const artifacts = pgTable(
+  "artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    botId: uuid("bot_id").notNull().references(() => bots.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    kind: text("kind").notNull().default("document"),
+    content: text("content").notNull().default(""),
+    archived: boolean("archived").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("artifacts_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const skills = pgTable(
+  "skills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").references(() => bots.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    instructions: text("instructions").notNull().default(""),
+    allowedTools: jsonb("allowed_tools").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    allowedConnectors: jsonb("allowed_connectors").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    version: integer("version").notNull().default(1),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("skills_user_idx").on(t.userId, t.createdAt), index("skills_bot_idx").on(t.botId, t.createdAt)],
+);
+
+export const privacySessions = pgTable(
+  "privacy_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").references(() => bots.id, { onDelete: "cascade" }),
+    sandboxId: text("sandbox_id"),
+    status: text("status").notNull().default("idle"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [index("privacy_sessions_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const privacyAuditEvents = pgTable(
+  "privacy_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").references(() => bots.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("privacy_audit_events_user_idx").on(t.userId, t.createdAt)],
+);

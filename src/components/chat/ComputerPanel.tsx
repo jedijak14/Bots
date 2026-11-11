@@ -53,9 +53,11 @@ export function ComputerPanel({
   onOpenSettings,
   onPhase,
   onError,
+  privateMode = false,
 }: {
   bot: Pick<BotDTO, "id" | "name" | "shape" | "color">;
   hasE2b: boolean;
+  privateMode?: boolean;
   tab: ComputerTab;
   onTab: (t: ComputerTab) => void;
   agentBusy: boolean;
@@ -85,6 +87,7 @@ export function ComputerPanel({
     agentBusy,
     externalShot,
     onActionError: onError,
+    privateMode,
   });
   const { phase } = computer;
 
@@ -198,23 +201,25 @@ export function ComputerPanel({
       )}
 
       <div className="flex h-[60px] shrink-0 items-center gap-2 pl-4 pr-3">
-        <div role="tablist" aria-label="Computer" onKeyDown={onTabKey} className="flex items-center rounded-full bg-[#151515] p-[3px]">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`computer-tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls="computer-tabpanel"
-              tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => selectTab(t.id)}
-              className={cx("h-[30px] rounded-full px-3.5 text-[13px] transition-colors", tab === t.id ? "bg-[#2a2a2a] font-medium text-white" : "text-neutral-400 hover:text-white")}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {!privateMode && (
+          <div role="tablist" aria-label="Computer" onKeyDown={onTabKey} className="flex items-center rounded-full bg-[#151515] p-[3px]">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`computer-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls="computer-tabpanel"
+                tabIndex={tab === t.id ? 0 : -1}
+                onClick={() => selectTab(t.id)}
+                className={cx("h-[30px] rounded-full px-3.5 text-[13px] transition-colors", tab === t.id ? "bg-[#2a2a2a] font-medium text-white" : "text-neutral-400 hover:text-white")}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1" />
         {tab === "screen" && hasE2b && phase === "on" && (
           <button

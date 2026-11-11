@@ -1,12 +1,13 @@
 import "server-only";
 import { Sandbox } from "@e2b/desktop";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { bots } from "@/db/schema";
+import { bots, privacySessions } from "@/db/schema";
 
 const TIMEOUT_MS = 20 * 60_000;
 
 export type BotRef = { id: string; sandboxId: string | null };
+export type PrivacySessionRef = { id: string; userId: string; sandboxId: string | null };
 
 /** Reconnect to the bot's computer if it is still alive. Never creates one. */
 export async function connectDesktop(bot: BotRef, apiKey: string): Promise<Sandbox | null> {
@@ -37,6 +38,41 @@ export async function ensureDesktop(bot: BotRef, apiKey: string): Promise<{ sb: 
   return { sb, fresh: true };
 }
 
+export async function connectPrivateDesktop(session: PrivacySessionRef, apiKey: string): Promise<Sandbox | null> {
+  if (!session.sandboxId) return null;
+  try {
+    const sb = await Sandbox.connect(session.sandboxId, { apiKey });
+    await sb.setTimeout(TIMEOUT_MS).catch(() => {});
+    return sb;
+  } catch {
+    await db.update(privacySessions).set({ sandboxId: null }).where(and(eq(privacySessions.id, session.id), eq(privacySessions.userId, session.userId), eq(privacySessions.status, "active")));
+    session.sandboxId = null;
+    return null;
+  }
+}
+
+export async function ensurePrivateDesktop(session: PrivacySessionRef, apiKey: string): Promise<{ sb: Sandbox; fresh: boolean }> {
+  const existing = await connectPrivateDesktop(session, apiKey);
+  if (existing) return { sb: existing, fresh: false };
+  const sb = await Sandbox.create({ apiKey, resolution: [1024, 768], dpi: 96, timeoutMs: TIMEOUT_MS });
+  const [updated] = await db.update(privacySessions).set({ sandboxId: sb.sandboxId }).where(and(eq(privacySessions.id, session.id), eq(privacySessions.userId, session.userId), eq(privacySessions.status, "active"))).returning({ id: privacySessions.id });
+  if (!updated) {
+    await sb.kill().catch(() => {});
+    throw new Error("Privacy Mode has ended.");
+  }
+  session.sandboxId = sb.sandboxId;
+  return { sb, fresh: true };
+}
+
+export async function destroyPrivateDesktop(sandboxId: string | null, apiKey: string): Promise<void> {
+  if (!sandboxId) return;
+  try {
+    const sb = await Sandbox.connect(sandboxId, { apiKey });
+    await sb.stream.stop().catch(() => {});
+    await sb.kill();
+  } catch {}
+}
+
 export async function shot(sb: Sandbox): Promise<string | null> {
   try {
     const bytes = await sb.screenshot();
@@ -50,11 +86,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export { sleep };
 
 export function normalizeUrl(input: string): string {
-  const t = input.trim();
-  if (!t) return "about:blank";
-  if (/^(https?:|about:|file:)/i.test(t)) return t;
+  const t = input.trim().slice(0, 2048);
+  if (!t || t.toLowerCase() === "about:blank") return "about:blank";
+  if (/^https?:\/\//i.test(t)) {
+    const url = new URL(t);
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) throw new Error("Only credential-free HTTP(S) URLs are allowed.");
+    return url.href;
+  }
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(t)) return `http://${t}`;
   if (!/\s/.test(t) && /^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(t)) return `https://${t}`;
-  if (/^localhost(:\d+)?(\/.*)?$/.test(t)) return `http://${t}`;
   return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
 }
 
