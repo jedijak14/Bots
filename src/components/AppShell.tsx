@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { BotDTO } from "@/lib/bots";
@@ -9,11 +10,18 @@ import { BotAvatar } from "./BotAvatar";
 import { BotDialog } from "./BotDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { PrivacyModeGate } from "./PrivacyModeGate";
 import { Icon } from "./icons";
 import { btnDanger, btnGhost, btnWhite, cx, Modal } from "./ui";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, initialPrivacyMode = false, privacyBotId = null }: { children: ReactNode; initialPrivacyMode?: boolean; privacyBotId?: string | null }) {
   const app = useApp();
+  const { data: privacy } = useSWR<{ status: "active" | "idle" }>("/api/privacy", async (url: string) => {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not verify Privacy Mode.");
+    return response.json();
+  }, { fallbackData: initialPrivacyMode ? { status: "active" } : undefined, revalidateOnFocus: true });
+  const privacyActive = privacy?.status === "active";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -28,7 +36,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-[#0a0a0a]">
+    <>
+      <div className="relative flex h-dvh overflow-hidden bg-[#0a0a0a]" inert={privacyActive} aria-hidden={privacyActive}>
       {/* mobile sidebar scrim */}
       {app.sidebarOpen && <div className="absolute inset-0 z-30 bg-black/60 md:hidden" onClick={() => app.setSidebarOpen(false)} />}
       <Sidebar />
@@ -37,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {app.botDialog && <BotDialog key={app.botDialog.id ?? "new"} botId={app.botDialog.id} />}
       {app.settingsTab && <SettingsDialog />}
       {app.searchOpen && <SearchDialog />}
-      {app.confirmState && <ConfirmDialog />}
+      {app.confirmState &&       <ConfirmDialog />}
 
       <div className="pointer-events-none absolute inset-x-0 bottom-6 z-[90]">
         {app.toasts.map((t) => (
@@ -54,7 +63,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         ))}
       </div>
-    </div>
+      </div>
+      <PrivacyModeGate initialActive={initialPrivacyMode} initialBotId={privacyBotId} />
+    </>
   );
 }
 
@@ -117,10 +128,10 @@ function Sidebar() {
   }, [menu]);
 
   async function clearChat(b: BotDTO) {
-    if (!(await app.confirm({ title: `Clear chat with ${b.name}?`, body: "All messages in this conversation will be deleted.", confirmLabel: "Clear", danger: true }))) return;
+    if (!(await app.confirm({ title: `Archive chat with ${b.name}?`, body: "This starts a fresh conversation, but safely saves the current chat to History.", confirmLabel: "Archive & clear", danger: true }))) return;
     const res = await fetch(`/api/bots/${b.id}/messages`, { method: "DELETE" });
     if (res.ok) {
-      app.toast("Conversation cleared.");
+      app.toast("Conversation archived. A fresh chat is ready.");
       window.location.assign(`/bot/${b.id}`);
     }
   }

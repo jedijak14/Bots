@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import type { ChoicesRecord } from "@/db/schema";
 import type { MessageDTO } from "@/lib/bots";
@@ -36,6 +37,19 @@ function formatWhen(iso: string): string {
   return `${d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" })} ${time}`;
 }
 
+const noSubscription = () => () => {};
+const isClient = () => true;
+const isServer = () => false;
+const readPrivacy = async () => {
+  const response = await fetch("/api/privacy", { cache: "no-store" });
+  if (!response.ok) throw new Error("Could not verify Privacy Mode.");
+  return response.json() as Promise<{ status: "active" | "idle" }>;
+};
+
+function Pill({ children, active, onClick, dim }: { children: React.ReactNode; active?: boolean; onClick: () => void; dim?: boolean }) {
+  return <button onClick={onClick} aria-pressed={active} className={cx("rounded-full border border-white/[0.05] px-3.5 py-2 text-[13px] transition active:scale-95", active ? "bg-[#262626] text-white" : "bg-[#141414] hover:bg-[#1b1b1b] hover:text-white", dim && !active ? "text-neutral-500" : !active && "text-neutral-200")}>{children}</button>;
+}
+
 function speak(markdown: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   const text = markdown.replace(/```[\s\S]*?```/g, " code block ").replace(/[#*_`>~\[\]()]+/g, " ").replace(/\s+/g, " ").trim();
@@ -44,10 +58,12 @@ function speak(markdown: string) {
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.slice(0, 1500)));
 }
 
-export function ChatView({ botId, initialMessages }: { botId: string; initialMessages: MessageDTO[] }) {
+export function ChatView({ botId, initialMessages, initialPrivacyMode = false }: { botId: string; initialMessages: MessageDTO[]; initialPrivacyMode?: boolean }) {
   const app = useApp();
   const router = useRouter();
   const bot = app.bots.find((b) => b.id === botId);
+  const { data: privacyState } = useSWR("/api/privacy", readPrivacy, { fallbackData: initialPrivacyMode ? { status: "active" as const } : undefined, revalidateOnFocus: true });
+  const privacyActive = privacyState?.status === "active" || (initialPrivacyMode && privacyState?.status !== "idle");
 
   const [messages, setMessages] = useState<MessageDTO[]>(initialMessages);
   const [live, setLive] = useState<Live | null>(null);
@@ -59,7 +75,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
   const [expanded, setExpanded] = useState(false);
   const [shot, setShot] = useState<{ n: number; data: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(noSubscription, isClient, isServer);
 
   const acc = useRef<Live>({ text: "", steps: [], choices: null });
   const abortRef = useRef<AbortController | null>(null);
@@ -71,7 +87,9 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
   const panelRef = useRef(panel);
   panelRef.current = panel;
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (privacyActive) abortRef.current?.abort();
+  }, [privacyActive]);
   useEffect(() => {
     if (!bot) router.replace("/");
   }, [bot, router]);
@@ -101,7 +119,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
 
   const send = useCallback(
     async (raw: string, atts: Attachment[] = []) => {
-      if (busy || !bot) return;
+      if (busy || !bot || privacyActive) return;
       let content = raw.trim();
       for (const a of atts) content += `\n\n[Attached file: ${a.name}]\n\`\`\`\n${a.content}\n\`\`\``;
       content = content.trim();
@@ -128,6 +146,11 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
           frame.current = 0;
         }
         const a = acc.current;
+        if (privacyActive) {
+          setLive(null);
+          setBusy(false);
+          return;
+        }
         if (a.text.trim() || a.steps.length || a.choices) {
           const msg: MessageDTO = {
             id: info?.id ?? `local-${Date.now()}`,
@@ -227,7 +250,7 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
         finalize(null);
       }
     },
-    [app, bot, botId, busy, flush],
+    [app, bot, botId, busy, flush, privacyActive],
   );
 
   const stop = () => abortRef.current?.abort();
@@ -251,20 +274,6 @@ export function ChatView({ botId, initialMessages }: { botId: string; initialMes
   const lastMsg = messages[messages.length - 1];
   const awaiting = lastMsg?.role === "assistant" && !!lastMsg.choices && !busy;
   const placeholder = awaiting ? "Type your answer, or talk about something else" : `Message ${bot.name}`;
-
-  const Pill = ({ children, active, onClick, dim }: { children: React.ReactNode; active?: boolean; onClick: () => void; dim?: boolean }) => (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={cx(
-        "rounded-full border border-white/[0.05] px-3.5 py-2 text-[13px] transition active:scale-95",
-        active ? "bg-[#262626] text-white" : "bg-[#141414] hover:bg-[#1b1b1b] hover:text-white",
-        dim && !active ? "text-neutral-500" : !active && "text-neutral-200",
-      )}
-    >
-      {children}
-    </button>
-  );
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">

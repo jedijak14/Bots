@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
 import { signOutAction } from "@/lib/auth-actions";
 import { useApp, type SettingsTab } from "./AppProvider";
 import { Icon, Spinner } from "./icons";
 import { btnDanger, btnGhost, btnWhite, cx, inputCls, Modal, Toggle } from "./ui";
+import { PrivacyTab, SkillsTab } from "./SecureSettingsTabs";
+import { ConnectionsPanel } from "./ConnectionsPanel";
+import { ArtifactsPanel } from "./ArtifactsPanel";
+import { HistoryPanel } from "./HistoryPanel";
 
 const TABS: { id: SettingsTab; label: string; icon: string }[] = [
   { id: "ai", label: "AI Provider", icon: "grid" },
@@ -14,10 +18,17 @@ const TABS: { id: SettingsTab; label: string; icon: string }[] = [
   { id: "preferences", label: "Preferences", icon: "gear" },
   { id: "account", label: "Account", icon: "pencil" },
   { id: "data", label: "Data", icon: "download" },
+  { id: "connections", label: "Connections", icon: "link" },
+  { id: "skills", label: "Skills", icon: "sparkles" },
+  { id: "privacy", label: "Privacy Mode", icon: "lock" },
+  { id: "artifacts", label: "Artifacts", icon: "file" },
+  { id: "history", label: "History", icon: "chat" },
 ];
 
 export function SettingsDialog() {
   const app = useApp();
+  const pathname = usePathname();
+  const currentBotId = pathname.match(/\/bot\/([^/]+)/)?.[1] ?? null;
   const [tab, setTab] = useState<SettingsTab>(app.settingsTab ?? "ai");
 
   return (
@@ -52,6 +63,11 @@ export function SettingsDialog() {
           {tab === "preferences" && <PreferencesTab />}
           {tab === "account" && <AccountTab />}
           {tab === "data" && <DataTab />}
+          {tab === "connections" && <ConnectionsPanel />}
+          {tab === "skills" && <SkillsTab botId={currentBotId} />}
+          {tab === "privacy" && <PrivacyTab botId={currentBotId} />}
+          {tab === "artifacts" && <ArtifactsPanel />}
+          {tab === "history" && <HistoryPanel botId={currentBotId} />}
         </div>
       </div>
     </Modal>

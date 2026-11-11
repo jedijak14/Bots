@@ -72,8 +72,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       return Response.json({ active: true, image: await shot(sb) });
     } catch (e) {
       if (e instanceof HttpError) throw e;
-      const msg = e instanceof Error ? e.message : "The computer isn't responding.";
-      return Response.json({ error: msg.slice(0, 300) }, { status: 502 });
+      return Response.json({ error: "The computer isn't responding. Try again." }, { status: 502 });
     }
   } catch (e) {
     return handleError(e);

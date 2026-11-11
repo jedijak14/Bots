@@ -16,7 +16,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (!key) return Response.json({ error: "Add your E2B API key in Settings.", code: "no_e2b" }, { status: 400 });
     const url = new URL(req.url);
     const path = url.searchParams.get("path") || "/home/user";
-    if (!path.startsWith("/") || path.includes("..")) throw new HttpError(400, "Invalid path.");
+    const userRoot = "/home/user";
+    if ((path !== userRoot && !path.startsWith(`${userRoot}/`)) || path.split("/").includes("..")) throw new HttpError(400, "Invalid path.");
     const sb = await connectDesktop({ id: bot.id, sandboxId: bot.sandboxId }, key);
     if (!sb) return Response.json({ active: false, path, entries: [] });
 
@@ -39,6 +40,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return Response.json({ active: true, path, entries });
   } catch (e) {
     if (e instanceof HttpError) return handleError(e);
-    return Response.json({ error: e instanceof Error ? e.message.slice(0, 200) : "Couldn't read files." }, { status: 502 });
+    return Response.json({ error: "Couldn't read files. Try again." }, { status: 502 });
   }
 }

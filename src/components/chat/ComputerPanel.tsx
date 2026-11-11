@@ -20,9 +20,11 @@ export function ComputerPanel({
   onToggleExpand,
   onClose,
   onOpenSettings,
+  privateMode = false,
 }: {
   botId: string;
   hasE2b: boolean;
+  privateMode?: boolean;
   mode: "computer" | "files" | "preview";
   agentBusy: boolean;
   externalShot: { n: number; data: string } | null;
@@ -51,7 +53,7 @@ export function ComputerPanel({
       inflight.current = true;
       if (!quiet) setStatus(label);
       try {
-        const res = await fetch(`/api/bots/${botId}/computer`, {
+        const res = await fetch(privateMode ? "/api/privacy/computer" : `/api/bots/${botId}/computer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -71,26 +73,30 @@ export function ComputerPanel({
         inflight.current = false;
       }
     },
-    [botId],
+    [botId, privateMode],
   );
 
   // initial look + gentle polling while the panel is open
   useEffect(() => {
     if (!hasE2b || mode !== "computer") return;
-    call({ action: "screenshot" });
+    const initial = window.setTimeout(() => void call({ action: "screenshot" }), 0);
     const t = setInterval(() => {
       if (!document.hidden && !agentBusy) call({ action: "screenshot" });
     }, 3000);
-    return () => clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      clearInterval(t);
+    };
   }, [hasE2b, mode, agentBusy, call]);
 
   // screenshots pushed from the agent while it works
   useEffect(() => {
-    if (externalShot) {
-      setImage(externalShot.data);
-      setActive(true);
-      setFilesTick((n) => n + 1);
-    }
+    if (!externalShot) return;
+    // The agent stream is an external source that must update the interactive panel.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setImage(externalShot.data);
+    setActive(true);
+    setFilesTick((n) => n + 1);
   }, [externalShot]);
 
   const busy = status === "starting" || status === "working";
@@ -224,7 +230,7 @@ export function ComputerPanel({
           >
             {image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`data:image/png;base64,${image}`} alt="Your bot's computer screen" className="size-full select-none object-contain" draggable={false} />
+              <img src={`data:image/png;base64,${image}`} alt={privateMode ? "Your private computer screen" : "Your bot's computer screen"} className="size-full select-none object-contain" draggable={false} />
             ) : (
               <div className="absolute inset-0 grid place-items-center px-6 text-center">
                 {busy ? (
@@ -299,7 +305,7 @@ export function ComputerPanel({
             </div>
           </form>
           <p className="mt-4 text-[12px] leading-relaxed text-neutral-500">
-            Take control to click and type yourself, then hand it back to your bot. Files your bot creates show up under <b className="font-medium text-neutral-300">Files</b>.
+            {privateMode ? "This computer is isolated from your bot and will be destroyed when you press I'm Done." : <>Take control to click and type yourself, then hand it back to your bot. Files your bot creates show up under <b className="font-medium text-neutral-300">Files</b>.</>}
           </p>
         </div>
       )}
@@ -319,7 +325,6 @@ function FilesView({ botId, tick, preview }: { botId: string; tick: number; prev
 
   useEffect(() => {
     let dead = false;
-    setLoading(true);
     fetch(`/api/bots/${botId}/files?path=${encodeURIComponent(path)}`)
       .then(async (r) => ({ ok: r.ok, j: await r.json() }))
       .then(({ ok, j }) => {
@@ -337,6 +342,7 @@ function FilesView({ botId, tick, preview }: { botId: string; tick: number; prev
   }, [botId, path, tick]);
 
   const parts = path.split("/").filter(Boolean);
+  const navigateTo = (nextPath: string) => { setLoading(true); setPath(nextPath); };
   const fmt = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : n > 1000 ? `${Math.round(n / 1000)} KB` : `${n} B`);
 
   const selectedUrl = selected ? `/api/bots/${botId}/files?download=1&path=${encodeURIComponent(selected)}` : null;
@@ -344,13 +350,13 @@ function FilesView({ botId, tick, preview }: { botId: string; tick: number; prev
   return (
     <div className={cx("min-h-0 flex-1 overflow-hidden", preview ? "flex flex-col" : "overflow-y-auto px-4 py-4")}>
       <div className="mb-3 flex flex-wrap items-center gap-1 px-1 text-[12.5px] text-neutral-400">
-        <button onClick={() => setPath("/home/user")} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
+        <button onClick={() => navigateTo("/home/user")} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
           ~
         </button>
         {parts.slice(2).map((p, i) => (
           <span key={i} className="flex items-center gap-1">
             <span className="text-neutral-600">/</span>
-            <button onClick={() => setPath("/" + parts.slice(0, i + 3).join("/"))} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
+            <button onClick={() => navigateTo("/" + parts.slice(0, i + 3).join("/"))} className="rounded-md px-1.5 py-1 hover:bg-white/[0.06] hover:text-white">
               {p}
             </button>
           </span>
@@ -372,7 +378,7 @@ function FilesView({ botId, tick, preview }: { botId: string; tick: number; prev
             {entries.map((e) => (
               <li key={e.path}>
                 {e.type === "dir" ? (
-                  <button onClick={() => setPath(e.path)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]">
+                  <button onClick={() => navigateTo(e.path)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.05]">
                     <Icon name="folder" size={17} className="text-[#6aa9ff]" />
                     <span className="truncate text-[13.5px]">{e.name}</span>
                   </button>

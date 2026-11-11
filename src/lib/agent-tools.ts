@@ -1,7 +1,12 @@
 import "server-only";
 import type { Sandbox } from "@e2b/desktop";
+import path from "node:path";
 import type { Tool, ToolResult } from "@/lib/ai/llm";
-import type { ChoicesRecord, StepRecord } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { artifacts, privacySessions, type ChoicesRecord, type StepRecord } from "@/db/schema";
+import { getConnectionToken } from "@/lib/connectors";
+import { TOOL_CONNECTOR } from "@/lib/skill-permissions";
 import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } from "@/lib/sandbox";
 
 const obj = (properties: Record<string, unknown>, required: string[]) => ({
@@ -25,6 +30,46 @@ const ASK: Tool = {
 };
 
 const CORE_TOOLS: Tool[] = [
+  {
+    name: "save_artifact",
+    description: "Save a story, document, website source, or other substantial work to the user's Artifacts library so they can open it later.",
+    parameters: obj({ title: { type: "string" }, kind: { type: "string", enum: ["story", "document", "html", "website"] }, content: { type: "string" } }, ["title", "kind", "content"]),
+  },
+  {
+    name: "draft_email",
+    description: "Prepare an email draft for the user to review. It will not be sent until the user presses Send in Artifacts.",
+    parameters: obj({ to: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, ["to", "subject", "body"]),
+  },
+  {
+    name: "search_gmail",
+    description: "Search the user's Gmail and return message subjects, senders, dates, and short snippets only.",
+    parameters: obj({ query: { type: "string" } }, ["query"]),
+  },
+  {
+    name: "search_youtube",
+    description: "Search YouTube videos using the user's connected Google account. Returns video titles and links only.",
+    parameters: obj({ query: { type: "string" } }, ["query"]),
+  },
+  {
+    name: "search_notion",
+    description: "Search the user's connected Notion workspace. Returns page titles and links only.",
+    parameters: obj({ query: { type: "string" } }, ["query"]),
+  },
+  {
+    name: "list_saved_spotify_tracks",
+    description: "List up to 10 of the user's most recently saved Spotify tracks, including track, artist, album, and link.",
+    parameters: obj({}, []),
+  },
+  {
+    name: "list_github_repositories",
+    description: "List the user's recently updated GitHub repositories.",
+    parameters: obj({}, []),
+  },
+  {
+    name: "list_vercel_projects",
+    description: "List the user's Vercel projects.",
+    parameters: obj({}, []),
+  },
   {
     name: "get_current_time",
     description: "Get the current date and time in a requested IANA timezone, such as America/New_York or Europe/London.",
@@ -83,7 +128,15 @@ const COMPUTER_TOOLS: Tool[] = [
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…[truncated ${s.length - n} chars]` : s);
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-const abs = (p: string) => (p.startsWith("/") ? p : `/home/user/${p.replace(/^\.\//, "")}`);
+const HOME_DIR = "/home/user";
+const safePath = (input: string) => {
+  const raw = input.trim();
+  if (!raw) throw new Error("A file path is required.");
+  const resolved = path.posix.resolve(raw.startsWith("/") ? raw : path.posix.join(HOME_DIR, raw));
+  if (resolved !== HOME_DIR && !resolved.startsWith(`${HOME_DIR}/`)) throw new Error("File paths must stay inside /home/user.");
+  return resolved;
+};
+const SCREEN_TOOLS = new Set(["run_command", "web_search", "open_url", "click", "type_text", "press_key"]);
 
 const STRIP_PY = `import sys,re,html
 t=sys.stdin.read()
@@ -103,16 +156,31 @@ export type ToolsetEvents = {
 };
 
 export function buildToolset(opts: {
+  userId: string;
   bot: BotRef;
   e2bKey: string | null;
   wantShots: boolean;
   ev: ToolsetEvents;
   signal: AbortSignal;
+  allowedTools?: string[];
+  allowedConnectors?: string[];
 }) {
-  const { bot, e2bKey, ev } = opts;
+  const { userId, bot, e2bKey, ev } = opts;
+  let stripScriptReady = false;
+  let lastShotAt = 0;
+  let lastShot: string | null = null;
+  const captureShot = async (sb: Sandbox) => {
+    if (lastShot && Date.now() - lastShotAt < 300) return lastShot;
+    lastShot = await shot(sb);
+    lastShotAt = Date.now();
+    return lastShot;
+  };
+  const toolAllowlist = opts.allowedTools === undefined ? null : new Set(opts.allowedTools);
+  const connectorAllowlist = opts.allowedConnectors === undefined ? null : new Set(opts.allowedConnectors);
   let desktop: Sandbox | null = null;
 
-  const tools: Tool[] = e2bKey ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS] : [ASK, ...CORE_TOOLS];
+  const allTools = e2bKey ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS] : [ASK, ...CORE_TOOLS];
+  const tools: Tool[] = allTools.filter((tool) => tool.name === "ask_user" || !toolAllowlist || toolAllowlist.has(tool.name));
 
   async function getDesktop(): Promise<Sandbox> {
     if (desktop) return desktop;
@@ -123,7 +191,10 @@ export function buildToolset(opts: {
   }
 
   async function fetchText(sb: Sandbox, url: string): Promise<string> {
-    await sb.files.write("/tmp/strip.py", STRIP_PY);
+    if (!stripScriptReady) {
+      await sb.files.write("/tmp/strip.py", STRIP_PY);
+      stripScriptReady = true;
+    }
     const cmd = `curl -sL --max-time 25 -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' ${shq(url)} | python3 /tmp/strip.py`;
     const r = await sb.commands.run(cmd, { timeoutMs: 40_000 }).catch((e: { result?: { stdout?: string; stderr?: string }; message?: string }) => ({
       stdout: e.result?.stdout ?? "",
@@ -155,6 +226,21 @@ export function buildToolset(opts: {
         return `Pressed ${s("key")}`;
       case "ask_user":
         return "Asked you a question";
+      case "save_artifact":
+        return `Saved artifact “${clip(s("title"), 55)}”`;
+      case "draft_email":
+        return `Prepared email draft for ${clip(s("to"), 55)}`;
+      case "search_gmail":
+        return "Searched Gmail";
+      case "search_youtube":
+      case "search_notion":
+        return `Searched ${name === "search_youtube" ? "YouTube" : "Notion"}`;
+      case "list_github_repositories":
+        return "Listed GitHub repositories";
+      case "list_vercel_projects":
+        return "Listed Vercel projects";
+      case "list_saved_spotify_tracks":
+        return "Listed saved Spotify tracks";
       default:
         return name;
     }
@@ -166,16 +252,80 @@ export function buildToolset(opts: {
       ev.onChoices({ question: String(a.question ?? "Choose one"), options });
       return { output: "The question is now displayed to the user. Stop and wait for their answer.", stop: true };
     }
+    if (name === "get_current_time") {
+      const timezone = String(a.timezone ?? "UTC");
+      try { return { output: new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(new Date()) }; }
+      catch { return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` }; }
+    }
+    if (name === "save_artifact" || name === "draft_email") {
+      const title = String(a.title ?? (name === "draft_email" ? `Email to ${String(a.to ?? "recipient")}` : "Untitled artifact")).trim().slice(0, 160);
+      const kind = name === "draft_email" ? "email_draft" : String(a.kind ?? "document");
+      const content = name === "draft_email" ? JSON.stringify({ to: String(a.to ?? "").trim(), subject: String(a.subject ?? "").trim(), body: String(a.body ?? "") }) : String(a.content ?? "");
+      if (!title || !content || content.length > 100_000) return { output: "The artifact needs a title and content under 100 KB." };
+      if (name === "draft_email" && (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(a.to ?? "").trim()) || /[\\r\\n]/.test(String(a.subject ?? "")))) return { output: "That email draft has an invalid recipient or subject." };
+      const [saved] = await db.insert(artifacts).values({ botId: bot.id, userId, title, kind, content }).returning({ id: artifacts.id });
+      return { output: name === "draft_email" ? `Email draft saved to Artifacts (id ${saved.id}). It has not been sent; the user must review and press Send.` : `Saved to Artifacts (id ${saved.id}).` };
+    }
+    if (["search_gmail", "search_youtube", "search_notion", "list_github_repositories", "list_vercel_projects", "list_saved_spotify_tracks"].includes(name)) {
+      const provider = name === "search_gmail" || name === "search_youtube" ? "google" : name === "search_notion" ? "notion" : name === "list_github_repositories" ? "github" : name === "list_vercel_projects" ? "vercel" : "spotify";
+      let token: string;
+      try { token = await getConnectionToken(provider, userId); }
+      catch { return { output: `Connect your ${provider === "google" ? "Google" : provider[0].toUpperCase() + provider.slice(1)} account in Settings > Connections to use this tool.` }; }
+      if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
+      try {
+        if (name === "list_saved_spotify_tracks") {
+          const response = await fetch("https://api.spotify.com/v1/me/tracks?limit=10", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: opts.signal });
+          if (!response.ok) throw new Error("Spotify request failed.");
+          const data = await response.json();
+          return { output: JSON.stringify((data.items ?? []).map((item: { added_at?: string; track?: { name?: string; artists?: Array<{ name?: string }>; album?: { name?: string }; external_urls?: { spotify?: string } } }) => ({ title: item.track?.name, artists: item.track?.artists?.map((artist) => artist.name), album: item.track?.album?.name, addedAt: item.added_at, url: item.track?.external_urls?.spotify }))) };
+        }
+        if (name === "search_gmail") {
+          const query = String(a.query ?? "").trim().slice(0, 200);
+          if (!query) return { output: "Provide a Gmail search query." };
+          const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+          url.searchParams.set("q", query);
+          url.searchParams.set("maxResults", "5");
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: opts.signal });
+          if (!response.ok) throw new Error("Gmail search failed.");
+          const data = await response.json();
+          const messages = await Promise.all((data.messages ?? []).map(async (message: { id: string }) => {
+            const detail = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(message.id)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: opts.signal });
+            if (!detail.ok) return null;
+            const item = await detail.json();
+            const headers = item.payload?.headers ?? [];
+            return { subject: headers.find((header: { name: string }) => header.name.toLowerCase() === "subject")?.value, from: headers.find((header: { name: string }) => header.name.toLowerCase() === "from")?.value, date: headers.find((header: { name: string }) => header.name.toLowerCase() === "date")?.value, snippet: item.snippet };
+          }));
+          return { output: JSON.stringify(messages.filter(Boolean)) };
+        }
+        if (name === "search_youtube") {
+          const query = String(a.query ?? "").trim().slice(0, 200);
+          const url = new URL("https://www.googleapis.com/youtube/v3/search");
+          url.searchParams.set("part", "snippet"); url.searchParams.set("type", "video"); url.searchParams.set("maxResults", "5"); url.searchParams.set("q", query);
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: opts.signal });
+          if (!response.ok) throw new Error("YouTube search failed.");
+          const data = await response.json();
+          return { output: JSON.stringify((data.items ?? []).map((item: { id?: { videoId?: string }; snippet?: { title?: string; channelTitle?: string } }) => ({ title: item.snippet?.title, channel: item.snippet?.channelTitle, url: item.id?.videoId ? `https://www.youtube.com/watch?v=${item.id.videoId}` : undefined }))) };
+        }
+        if (name === "search_notion") {
+          const response = await fetch("https://api.notion.com/v1/search", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" }, body: JSON.stringify({ query: String(a.query ?? "").trim().slice(0, 200), page_size: 10 }), cache: "no-store", signal: opts.signal });
+          if (!response.ok) throw new Error("Notion search failed.");
+          const data = await response.json();
+          return { output: JSON.stringify((data.results ?? []).map((page: { id: string; url?: string; title?: Array<{ plain_text?: string }>; properties?: Record<string, { title?: Array<{ plain_text?: string }> }> }) => ({ id: page.id, url: page.url, title: page.title?.map((part) => part.plain_text).join("") ?? Object.values(page.properties ?? {}).find((p) => p.title)?.title?.map((part) => part.plain_text).join("") })) ) };
+        }
+        if (name === "list_github_repositories") {
+          const response = await fetch("https://api.github.com/user/repos?sort=updated&per_page=10", { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, cache: "no-store", signal: opts.signal });
+          if (!response.ok) throw new Error("GitHub request failed.");
+          const data = await response.json();
+          return { output: JSON.stringify(data.map((repo: { full_name: string; html_url: string; description?: string; private: boolean }) => ({ name: repo.full_name, url: repo.html_url, description: repo.description, private: repo.private }))) };
+        }
+        const response = await fetch("https://api.vercel.com/v9/projects?limit=20", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: opts.signal });
+        if (!response.ok) throw new Error("Vercel request failed.");
+        const data = await response.json();
+        return { output: JSON.stringify((data.projects ?? []).map((project: { name: string; id: string; link?: { repo?: string } }) => ({ name: project.name, id: project.id, repository: project.link?.repo }))) };
+      } catch { return { output: `Could not access ${provider}. Check the connection and requested permissions in Settings > Connections.` }; }
+    }
     const sb = await getDesktop();
     switch (name) {
-      case "get_current_time": {
-        const timezone = String(a.timezone ?? "UTC");
-        try {
-          return { output: new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(new Date()) };
-        } catch {
-          return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` };
-        }
-      }
       case "run_command": {
         const cmd = String(a.command ?? "");
         const r = await sb.commands
@@ -201,16 +351,16 @@ export function buildToolset(opts: {
       }
       case "open_url": {
         await openInBrowser(sb, String(a.url ?? ""));
-        await sleep(2500);
+        await sleep(900);
         return { output: "Opened in the browser." };
       }
       case "write_file": {
-        const path = abs(String(a.path ?? ""));
+        const path = safePath(String(a.path ?? ""));
         await sb.files.write(path, String(a.content ?? ""));
         return { output: `Wrote ${path}` };
       }
       case "read_file": {
-        const path = abs(String(a.path ?? ""));
+        const path = safePath(String(a.path ?? ""));
         return { output: clip(await sb.files.read(path), 12000) };
       }
       case "click": {
@@ -236,14 +386,21 @@ export function buildToolset(opts: {
     ev.onStepStart({ id, name, label });
     if (opts.signal.aborted) throw new Error("aborted");
     try {
+      if (toolAllowlist && name !== "ask_user" && !toolAllowlist.has(name)) throw new Error("This tool is not allowed by the Bot's enabled skills.");
+      const connector = TOOL_CONNECTOR[name];
+      if (connector && connectorAllowlist && !connectorAllowlist.has(connector)) throw new Error("This connected account is not allowed by the Bot's enabled skills.");
+      const [privacySession] = await db.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, userId), eq(privacySessions.status, "active"))).limit(1);
+      if (privacySession) throw new Error("Privacy Mode is active. Bot tools are paused until you press I'm Done.");
       const r = await exec(name, args);
+      if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
       ev.onStepEnd({ id, name, label, ok: true, output: clip(r.output, 1500) });
-      if (desktop && opts.wantShots && name !== "ask_user") {
-        const b = await shot(desktop);
-        if (b) ev.onShot(b);
+      if (desktop && opts.wantShots && SCREEN_TOOLS.has(name) && !opts.signal.aborted) {
+        const b = await captureShot(desktop);
+        if (b && !opts.signal.aborted) ev.onShot(b);
       }
       return r;
     } catch (e) {
+      if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
       const msg = e instanceof Error ? e.message : "Tool failed";
       ev.onStepEnd({ id, name, label, ok: false, output: clip(msg, 800) });
       return { output: `Error: ${msg}` };

@@ -2,19 +2,11 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1794241573640,
-      "tag": "0000_init",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1794249798489,
-      "tag": "0001_spooky_gargoyle",
-      "breakpoints": true
-    }
+    { "idx": 0, "version": "7", "when": 1794241573640, "tag": "0000_init", "breakpoints": true },
+    { "idx": 1, "version": "7", "when": 1794249798489, "tag": "0001_spooky_gargoyle", "breakpoints": true },
+    { "idx": 2, "version": "7", "when": 1794417000000, "tag": "0002_secure_memories", "breakpoints": true },
+    { "idx": 3, "version": "7", "when": 1794417500000, "tag": "0003_privacy_audit_artifacts", "breakpoints": true },
+    { "idx": 4, "version": "7", "when": 1794420000000, "tag": "0004_skill_permissions", "breakpoints": true },
+    { "idx": 5, "version": "7", "when": 1794425000000, "tag": "0005_privacy_sandbox_isolation", "breakpoints": true }
   ]
 }
