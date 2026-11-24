@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { useState } from "react";
 import { useApp } from "./AppProvider";
 import { Icon, Spinner } from "./icons";
-import { btnGhost, btnWhite, cx, inputCls, Toggle } from "./ui";
+import { btnGhost, btnWhite, Checkbox, cx, inputCls, Toggle } from "./ui";
 import { SKILL_CONNECTOR_OPTIONS, SKILL_TOOL_OPTIONS } from "@/lib/skill-permissions";
 
 type Skill = {
@@ -106,38 +106,32 @@ export function SkillsTab({ botId }: { botId: string | null }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <fieldset className="rounded-xl border border-white/[0.08] p-3">
             <legend className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-400">Allowed tools</legend>
-            <div className="max-h-36 space-y-1 overflow-y-auto">
+            <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
               {SKILL_TOOL_OPTIONS.map((option) => (
-                <label key={option.id} className="flex items-center gap-2 text-[11.5px] text-neutral-400">
-                  <input
-                    type="checkbox"
-                    checked={allowedTools.includes(option.id)}
-                    onChange={(event) =>
-                      setAllowedTools((current) => (event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id)))
-                    }
-                    className="accent-white"
-                  />
-                  {option.label}
-                </label>
+                <Checkbox
+                  key={option.id}
+                  label={option.label}
+                  checked={allowedTools.includes(option.id)}
+                  onChange={(on) =>
+                    setAllowedTools((current) => (on ? [...current, option.id] : current.filter((id) => id !== option.id)))
+                  }
+                />
               ))}
             </div>
           </fieldset>
 
           <fieldset className="rounded-xl border border-white/[0.08] p-3">
             <legend className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-400">Allowed connected accounts</legend>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {SKILL_CONNECTOR_OPTIONS.map((option) => (
-                <label key={option.id} className="flex items-center gap-2 text-[11.5px] text-neutral-400">
-                  <input
-                    type="checkbox"
-                    checked={allowedConnectors.includes(option.id)}
-                    onChange={(event) =>
-                      setAllowedConnectors((current) => (event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id)))
-                    }
-                    className="accent-white"
-                  />
-                  {option.label}
-                </label>
+                <Checkbox
+                  key={option.id}
+                  label={option.label}
+                  checked={allowedConnectors.includes(option.id)}
+                  onChange={(on) =>
+                    setAllowedConnectors((current) => (on ? [...current, option.id] : current.filter((id) => id !== option.id)))
+                  }
+                />
               ))}
             </div>
             <p className="mt-2 text-[10.5px] text-neutral-600">Accounts also need to be connected in Settings.</p>

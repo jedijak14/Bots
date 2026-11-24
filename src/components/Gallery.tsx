@@ -1,17 +1,48 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useApp } from "./AppProvider";
 import { BotAvatar } from "./BotAvatar";
 import { Icon } from "./icons";
 import { LogoMark } from "./Logo";
+import { Menu, placeMenu, type MenuItem, type MenuPosition } from "./Menu";
 import { Pill, cx } from "./ui";
+
+type Bot = ReturnType<typeof useApp>["bots"][number];
 
 export function Gallery() {
   const app = useApp();
   const router = useRouter();
   const s = app.settings;
   const bots = app.bots;
+  const [menu, setMenu] = useState<{ bot: Bot; position: MenuPosition; trigger: HTMLElement } | null>(null);
+
+  const items = (bot: Bot): MenuItem[] => [
+    { label: "Open", icon: "arrow-right", onSelect: () => router.push(`/bot/${bot.id}`) },
+    { label: "Edit look & name", icon: "pencil", onSelect: () => app.openBotDialog(bot.id) },
+    {
+      label: "Delete",
+      icon: "trash",
+      danger: true,
+      onSelect: async () => {
+        const ok = await app.confirm({
+          title: `Delete ${bot.name}?`,
+          body: "Its conversation and artifacts go with it. This can't be undone.",
+          confirmLabel: "Delete",
+          danger: true,
+        });
+        if (!ok) return;
+        const response = await fetch(`/api/bots/${bot.id}`, { method: "DELETE" });
+        if (response.ok) {
+          app.removeBot(bot.id);
+          app.toast(`${bot.name} deleted.`);
+        } else {
+          app.toast("Couldn't delete that bot.", "err");
+        }
+      },
+    },
+  ];
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -53,25 +84,43 @@ export function Gallery() {
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {bots.map((b, i) => (
-                  <button
+                  <div
                     key={b.id}
-                    onClick={() => router.push(`/bot/${b.id}`)}
-                    className="group fade-up flex min-w-0 flex-col items-start rounded-[20px] border border-white/[0.07] bg-white/[0.025] p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.05] active:scale-[0.99]"
+                    className="group fade-up relative min-w-0 rounded-[20px] border border-white/[0.07] bg-white/[0.025] transition duration-200 focus-within:border-white/[0.18] hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.05]"
                     style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}
                   >
-                    <span className="flex w-full items-start justify-between gap-2">
-                      <span className="transition duration-200 group-hover:scale-105">
-                        <BotAvatar shape={b.shape} color={b.color} size={46} celebrate={app.celebrateId === b.id} />
+                    {/* The whole card is one big target, kept as a sibling of the
+                        options button so it is never a button inside a button. */}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/bot/${b.id}`)}
+                      className="absolute inset-0 z-0 rounded-[20px] outline-none"
+                      aria-label={`Open ${b.name}`}
+                    />
+                    <div className="pointer-events-none relative z-10 flex min-w-0 flex-col items-start p-4">
+                      <div className="flex w-full items-start justify-between gap-2">
+                        <span className="transition duration-200 group-hover:scale-105">
+                          <BotAvatar shape={b.shape} color={b.color} size={46} celebrate={app.celebrateId === b.id} />
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Options for ${b.name}`}
+                          onClick={(e) => {
+                            setMenu({ bot: b, position: placeMenu(e.currentTarget.getBoundingClientRect(), 3, { align: "end" }), trigger: e.currentTarget });
+                          }}
+                          className="pointer-events-auto -mr-1 grid size-7 shrink-0 place-items-center rounded-full text-neutral-500 opacity-0 transition hover:bg-white/[0.1] hover:text-white focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                        >
+                          <Icon name="dots" size={15} />
+                        </button>
+                      </div>
+                      <span className="mt-3 w-full truncate text-[14px] font-medium text-white">{b.name}</span>
+                      <span className="mt-0.5 line-clamp-2 w-full text-[12px] leading-snug text-neutral-500">{b.preview}</span>
+                      <span className="mt-3 flex items-center gap-1.5 text-[11px] text-neutral-600">
+                        <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-[#7c9bff]" : "bg-neutral-700")} />
+                        {s.hasAiKey ? "Ready" : "Needs an API key"}
                       </span>
-                      <Icon name="arrow-right" size={15} className="mt-1 -translate-x-1 text-neutral-600 opacity-0 transition duration-200 group-hover:translate-x-0 group-hover:text-neutral-300 group-hover:opacity-100" />
-                    </span>
-                    <span className="mt-3 w-full truncate text-[14px] font-medium text-white">{b.name}</span>
-                    <span className="mt-0.5 line-clamp-2 w-full text-[12px] leading-snug text-neutral-500">{b.preview}</span>
-                    <span className="mt-3 flex items-center gap-1.5 text-[11px] text-neutral-600">
-                      <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-[#7c9bff]" : "bg-neutral-700")} />
-                      {s.hasAiKey ? "Ready" : "Needs an API key"}
-                    </span>
-                  </button>
+                    </div>
+                  </div>
                 ))}
 
                 <button
@@ -112,6 +161,8 @@ export function Gallery() {
           )}
         </div>
       </div>
+
+      {menu && <Menu label={`Options for ${menu.bot.name}`} items={items(menu.bot)} position={menu.position} trigger={menu.trigger} onClose={() => setMenu(null)} />}
 
       <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-wrap items-center justify-center gap-2 px-4">
         <button

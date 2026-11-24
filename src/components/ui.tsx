@@ -64,6 +64,39 @@ export function ModalHeader({ title, onClose, children }: { title: string; onClo
   );
 }
 
+/**
+ * A labelled checkbox for multi-select lists. The browser default is a 13px blue
+ * square that looks pasted in; this reads as part of the same surface as the
+ * inputs and switches around it.
+ */
+export function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label className="group flex cursor-pointer items-center gap-2.5 text-[12.5px] text-neutral-300 transition hover:text-white">
+      <span className="relative grid size-[17px] shrink-0 place-items-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer size-[17px] cursor-pointer appearance-none rounded-[5px] border border-white/20 bg-white/[0.04] transition checked:border-[#7c9bff] checked:bg-[#7c9bff] focus-visible:border-white/40"
+        />
+        <svg
+          aria-hidden
+          viewBox="0 0 16 16"
+          className="pointer-events-none absolute size-3 scale-75 text-[#0a0a0c] opacity-0 transition peer-checked:scale-100 peer-checked:opacity-100"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m3 8.5 3.2 3.2L13 4.8" />
+        </svg>
+      </span>
+      {label}
+    </label>
+  );
+}
+
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
