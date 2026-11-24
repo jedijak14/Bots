@@ -97,6 +97,14 @@ async function openaiLoop(o: AgentOptions) {
   const label = PROVIDERS[o.provider].label;
   const msgs: Record<string, unknown>[] = [{ role: "system", content: o.system }, ...o.history];
   const max = o.maxSteps ?? 10;
+  // The schema does not change between steps, so build it once instead of
+  // re-serialising it on every pass through the loop.
+  const tools = o.tools.length
+    ? o.tools.map((t) => ({
+        type: "function" as const,
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      }))
+    : undefined;
 
   for (let step = 0; step < max; step++) {
     const res = await fetch(`${o.baseUrl}/chat/completions`, {
@@ -106,14 +114,12 @@ async function openaiLoop(o: AgentOptions) {
         model: o.model,
         messages: msgs,
         stream: true,
-        ...(o.tools.length
-          ? {
-              tools: o.tools.map((t) => ({
-                type: "function",
-                function: { name: t.name, description: t.description, parameters: t.parameters },
-              })),
-            }
-          : {}),
+        // Cache the fixed prefix (system prompt + tools + history). Every
+        // tool-loop step re-sends all of it, so on a multi-step turn this is
+        // the difference between re-reading ~8k characters each pass and
+        // reading them once. Providers that ignore the field are unaffected.
+        prompt_cache_key: `bot-${o.model}`,
+        ...(tools ? { tools } : {}),
       }),
       signal: o.signal,
     });
@@ -184,6 +190,19 @@ async function anthropicLoop(o: AgentOptions) {
     else msgs.push({ role: h.role, content: h.content });
   }
   const max = o.maxSteps ?? 10;
+  const anthropicTools = o.tools.length
+    ? o.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }))
+    : undefined;
+  // Anthropic only caches what sits before an explicit breakpoint. The system
+  // prompt and tool schema are identical on every step of a tool loop, so
+  // marking them here means each later step reads them from cache instead of
+  // re-processing them.
+  const cachedSystem = [{ type: "text", text: o.system, cache_control: { type: "ephemeral" } }];
+  const cachedTools = anthropicTools
+    ? anthropicTools.map((t, i) =>
+        i === anthropicTools.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t,
+      )
+    : undefined;
 
   for (let step = 0; step < max; step++) {
     const res = await fetch(`${o.baseUrl}/messages`, {
@@ -196,12 +215,10 @@ async function anthropicLoop(o: AgentOptions) {
       body: JSON.stringify({
         model: o.model,
         max_tokens: 4096,
-        system: o.system,
+        system: cachedSystem,
         messages: msgs,
         stream: true,
-        ...(o.tools.length
-          ? { tools: o.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) }
-          : {}),
+        ...(cachedTools ? { tools: cachedTools } : {}),
       }),
       signal: o.signal,
     });
