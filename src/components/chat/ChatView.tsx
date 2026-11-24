@@ -481,7 +481,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             aria-label={`${bot.name} options`}
             className="group flex min-w-0 items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-2.5 transition hover:bg-white/[0.06] active:scale-[0.98]"
           >
-            <BotAvatar shape={bot.shape} color={bot.color} size={26} />
+            <BotAvatar shape={bot.shape} color={bot.color} size={26} working={busy} />
             <span className="max-w-[38vw] truncate text-[14.5px] font-medium sm:max-w-[200px]">{bot.name}</span>
             <Icon name="chevron" size={13} className="shrink-0 text-neutral-500 transition group-hover:text-neutral-300" />
           </button>
@@ -575,7 +575,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     onPick={() => {}}
                     streaming
                     startedAt={liveStart}
-                    avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} />}
+                    avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} working />}
                     onOpenArtifact={openArtifacts}
                   />
                 )}
@@ -694,7 +694,7 @@ function EmptyChat({
       <div className="relative">
         <div aria-hidden className="absolute inset-0 -z-10 scale-[2.4] rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.22),transparent)] blur-2xl" />
         <div className="glow-in">
-          <BotAvatar shape={shape} color={color} size={88} />
+          <BotAvatar shape={shape} color={color} size={64} />
         </div>
       </div>
       <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hi, I&apos;m {name}.</h1>

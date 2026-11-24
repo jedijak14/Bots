@@ -129,6 +129,12 @@ button:disabled {
   outline: 2px solid rgba(124, 155, 255, 0.75);
   outline-offset: 2px;
 }
+/* A full-width input inside its own framed panel does not need a second frame:
+   the 2px outline drawn 2px outside a 36px-tall field read as a thick ring
+   around the loudest control in the composer. The panel is the affordance. */
+.panel-input:focus-visible {
+  outline: none;
+}
 
 /* Text that should never blow a layout open. */
 .wrap-anywhere {
