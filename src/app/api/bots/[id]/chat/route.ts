@@ -7,6 +7,26 @@ import { runAgent, type Hist } from "@/lib/ai/llm";
 import { buildToolset } from "@/lib/agent-tools";
 import { aiConfigFrom, e2bKeyFrom, getSettings } from "@/lib/settings";
 
+/**
+ * The agent's underlying fetch throws a bare TypeError("fetch failed") when the
+ * provider is unreachable (DNS, TLS, a blocked host, or a bad Base URL), and that
+ * string is useless in the chat. Anything with a useful message of its own — an
+ * HTTP status from the provider, a rate limit, a bad key — is passed through.
+ */
+function describeModelError(e: unknown): string {
+  if (!(e instanceof Error)) return "The model request failed.";
+  const cause = (e as Error & { cause?: { code?: string; message?: string } }).cause;
+  const code = cause?.code ?? "";
+  if (e.name === "TypeError" && /fetch failed|network|terminated/i.test(e.message)) {
+    if (/ENOTFOUND|EAI_AGAIN/.test(code)) return "The AI provider's address couldn't be resolved. Check the Base URL in Settings → AI Provider.";
+    if (/CERT|TLS|SSL/.test(code)) return "The AI provider's certificate couldn't be verified. Check the Base URL in Settings → AI Provider.";
+    if (/ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR/.test(code)) return "The connection to the AI provider dropped. Check your network, then try again.";
+    return "Couldn't reach the AI provider. Check the Base URL and API key in Settings → AI Provider.";
+  }
+  if (e.name === "TimeoutError" || e.name === "AbortError") return "The AI provider took too long to respond. Try again.";
+  return e.message || "The model request failed.";
+}
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -159,9 +179,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           runTool: toolset.run,
         });
       } catch (e) {
-        if (!ac.signal.aborted) {
-          send({ t: "error", message: e instanceof Error ? e.message : "The model request failed." });
-        }
+        if (!ac.signal.aborted) send({ t: "error", message: describeModelError(e) });
       }
 
       if (interruptedByPrivacy) {
