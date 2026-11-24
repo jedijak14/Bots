@@ -130,7 +130,18 @@ export function RotatingWord({ words, label }: { words: readonly string[]; label
         </span>
         <span
           className="land-word absolute inset-y-0 left-0 max-w-full overflow-hidden whitespace-nowrap bg-gradient-to-r from-[#a8c0ff] via-[#c4b5fd] to-[#7dd3fc] bg-clip-text text-transparent"
-          style={{ opacity: settled ? undefined : 0 }}
+          style={{
+            // One owner for visibility, and one persistent element: the word
+            // fades out, swaps while it is at zero, then fades and rises back
+            // in. Keying this span would remount it, and a freshly mounted
+            // element has no previous opacity to transition from — it would
+            // snap in with no fade, which is exactly what it used to do.
+            opacity: settled ? 1 : 0,
+            transform: settled ? "translateY(0)" : "translateY(0.18em)",
+            filter: settled ? "blur(0)" : "blur(4px)",
+            transition:
+              "opacity 170ms cubic-bezier(0.4, 0, 0.2, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1), filter 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
         >
           {words[index]}
         </span>

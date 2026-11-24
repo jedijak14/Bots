@@ -624,22 +624,16 @@ button:disabled {
     box-shadow: 0 -46px 90px -30px rgba(124, 155, 255, 0.45);
   }
 }
+/* Movement only. The word swap owns opacity and visibility (see
+   RotatingWord); having a second, independent fade on a 9s cycle meant the
+   two disagreed on two changes out of three, so the word vanished instantly
+   instead of fading. */
 @keyframes land-word {
-  0%,
-  18% {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+  0% {
+    transform: translateY(0.18em);
+    filter: blur(4px);
   }
-  22%,
-  23% {
-    opacity: 0;
-    transform: translateY(-0.35em);
-    filter: blur(6px);
-  }
-  27%,
   100% {
-    opacity: 1;
     transform: translateY(0);
     filter: blur(0);
   }
@@ -705,6 +699,15 @@ button:disabled {
 .land-marquee-track {
   animation: land-marquee 34s linear infinite;
   width: max-content;
+  /* The track is two copies of a row. The 16px flex gap counts toward the
+     track width but not toward a single copy, so translating by -50% moved
+     2*copy+gap / 2 = copy + gap/2 and skipped 8px at the wrap — a visible
+     stutter every lap. Each copy carries the gap as trailing padding instead,
+     which makes a copy exactly half the track and the loop seamless. */
+  gap: 0;
+}
+.land-marquee-track > div {
+  padding-right: 16px;
 }
 .land-float {
   animation: land-float 7s ease-in-out infinite;
@@ -747,7 +750,9 @@ button:disabled {
 }
 .land-word {
   display: inline-block;
-  animation: land-word 9s ease-in-out infinite;
+  /* No animation here: the swap in RotatingWord owns opacity/transform/filter.
+     A second, independent animation on this class was what made the word blink
+     out on two changes out of three. */
   will-change: transform, opacity, filter;
 }
 
