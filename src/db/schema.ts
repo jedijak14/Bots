@@ -52,6 +52,8 @@ export const userSettings = pgTable("user_settings", {
   smtpUser: text("smtp_user"),
   smtpPassEnc: text("smtp_pass_enc"),
   smtpHost: text("smtp_host"),
+  /** Submission port for a saved mailbox (587 default, 465 for implicit TLS). */
+  smtpPort: integer("smtp_port"),
   smtpFrom: text("smtp_from"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
