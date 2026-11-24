@@ -63,6 +63,13 @@ export function AppShell({ children, initialCollapsed = false, initialPrivacyMod
   return (
     <>
       <div className="relative flex h-dvh overflow-hidden" inert={privacyActive} aria-hidden={privacyActive}>
+        {/* Keyboard users can jump the 12-stop sidebar straight to the page. */}
+        <a
+          href="#main"
+          className="sr-only z-[100] rounded-full bg-white px-4 py-2 text-[13px] font-medium leading-none text-black outline-none focus-visible:not-sr-only focus-visible:absolute focus-visible:left-1/2 focus-visible:top-3 focus-visible:z-[100] focus-visible:-translate-x-1/2 focus-visible:inline-flex focus-visible:h-8 focus-visible:items-center"
+        >
+          Skip to content
+        </a>
         {/* mobile sidebar scrim */}
         <div
           aria-hidden="true"
@@ -70,7 +77,7 @@ export function AppShell({ children, initialCollapsed = false, initialPrivacyMod
           className={cx("absolute inset-0 z-30 bg-black/70 backdrop-blur-sm transition-opacity duration-300 md:hidden", sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0")}
         />
         <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
-        <main className="relative flex min-w-0 flex-1 flex-col">{children}</main>
+        <main id="main" tabIndex={-1} className="relative flex min-w-0 flex-1 flex-col outline-none">{children}</main>
 
         {app.botDialog && <BotDialog key={app.botDialog.id ?? "new"} botId={app.botDialog.id} />}
         {app.settingsTab && <SettingsDialog />}
