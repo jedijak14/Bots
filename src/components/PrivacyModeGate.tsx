@@ -50,7 +50,9 @@ export function PrivacyModeGate({ initialActive, initialBotId }: { initialActive
       <button type="button" autoFocus onClick={() => void finish()} disabled={ending} className={cx(btnWhite, "shrink-0 px-3.5 py-2 text-xs")}>{ending ? "Resuming…" : "I'm Done"}</button>
     </header>
     {error && <p role="alert" className="px-5 pt-3 text-sm text-rose-300">{error}</p>}
-    <p className="px-5 py-3 text-xs text-neutral-500">After you press Take Control, I will go into Privacy Mode. Only you can interact with the sandbox while the Bot is paused.</p>
+    <p className="px-5 py-3 text-xs text-neutral-500">
+        Your Bot asked to be paused for this. Only you can interact while it is blind. Press <span className="text-neutral-300">I&apos;m Done</span> when the private part is finished and it will pick up again.
+      </p>
     {bot ? <div className="relative min-h-0 flex-1"><ComputerPanel bot={bot} hasE2b={app.settings.hasE2bKey} tab="screen" onTab={() => {}} agentBusy={false} activity={null} externalShot={null} expanded onToggleExpand={() => {}} onClose={() => {}} onOpenSettings={() => {}} onPhase={() => {}} onError={setError} privateMode /></div> : <div className="grid flex-1 place-items-center text-sm text-neutral-500">Open a Bot to choose its sandbox before taking control.</div>}
   </main>;
 }

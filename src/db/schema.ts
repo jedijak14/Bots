@@ -111,6 +111,11 @@ export type StepRecord = {
 export type ChoicesRecord = {
   question: string;
   options: string[];
+  /**
+   * Answers that do more than choose a direction. `privacy` means picking the
+   * first option opens Privacy Mode for this Bot without the user leaving chat.
+   */
+  action?: "privacy";
 };
 
 export const conversationArchives = pgTable(

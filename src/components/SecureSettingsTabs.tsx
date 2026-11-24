@@ -238,21 +238,21 @@ export function PrivacyTab({ botId }: { botId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function update(action: "take_control" | "done") {
+  async function finish() {
     setBusy(true);
     setError("");
     try {
       const response = await fetch("/api/privacy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, botId }),
+        body: JSON.stringify({ action: "done", botId }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Could not update Privacy Mode.");
-      await mutate({ status: action === "done" ? "idle" : "active" }, { revalidate: false });
+      if (!response.ok) throw new Error(result.error ?? "Could not end Privacy Mode.");
+      await mutate({ status: "idle" }, { revalidate: false });
       app.closeSettings();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not update Privacy Mode.");
+      setError(reason instanceof Error ? reason.message : "Could not end Privacy Mode.");
     } finally {
       setBusy(false);
     }
@@ -262,33 +262,48 @@ export function PrivacyTab({ botId }: { botId: string | null }) {
     <div className="fade-up">
       <h3 className="text-[18px] font-semibold tracking-tight text-white">Privacy Mode</h3>
       <p className="mt-1 max-w-[540px] text-[13.5px] leading-relaxed text-neutral-400">
-        Take over a Bot&apos;s computer when you need to sign in to something, read a private message, or type a password yourself.
+        For the moments a task needs something only you should see. The Bot is the one that offers it.
       </p>
 
-      <div className="mt-5 rounded-2xl border border-amber-300/15 bg-amber-300/[0.04] p-4">
+      <div className={cx("mt-5 rounded-2xl border p-4", active ? "border-amber-300/20 bg-amber-300/[0.05]" : "border-white/[0.07] bg-white/[0.02]")}>
         <div className="flex items-center gap-2.5">
-          <span className={cx("size-2 rounded-full", active ? "animate-soft-pulse bg-amber-300" : "bg-white/20")} />
-          <div className="text-[13.5px] font-medium text-amber-100">{active ? "Privacy Mode is active" : "Ready when you need it"}</div>
+          <span className={cx("size-2 rounded-full", active ? "animate-soft-pulse bg-amber-300" : "bg-emerald-400/70")} />
+          <div className={cx("text-[13.5px] font-medium", active ? "text-amber-100" : "text-white")}>
+            {active ? "Privacy Mode is on" : "Nothing is masked right now"}
+          </div>
         </div>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-amber-100/60">
-          While you are in control the Bot pauses: it can&apos;t see the screen, type, or click. Press{" "}
-          <span className="text-amber-100">I&apos;m Done</span> to hand control back.
-        </p>
-        {!active && !botId && <p className="mt-1.5 text-[11.5px] text-amber-100/50">Open a Bot first — its sandbox is what you take over.</p>}
-        <button
-          type="button"
-          disabled={busy || !privacy || (!active && !botId)}
-          onClick={() => void update(active ? "done" : "take_control")}
-          className={cx("mt-4", active ? btnGhost : btnWhite)}
-        >
-          {busy ? <Spinner size={14} /> : active ? "I'm Done" : "Take Control"}
-        </button>
+
+        <ol className="mt-3 space-y-2 text-[12.5px] leading-relaxed text-neutral-400">
+          <li className="flex gap-2.5">
+            <span className="mt-[3px] grid size-4 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] font-semibold tabular-nums text-neutral-400">1</span>
+            <span>When a task needs a password, a card number or anything personal, your Bot asks in the conversation.</span>
+          </li>
+          <li className="flex gap-2.5">
+            <span className="mt-[3px] grid size-4 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] font-semibold tabular-nums text-neutral-400">2</span>
+            <span>Choose <span className="text-neutral-200">Open Privacy Mode</span> and the Bot goes blind: it cannot see the screen, type, click, or use any tool.</span>
+          </li>
+          <li className="flex gap-2.5">
+            <span className="mt-[3px] grid size-4 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] font-semibold tabular-nums text-neutral-400">3</span>
+            <span>Enter the details yourself, then press <span className="text-neutral-200">I&apos;m Done</span> here or in the amber bar at the top of the app.</span>
+          </li>
+        </ol>
+
+        {active && (
+          <button type="button" disabled={busy} onClick={() => void finish()} className={cx("mt-4", btnWhite)}>
+            {busy ? <Spinner size={14} /> : "I'm Done"}
+          </button>
+        )}
         {error && (
           <p role="alert" className="mt-3 text-[12px] text-[#ff9aa5]">
             {error}
           </p>
         )}
       </div>
+
+      <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-neutral-500">
+        <Icon name="lock" size={12} className="mt-[3px] shrink-0" />
+        <span>There is no button to switch it on yourself — that is the point. Only a request from the Bot can open it, and it closes the moment you say you are done.</span>
+      </p>
     </div>
   );
 }
