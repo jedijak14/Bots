@@ -21,9 +21,9 @@ const TAB_GROUPS: { label: string; items: TabMeta[] }[] = [
   {
     label: "Setup",
     items: [
-      { id: "ai", label: "AI Provider", icon: "grid", summary: "The model behind your bots" },
+      { id: "ai", label: "AI Provider", icon: "sparkles", summary: "The model behind your bots" },
       { id: "computer", label: "Computer", icon: "monitor", summary: "The desktop bots work on" },
-      { id: "preferences", label: "Preferences", icon: "gear", summary: "Motion, voice and feel" },
+      { id: "preferences", label: "Preferences", icon: "sliders", summary: "Motion, voice and feel" },
     ],
   },
   {
@@ -31,7 +31,7 @@ const TAB_GROUPS: { label: string; items: TabMeta[] }[] = [
     items: [
       { id: "connections", label: "Connections", icon: "link", summary: "Accounts your bots can use" },
       { id: "skills", label: "Skills", icon: "sparkles", summary: "Reusable instructions and grants" },
-      { id: "goals", label: "Goals", icon: "check", summary: "One list every bot can see" },
+      { id: "goals", label: "Goals", icon: "target", summary: "One list every bot can see" },
       { id: "privacy", label: "Privacy Mode", icon: "lock", summary: "Private moments, bot hands off" },
     ],
   },
@@ -39,9 +39,9 @@ const TAB_GROUPS: { label: string; items: TabMeta[] }[] = [
     label: "You",
     items: [
       { id: "account", label: "Account", icon: "pencil", summary: "Name, photo and password" },
-      { id: "artifacts", label: "Artifacts", icon: "file", summary: "Everything your bots made" },
-      { id: "history", label: "History", icon: "chat", summary: "Conversations you cleared" },
-      { id: "data", label: "Data", icon: "download", summary: "Export or clear everything" },
+      { id: "artifacts", label: "Artifacts", icon: "archive", summary: "Everything your bots made" },
+      { id: "history", label: "History", icon: "clock", summary: "Conversations you cleared" },
+      { id: "data", label: "Data", icon: "database", summary: "Export or clear everything" },
     ],
   },
 ];
@@ -470,30 +470,47 @@ function PreferencesTab() {
                 aria-checked={active}
                 onClick={() => app.patchSettings({ theme: option.id })}
                 className={cx(
-                  "group overflow-hidden rounded-xl border text-left transition",
+                  "group overflow-hidden rounded-xl border p-1.5 text-left transition",
                   active ? "border-white/25 ring-1 ring-white/20" : "border-white/[0.07] hover:border-white/15",
                 )}
               >
-                {/* A miniature of the app in each mode, so the choice is visual. */}
+                {/* A miniature of the app in each mode, so the choice is visual.
+                    Fixed-size swatches inside a fixed-height frame: percentage
+                    children in a flex row grew past the frame whenever the dark
+                    gradient reset their background-size. Nothing here depends on
+                    layout, so the three previews always match. */}
                 <span
                   aria-hidden
-                  style={{
-                    background:
-                      option.id === "light"
-                        ? "#f2f2f4"
-                        : option.id === "dark"
-                          ? "#0b0b0e"
-                          : "linear-gradient(110deg,#0b0b0e 0%,#0b0b0e 49.5%,#f2f2f4 50.5%,#f2f2f4 100%)",
-                  }}
-                  className="flex h-11 items-end gap-1 p-1.5"
+                  className="relative block h-10 w-full overflow-hidden rounded-[7px] ring-1 ring-black/10"
+                  style={{ background: option.id === "light" ? "#f2f2f4" : option.id === "dark" ? "#0b0b0e" : undefined }}
                 >
-                  {/* Explicit hex, not alpha utilities: the theme bridge flips
-                      those, which turned the "dark" preview into a pale ghost. */}
-                  <span className="h-full w-1/4 rounded-[3px]" style={{ background: option.id === "light" ? "#dcdce2" : option.id === "system" ? "linear-gradient(90deg,#26262b 50%,#dcdce2 50%)" : "#26262b" }} />
-                  <span className="h-2/3 flex-1 rounded-[3px]" style={{ background: option.id === "light" ? "#e6e6eb" : option.id === "system" ? "linear-gradient(90deg,#1a1a1f 50%,#e6e6eb 50%)" : "#1a1a1f" }} />
+                  {option.id === "system" && (
+                    <span aria-hidden className="absolute inset-0" style={{ background: "linear-gradient(90deg,#0b0b0e 0 50%,#f2f2f4 50% 100%)" }} />
+                  )}
+                  {/* Proportion, not decoration: a narrow rail, then a content
+                      column that keeps the same ratio as the real shell. */}
+                  <span aria-hidden className="absolute inset-y-1.5 left-1.5 w-4 overflow-hidden rounded-[3px]">
+                    {option.id === "system" ? (
+                      <span aria-hidden className="block size-full" style={{ background: "linear-gradient(90deg,#26262b 0 50%,#dcdce2 50% 100%)" }} />
+                    ) : (
+                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#dcdce2" : "#26262b" }} />
+                    )}
+                  </span>
+                  <span aria-hidden className="absolute inset-y-1.5 left-6 right-1.5 overflow-hidden rounded-[3px]">
+                    {option.id === "system" ? (
+                      <span aria-hidden className="block size-full" style={{ background: "linear-gradient(90deg,#1a1a1f 0 50%,#e6e6eb 50% 100%)" }} />
+                    ) : (
+                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#e6e6eb" : "#1a1a1f" }} />
+                    )}
+                  </span>
+                  {active && (
+                    <span aria-hidden className="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-white text-[#0b0b0e] shadow-sm">
+                      <Icon name="check" size={9} strokeWidth={3} />
+                    </span>
+                  )}
                 </span>
-                <span className={cx("flex items-center gap-1.5 px-2 py-1.5 text-[12px]", active ? "text-white" : "text-neutral-400")}>
-                  <span className={cx("size-1.5 rounded-full", active ? "bg-[#7c9bff]" : "bg-transparent")} />
+                <span className={cx("mt-2 flex items-center gap-1.5 px-1 pb-0.5 text-[12px]", active ? "text-white" : "text-neutral-400")}>
+                  <span className={cx("size-1.5 shrink-0 rounded-full", active ? "bg-[#7c9bff]" : "bg-transparent")} />
                   {option.label}
                 </span>
               </button>

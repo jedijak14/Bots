@@ -13,7 +13,11 @@ export async function GET(req: Request) {
       if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
       return Response.json(await db.select().from(skills).where(and(eq(skills.userId, user.id), or(isNull(skills.botId), eq(skills.botId, requestedBotId)))).orderBy(desc(skills.createdAt)));
     }
-    return Response.json(await db.select().from(skills).where(and(eq(skills.userId, user.id), isNull(skills.botId))).orderBy(desc(skills.createdAt)));
+    // The Settings list is the management view, not a runtime lookup: it has to
+    // show every skill the person owns. Filtering to `botId is null` here hid
+    // every skill assigned to one Bot, which read as "no skills yet" while one
+    // was plainly saved.
+    return Response.json(await db.select().from(skills).where(eq(skills.userId, user.id)).orderBy(desc(skills.createdAt)));
   } catch (error) { return handleError(error); }
 }
 
