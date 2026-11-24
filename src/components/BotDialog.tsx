@@ -54,7 +54,7 @@ export function BotDialog({ botId }: { botId: string | null }) {
       } else {
         app.addBot(j.bot);
         app.closeBotDialog();
-        router.push(`/bot/${j.bot.id}`);
+        router.push(`/bots/${j.bot.id}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");

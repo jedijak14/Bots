@@ -21,7 +21,7 @@ export default function NotFound() {
         </p>
         <div className="mt-6 flex items-center justify-center gap-2">
           <Link
-            href="/"
+            href="/bots"
             className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-black transition hover:bg-neutral-200 active:scale-[0.97]"
           >
             Back to your bots

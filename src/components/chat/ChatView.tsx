@@ -149,7 +149,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   }, [privacyActive]);
 
   useEffect(() => {
-    if (!bot) router.replace("/");
+    if (!bot) router.replace("/bots");
   }, [bot, router]);
   useEffect(
     () => () => {

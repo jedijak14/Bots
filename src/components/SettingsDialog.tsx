@@ -629,7 +629,7 @@ function DataTab() {
             const res = await fetch("/api/export", { method: "DELETE" });
             if (res.ok) {
               app.toast("Conversations cleared.");
-              router.push("/");
+              router.push("/bots");
               router.refresh();
             }
           }}
