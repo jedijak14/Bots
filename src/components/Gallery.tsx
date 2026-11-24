@@ -105,6 +105,8 @@ export function Gallery() {
                         <button
                           type="button"
                           aria-label={`Options for ${b.name}`}
+                          aria-haspopup="menu"
+                          aria-expanded={menu?.bot.id === b.id}
                           onClick={(e) => {
                             setMenu({ bot: b, position: placeMenu(e.currentTarget.getBoundingClientRect(), 3, { align: "end" }), trigger: e.currentTarget });
                           }}
