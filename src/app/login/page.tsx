@@ -5,6 +5,8 @@ import { AuthForm } from "@/components/AuthForm";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Sign in" };
+
 export default async function LoginPage() {
   if (await getCurrentUser()) redirect("/");
   return <AuthForm action={authenticateAction} />;

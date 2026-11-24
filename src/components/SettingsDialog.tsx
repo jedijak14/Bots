@@ -6,23 +6,39 @@ import { PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
 import { signOutAction } from "@/lib/auth-actions";
 import { useApp, type SettingsTab } from "./AppProvider";
 import { Icon, Spinner, type IconName } from "./icons";
+import { LogoMark } from "./Logo";
 import { btnDanger, btnGhost, btnWhite, cx, inputCls, Modal, Toggle } from "./ui";
 import { PrivacyTab, SkillsTab } from "./SecureSettingsTabs";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { HistoryPanel } from "./HistoryPanel";
 
-const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
-  { id: "ai", label: "AI Provider", icon: "grid" },
-  { id: "computer", label: "Computer", icon: "monitor" },
-  { id: "preferences", label: "Preferences", icon: "gear" },
-  { id: "account", label: "Account", icon: "pencil" },
-  { id: "data", label: "Data", icon: "download" },
-  { id: "connections", label: "Connections", icon: "link" },
-  { id: "skills", label: "Skills", icon: "sparkles" },
-  { id: "privacy", label: "Privacy Mode", icon: "lock" },
-  { id: "artifacts", label: "Artifacts", icon: "file" },
-  { id: "history", label: "History", icon: "chat" },
+const TAB_GROUPS: { label: string; items: { id: SettingsTab; label: string; icon: IconName }[] }[] = [
+  {
+    label: "Setup",
+    items: [
+      { id: "ai", label: "AI Provider", icon: "grid" },
+      { id: "computer", label: "Computer", icon: "monitor" },
+      { id: "preferences", label: "Preferences", icon: "gear" },
+    ],
+  },
+  {
+    label: "Workspace",
+    items: [
+      { id: "connections", label: "Connections", icon: "link" },
+      { id: "skills", label: "Skills", icon: "sparkles" },
+      { id: "privacy", label: "Privacy Mode", icon: "lock" },
+    ],
+  },
+  {
+    label: "You",
+    items: [
+      { id: "account", label: "Account", icon: "pencil" },
+      { id: "artifacts", label: "Artifacts", icon: "file" },
+      { id: "history", label: "History", icon: "chat" },
+      { id: "data", label: "Data", icon: "download" },
+    ],
+  },
 ];
 
 export function SettingsDialog() {
@@ -32,30 +48,41 @@ export function SettingsDialog() {
   const [tab, setTab] = useState<SettingsTab>(app.settingsTab ?? "ai");
 
   return (
-    <Modal onClose={app.closeSettings} width={780} label="Settings">
-      <div className="flex h-[min(620px,calc(100dvh-2rem))] flex-col md:flex-row">
-        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] p-3 md:w-[210px] md:flex-col md:border-b-0 md:border-r">
-          <h2 className="hidden px-3 pb-3 pt-2 text-[15px] font-semibold md:block">Settings</h2>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={cx(
-                "flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[13.5px] transition",
-                tab === t.id ? "bg-white/[0.09] text-white" : "text-neutral-400 hover:bg-white/[0.05] hover:text-white",
-              )}
-            >
-              <Icon name={t.icon} size={16} />
-              {t.label}
-              {t.id === "ai" && !app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-[#2b8af7]" />}
-            </button>
+    <Modal onClose={app.closeSettings} width={820} label="Settings">
+      <div className="flex h-[min(640px,calc(100dvh-2rem))] flex-col md:flex-row">
+        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] p-2.5 md:w-[224px] md:flex-col md:border-b-0 md:border-r md:overflow-visible">
+          <div className="mb-2 hidden items-center gap-2 px-2.5 pb-2 pt-1.5 md:flex">
+            <LogoMark size={20} />
+            <h2 className="text-[14px] font-semibold tracking-tight">Settings</h2>
+          </div>
+          {TAB_GROUPS.map((group) => (
+            <div key={group.label} className="contents md:block">
+              <div className="hidden px-2.5 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600 md:block">
+                {group.label}
+              </div>
+              {group.items.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={cx(
+                    "relative flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[13px] transition",
+                    tab === t.id ? "bg-white/[0.08] text-white" : "text-neutral-400 hover:bg-white/[0.05] hover:text-white",
+                  )}
+                >
+                  <Icon name={t.icon} size={15} className={cx(tab === t.id ? "text-[#a8c0ff]" : "text-neutral-500")} />
+                  {t.label}
+                  {t.id === "ai" && !app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-amber-400" />}
+                  {t.id === "ai" && app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />}
+                </button>
+              ))}
+            </div>
           ))}
-          <div className="mt-auto hidden px-3 pb-1 pt-4 text-[11.5px] leading-snug text-neutral-600 md:block">
+          <div className="mt-auto hidden px-2.5 pb-1 pt-4 text-[11px] leading-snug text-neutral-600 md:block">
             Keys are encrypted at rest and only used to talk to your provider.
           </div>
         </nav>
-        <div className="relative min-h-0 flex-1 overflow-y-auto p-6">
-          <button onClick={app.closeSettings} aria-label="Close settings" className="absolute right-4 top-4 grid size-8 place-items-center rounded-full text-neutral-400 transition hover:bg-white/10 hover:text-white">
+        <div className="relative min-h-0 flex-1 overflow-y-auto p-5 sm:p-7">
+          <button onClick={app.closeSettings} aria-label="Close settings" className="absolute right-4 top-4 z-10 grid size-8 place-items-center rounded-full text-neutral-400 transition hover:bg-white/10 hover:text-white">
             <Icon name="close" size={16} />
           </button>
           {tab === "ai" && <AiTab />}
@@ -452,10 +479,11 @@ function AccountTab() {
     }
   }
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePw, setDeletePw] = useState("");
+
   async function deleteAccount() {
-    const pw = window.prompt("Enter your password to permanently delete your account and all data:");
-    if (!pw) return;
-    if (await call("delete", { password: pw }, "DELETE")) {
+    if (await call("delete", { password: deletePw }, "DELETE")) {
       window.location.assign("/login");
     }
   }
@@ -531,10 +559,41 @@ function AccountTab() {
             Sign out
           </button>
         </form>
-        <button onClick={deleteAccount} className={btnDanger}>
+        <button onClick={() => { setDeletePw(""); setDeleteOpen(true); }} className={btnDanger}>
           Delete account
         </button>
       </div>
+
+      {deleteOpen && (
+        <Modal onClose={() => setDeleteOpen(false)} width={420} label="Delete account">
+          <div className="p-6">
+            <h3 className="text-[16px] font-semibold tracking-tight text-white">Delete your account?</h3>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-400">
+              Every bot, conversation and artifact goes with it. This can&apos;t be undone.
+            </p>
+            <input
+              type="password"
+              value={deletePw}
+              onChange={(e) => setDeletePw(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && deletePw && void deleteAccount()}
+              placeholder="Your password"
+              aria-label="Password"
+              autoComplete="current-password"
+              autoFocus
+              className={cx(inputCls, "mt-4")}
+            />
+            {err && <p className="mt-2 text-[12px] text-[#ff9aa5]">{err}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button className={btnGhost} onClick={() => setDeleteOpen(false)}>
+                Keep my account
+              </button>
+              <button className={btnDanger} disabled={!deletePw || busy === "delete"} onClick={() => void deleteAccount()}>
+                {busy === "delete" ? "Deleting…" : "Delete everything"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Section>
   );
 }
@@ -568,7 +627,6 @@ function DataTab() {
               app.toast("Conversations cleared.");
               router.push("/");
               router.refresh();
-              window.location.assign("/");
             }
           }}
         >

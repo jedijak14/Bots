@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="tile" x1="3" y1="1" x2="29" y2="31" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9DBBFF"/>
+      <stop offset="0.55" stop-color="#7C8CFF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="0.28" cy="0.12" r="0.78">
+      <stop stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="1" y="1" width="30" height="30" rx="9.5" fill="url(#tile)"/>
+  <rect x="1" y="1" width="30" height="30" rx="9.5" fill="url(#shine)"/>
+  <rect x="1" y="1" width="30" height="30" rx="9.5" fill="none" stroke="#fff" stroke-opacity="0.18"/>
+  <rect x="9.2" y="12.4" width="4.3" height="8.2" rx="2.15" fill="#07070A"/>
+  <rect x="18.5" y="12.4" width="4.3" height="8.2" rx="2.15" fill="#07070A"/>
+</svg>

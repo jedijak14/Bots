@@ -72,5 +72,5 @@ export function PanelState({
 
 /** Round badge used behind an icon in empty states. */
 export function IconBadge({ children }: { children: ReactNode }) {
-  return <div className="grid size-12 place-items-center rounded-full bg-[#171717] text-neutral-400">{children}</div>;
+  return <div className="grid size-12 place-items-center rounded-full bg-[#19191d] text-neutral-400">{children}</div>;
 }

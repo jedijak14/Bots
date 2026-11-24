@@ -8,7 +8,7 @@ export type Tool = {
 
 export type Hist = { role: "user" | "assistant"; content: string };
 
-export type ToolResult = { output: string; stop?: boolean };
+export type ToolResult = { output: string; stop?: boolean; artifactId?: string };
 
 export type AgentOptions = {
   provider: ProviderId;

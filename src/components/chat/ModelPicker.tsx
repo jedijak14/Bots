@@ -5,7 +5,7 @@ import { useApp } from "../AppProvider";
 import { Icon, Spinner } from "../icons";
 import { cx } from "../ui";
 
-export function ModelPicker({ botId }: { botId: string }) {
+export function ModelPicker({ botId, variant = "header" }: { botId: string; variant?: "header" | "chip" }) {
   const app = useApp();
   const bot = app.bots.find((b) => b.id === botId);
   const [open, setOpen] = useState(false);
@@ -60,15 +60,30 @@ export function ModelPicker({ botId }: { botId: string }) {
     <div ref={wrap} className="relative">
       <button
         onClick={toggle}
-        className="flex max-w-[210px] items-center gap-2 rounded-full border border-white/[0.05] bg-[#141414] py-2 pl-3.5 pr-3 text-[13px] text-neutral-300 transition hover:bg-[#1b1b1b] hover:text-white"
+        className={cx(
+          "group flex items-center gap-1.5 rounded-full font-medium transition",
+          variant === "chip"
+            ? cx("h-8 border px-2.5 text-[12px]", open ? "border-white/25 bg-white/[0.08] text-white" : "border-white/[0.08] text-neutral-300 hover:border-white/20 hover:bg-white/[0.05] hover:text-white")
+            : "h-9 max-w-[220px] px-2.5 text-[12.5px] text-neutral-300 hover:bg-white/[0.06] hover:text-white max-md:px-2",
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label="Choose model"
+        title="Choose model"
       >
-        <span className="truncate">{effective ?? (app.settings.hasAiKey ? "Select model" : "Add API key")}</span>
-        <Icon name="chevron" size={13} className={cx("shrink-0 transition", open && "rotate-180")} />
+        <Icon name="sparkles" size={13} className="text-neutral-500 transition group-hover:text-[#a8c0ff]" />
+        <span className={cx("truncate", variant === "chip" ? "max-w-[170px]" : "max-w-[150px] max-sm:hidden")}>
+          {effective ?? (app.settings.hasAiKey ? "Select model" : "Add API key")}
+        </span>
+        <Icon name="chevron" size={12} className={cx("shrink-0 text-neutral-600 transition", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="modal-in absolute right-0 top-[calc(100%+8px)] z-40 w-[290px] overflow-hidden rounded-2xl border border-white/10 bg-[#171717] shadow-2xl">
+        <div
+          className={cx(
+            "modal-in absolute z-40 w-[300px] overflow-hidden rounded-2xl border border-white/10 bg-[#19191d] shadow-[0_24px_70px_rgba(0,0,0,0.65)]",
+            variant === "chip" ? "bottom-[calc(100%+8px)] left-0" : "right-0 top-[calc(100%+6px)]",
+          )}
+        >
           <div className="border-b border-white/[0.06] p-2">
             <input
               autoFocus
@@ -76,20 +91,24 @@ export function ModelPicker({ botId }: { botId: string }) {
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && q.trim()) choose(list[0] ?? q.trim());
+                if (e.key === "Escape") setOpen(false);
               }}
               placeholder={models?.length ? "Search models" : "Type a model name + Enter"}
               aria-label="Search models"
-              className="w-full rounded-lg bg-[#0f0f0f] px-3 py-2 text-[13px] outline-none placeholder:text-neutral-500"
+              className="w-full rounded-xl bg-black/30 px-3 py-2 text-[13px] outline-none placeholder:text-neutral-600"
             />
           </div>
-          <div className="max-h-[300px] overflow-y-auto p-1.5" role="listbox">
+          <div className="max-h-[320px] overflow-y-auto p-1.5" role="listbox">
             {bot?.model && !q && (
-              <button onClick={() => choose(null)} className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white">
+              <button
+                onClick={() => choose(null)}
+                className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white"
+              >
                 Use default{app.settings.defaultModel ? ` (${app.settings.defaultModel})` : ""}
               </button>
             )}
             {loading && (
-              <div className="grid place-items-center py-6 text-neutral-500">
+              <div className="grid place-items-center py-8 text-neutral-500">
                 <Spinner />
               </div>
             )}
@@ -99,13 +118,15 @@ export function ModelPicker({ botId }: { botId: string }) {
                 role="option"
                 aria-selected={m === effective}
                 onClick={() => choose(m)}
-                className={cx("flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition hover:bg-white/[0.06]", m === effective && "bg-white/[0.06]")}
+                className={cx("flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition hover:bg-white/[0.06]", m === effective && "bg-white/[0.06] text-white")}
               >
                 <span className="truncate">{m}</span>
-                {m === effective && <Icon name="check" size={14} className="shrink-0 text-[#3b8cff]" />}
+                {m === effective && <Icon name="check" size={13} className="shrink-0 text-[#a8c0ff]" />}
               </button>
             ))}
-            {!loading && !list.length && <p className="px-3 py-5 text-center text-[12.5px] text-neutral-500">{models?.length ? "No models match." : "Couldn't load models. Type a name above."}</p>}
+            {!loading && !list.length && (
+              <p className="px-3 py-6 text-center text-[12.5px] text-neutral-500">{models?.length ? "No models match." : "Couldn't load models. Type a name above."}</p>
+            )}
           </div>
         </div>
       )}
