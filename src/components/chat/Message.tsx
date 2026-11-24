@@ -120,7 +120,10 @@ export function ChoiceCard({
 }) {
   const opts = choices.options.some((o) => /something else|^other$/i.test(o)) ? choices.options : [...choices.options, "Something else"];
   return (
-    <div className="mt-3 w-full max-w-[min(640px,100%)] rounded-[22px] border border-white/[0.06] bg-[#101013] p-3 fade-up">
+    /* Full column width, matching the message text above it. At 1440 the old
+       640px cap left the card 184px narrower than the paragraph it follows, so
+       its edge did not line up with anything. */
+    <div className="mt-3 w-full rounded-[22px] border border-white/[0.06] bg-[#101013] p-3 fade-up">
       <h3 className="px-2.5 pb-2 pt-1.5 text-[15.5px] font-semibold leading-snug text-white">{choices.question}</h3>
       <div className="flex flex-col gap-0.5">
         {opts.map((o, i) => {
