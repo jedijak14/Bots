@@ -4,7 +4,19 @@ import { GeistSans } from "geist/font/sans";
 import { BRAND } from "@/lib/brand";
 import "./globals.css";
 
+/**
+ * Absolute URLs for social images. Vercel exposes its own origin at build time;
+ * APP_ORIGIN covers self-hosting and custom domains.
+ */
+const metadataBase = (() => {
+  const explicit = process.env.APP_ORIGIN?.trim();
+  if (explicit) return new URL(explicit.startsWith("http") ? explicit : `https://${explicit}`);
+  if (process.env.VERCEL_URL) return new URL(`https://${process.env.VERCEL_URL}`);
+  return new URL("http://localhost:3000");
+})();
+
 export const metadata: Metadata = {
+  metadataBase,
   title: {
     default: `${BRAND.name} — ${BRAND.tagline}`,
     template: `%s · ${BRAND.name}`,

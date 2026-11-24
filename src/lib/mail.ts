@@ -39,18 +39,23 @@ export function hasAppGoogleCredentials(): boolean {
 async function appGoogleAccessToken(): Promise<string> {
   const config = appGoogleConfig();
   if (!config) throw new MailError("not_connected", "Connect your Google account to send email.", 401);
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      refresh_token: config.refreshToken,
-      grant_type: "refresh_token",
-    }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        refresh_token: config.refreshToken,
+        grant_type: "refresh_token",
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new MailError("network", "Couldn't reach Google to refresh the mail token. Try again in a moment.", 502);
+  }
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; error_description?: string };
   if (!res.ok || !data.access_token) {
     throw new MailError(
