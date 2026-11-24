@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { useApp } from "./AppProvider";
+import { EmailPanel } from "./EmailPanel";
 import { Icon, Spinner } from "./icons";
 import { cx } from "./ui";
 
@@ -115,7 +116,7 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
           <Icon name="info" size={12} className="mt-[3px] shrink-0" />
           {data.reason === "connector"
             ? `The ${name} connector is not installed on this deployment yet, so connecting is unavailable here.`
-            : "No Vercel Connect here. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN to send mail from this deployment."}
+            : "Vercel Connect isn't set up on this deployment. Saving a Gmail address under Email above does the same job."}
         </p>
       )}
     </div>
@@ -189,15 +190,19 @@ export function ConnectionsPanel() {
       <p className="mt-1 max-w-[540px] text-[13.5px] leading-relaxed text-neutral-400">
         Bots act through your own accounts. Access tokens stay on the server — they are never sent into chat or stored in the app database.
       </p>
-      <div className="mt-5 space-y-2">
+
+      <div className="mt-5">
+        <EmailPanel />
+      </div>
+
+      <div className="mt-6 mb-2 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600">Accounts</div>
+      <div className="space-y-2">
         {providers.map((provider) => (
           <ConnectionCard key={provider.id} {...provider} />
         ))}
       </div>
       <p className="mt-4 text-[11.5px] leading-relaxed text-neutral-600">
-        Running this yourself? Email also works without Vercel Connect: set <code className="text-neutral-500">GOOGLE_CLIENT_ID</code>,{" "}
-        <code className="text-neutral-500">GOOGLE_CLIENT_SECRET</code> and <code className="text-neutral-500">GOOGLE_REFRESH_TOKEN</code>{" "}
-        with the <code className="text-neutral-500">gmail.send</code> scope.
+        Connecting runs through Vercel Connect, so tokens stay on the server and can be revoked at any time. Nothing here is needed to chat.
       </p>
     </div>
   );
