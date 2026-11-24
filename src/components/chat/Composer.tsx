@@ -203,7 +203,7 @@ export function Composer({
           <textarea
             ref={inputRef}
             value={value}
-            rows={2}
+            rows={1}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
