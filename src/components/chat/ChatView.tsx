@@ -610,6 +610,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               placeholder={placeholder}
               attachments={attachments}
               setAttachments={setAttachments}
+              botId={bot.id}
               inputRef={inputRef}
               onError={(m) => app.toast(m, "err")}
               modes={

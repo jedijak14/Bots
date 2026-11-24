@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { Icon, StopIcon, WaveIcon } from "../icons";
+import { Menu, placeMenu, type MenuPosition } from "../Menu";
 import { cx } from "../ui";
+import { LyricVideoSheet } from "./LyricVideoSheet";
 
 export type Attachment = { name: string; content: string };
 
@@ -30,6 +32,7 @@ export function Composer({
   placeholder,
   attachments,
   setAttachments,
+  botId,
   inputRef,
   onError,
   modes,
@@ -43,6 +46,8 @@ export function Composer({
   placeholder: string;
   attachments: Attachment[];
   setAttachments: (a: Attachment[]) => void;
+  /** The Bot this composer writes to; needed to attach uploads to it. */
+  botId: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   onError: (m: string) => void;
   /** Extra controls rendered in the chip row (computer, voice, …). */
@@ -53,6 +58,10 @@ export function Composer({
   const recRef = useRef<SpeechRec | null>(null);
   const baseRef = useRef("");
   const [listening, setListening] = useState(false);
+  const [plusMenu, setPlusMenu] = useState<MenuPosition | null>(null);
+  const [plusTrigger, setPlusTrigger] = useState<HTMLButtonElement | null>(null);
+  const [lyricSheet, setLyricSheet] = useState(false);
+  const plusRef = useRef<HTMLButtonElement | null>(null);
   const subscribeNothing = () => () => {};
   const canDictate = useSyncExternalStore(
     subscribeNothing,
@@ -193,13 +202,52 @@ export function Composer({
             onChange={(e) => onFiles(e.target.files)}
           />
           <button
-            onClick={() => fileRef.current?.click()}
-            aria-label="Attach a text file"
-            title="Attach a text file"
+            ref={plusRef}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              // Keep the element itself, not the ref, so render never reads
+              // `.current`; the Menu needs it to restore focus on Escape.
+              setPlusTrigger(e.currentTarget);
+              setPlusMenu((current) => (current ? null : placeMenu(rect, 2, { align: "start", gap: 8 })));
+            }}
+            aria-label="Add"
+            aria-haspopup="menu"
+            aria-expanded={!!plusMenu}
+            title="Add"
             className="mb-0.5 grid size-9 shrink-0 place-items-center rounded-full text-neutral-400 transition hover:bg-white/10 hover:text-white active:scale-90"
           >
             <Icon name="plus" size={19} />
           </button>
+          {plusMenu && (
+            <Menu
+              label="Add"
+              trigger={plusTrigger}
+              position={plusMenu}
+              onClose={() => setPlusMenu(null)}
+              items={[
+                {
+                  label: "Attach a text file",
+                  icon: "file",
+                  onSelect: () => fileRef.current?.click(),
+                },
+                {
+                  label: "New lyric video",
+                  icon: "volume",
+                  onSelect: () => setLyricSheet(true),
+                },
+              ]}
+            />
+          )}
+          {lyricSheet && (
+            <LyricVideoSheet
+              botId={botId}
+              onClose={() => setLyricSheet(false)}
+              onReady={(note) => {
+                setLyricSheet(false);
+                onChange(value ? `${value}\n\n${note}` : note);
+              }}
+            />
+          )}
           {/* The awaiting prompt is long: at 390 the field is 228px wide, so it
               wrapped to two lines inside a one-line box and started mid-height.
               Shrinking only the placeholder on narrow screens keeps it on one line

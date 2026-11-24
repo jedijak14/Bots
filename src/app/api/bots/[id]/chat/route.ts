@@ -200,7 +200,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             await tx.select({ id: users.id }).from(users).where(eq(users.id, user.id)).for("update");
             const [activeSession] = await tx.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1);
             if (activeSession) return null;
-            const [message] = await tx.insert(messages).values({ botId: id, userId: user.id, role: "assistant", content: text.trim(), steps: steps.length ? steps : null, choices }).returning();
+            const [message] = await tx.insert(messages).values({ botId: id, userId: user.id, role: "assistant", content: text.replace(/\n{3,}/g, "\n\n").trim(), steps: steps.length ? steps : null, choices }).returning();
             return message ?? null;
           });
           if (!saved) {

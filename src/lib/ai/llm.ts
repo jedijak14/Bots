@@ -151,9 +151,16 @@ async function openaiLoop(o: AgentOptions) {
     const real = calls.filter((c) => c && c.name);
     if (!real.length) return;
 
+    // Text from the pass that requested tools and text from the pass that
+    // follows it are separate paragraphs; without this they would be glued
+    // together in the transcript ("Building it nowYour lyric video is ready").
+    if (text && !text.endsWith("\n")) {
+      text += "\n\n";
+      o.onText("\n\n");
+    }
     msgs.push({
       role: "assistant",
-      content: text || null,
+      content: text.trim() || null,
       tool_calls: real.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.args || "{}" } })),
     });
     let stop = false;
