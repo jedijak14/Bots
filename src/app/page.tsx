@@ -63,8 +63,11 @@ const CAPABILITIES = [
 ] as const;
 
 export default async function LandingPage() {
-  // Signed-in people belong in the app, not on the front door.
-  if (await getCurrentUser()) redirect("/bots");
+  // Signed-in people usually belong in the app — but not when they came to
+  // look at the front door. A redirect here made the landing page impossible
+  // to revisit or review once you had an account, so the call to action below
+  // is the thing that routes into the app.
+  const signedIn = !!(await getCurrentUser());
 
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-[#050507] text-white">
@@ -291,10 +294,10 @@ export default async function LandingPage() {
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-2.5">
                 <Link
-                  href="/login?intent=signup"
+                  href={signedIn ? "/bots" : "/login?intent=signup"}
                   className="rounded-full bg-white px-5 py-2.5 text-[13.5px] font-semibold text-black transition hover:bg-neutral-200 active:scale-[0.98]"
                 >
-                  Create your account
+                  {signedIn ? "Open your Bots" : "Create your account"}
                 </Link>
                 <Link
                   href="/login"
