@@ -5,6 +5,7 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
+import { withDbRetry } from "./retry";
 import { sessions, users, userSettings } from "@/db/schema";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -121,12 +122,14 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
-  const rows = await db
+  // This is the first query every page runs, so it is also where a dropped
+  // connection would take the whole render down. A read is safe to repeat.
+  const rows = await withDbRetry(() => db
     .select({ id: users.id, email: users.email, displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, new Date())))
-    .limit(1);
+    .limit(1));
   return rows[0] ?? null;
 });
 

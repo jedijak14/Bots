@@ -26,6 +26,7 @@ const fetcher = async (url: string) => {
 
 export function SkillsTab({ botId }: { botId: string | null }) {
   const app = useApp();
+  const botName = (id: string | null) => (id ? (app.bots.find((b) => b.id === id)?.name ?? "One Bot") : "All Bots");
   const { data: skills, error, mutate } = useSWR<Skill[]>(`/api/skills?botId=${encodeURIComponent(botId ?? "global")}`, fetcher, {
     shouldRetryOnError: false,
   });
@@ -38,6 +39,10 @@ export function SkillsTab({ botId }: { botId: string | null }) {
   const [allowedTools, setAllowedTools] = useState<string[]>([]);
   const [allowedConnectors, setAllowedConnectors] = useState<string[]>([]);
   const [saveError, setSaveError] = useState("");
+  // The editor used to sit permanently above the saved list, so with one skill
+  // saved the list was pushed below the fold of a 680px dialog. The list now
+  // leads, and the editor opens when it is actually needed.
+  const [editorOpen, setEditorOpen] = useState(false);
 
   function reset() {
     setName("");
@@ -62,6 +67,7 @@ export function SkillsTab({ botId }: { botId: string | null }) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not save the skill.");
       reset();
+      setEditorOpen(false);
       setSaved(true);
       await mutate();
     } catch (reason) {
@@ -81,7 +87,25 @@ export function SkillsTab({ botId }: { botId: string | null }) {
         receives those grants.
       </p>
 
-      <div className="mt-5 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-500">
+          {skills?.length ? `Saved skills · ${skills.length}` : "No skills yet"}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (editorOpen) reset();
+            setEditorOpen((v) => !v);
+          }}
+          className={cx("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition", editorOpen ? "text-neutral-400 hover:bg-white/[0.06] hover:text-white" : "bg-white/[0.08] text-white hover:bg-white/[0.14]")}
+        >
+          <Icon name="plus" size={13} className={cx("transition", editorOpen && "rotate-45")} />
+          {editorOpen ? "Close" : "New skill"}
+        </button>
+      </div>
+
+      {editorOpen && (
+        <div className="fade-up mt-3 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
         <input aria-label="Skill name" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Skill name" />
         <textarea
           aria-label="Skill instructions"
@@ -99,7 +123,11 @@ export function SkillsTab({ botId }: { botId: string | null }) {
             className={cx(inputCls, "mt-1.5 appearance-none text-[13px] normal-case tracking-normal")}
           >
             <option value="">All Bots</option>
-            {botId && <option value={botId}>This Bot</option>}
+            {app.bots.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -156,22 +184,16 @@ export function SkillsTab({ botId }: { botId: string | null }) {
             {saveError}
           </p>
         )}
-      </div>
-
-      {error && (
-        <p role="alert" className="mt-4 text-[13px] text-[#ff9aa5]">
-          {error.message}
-        </p>
+        </div>
       )}
 
       {!!skills?.length && (
-        <div className="mt-6 flex flex-col gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-500">Saved skills</div>
+        <div className="mt-3 flex flex-col gap-2">
           {skills.map((skill) => (
             <div
               key={skill.id}
               className={cx(
-                "flex items-center gap-3 rounded-xl border px-3.5 py-3 transition",
+                "group flex items-center gap-3 rounded-xl border px-3.5 py-3 transition",
                 skill.enabled ? "border-white/[0.09] bg-white/[0.025]" : "border-white/[0.06] bg-white/[0.01]",
               )}
             >
@@ -179,11 +201,14 @@ export function SkillsTab({ botId }: { botId: string | null }) {
                 <Icon name="sparkles" size={15} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-white">
-                  {skill.name}
-                  <span className="ml-2 text-[10px] font-normal text-neutral-600">v{skill.version}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-[13px] font-medium text-white">{skill.name}</span>
+                  <span className="shrink-0 text-[10px] text-neutral-600">v{skill.version}</span>
+                  <span className={cx("shrink-0 rounded-full px-1.5 py-0.5 text-[10px]", skill.botId ? "bg-white/[0.06] text-neutral-400" : "bg-[#7c9bff]/10 text-[#a8c0ff]")}>
+                    {skill.botId ? botName(skill.botId) : "All Bots"}
+                  </span>
                 </div>
-                <p className="truncate text-[11px] text-neutral-500">{skill.instructions}</p>
+                <p className="mt-0.5 truncate text-[11px] text-neutral-500">{skill.instructions}</p>
               </div>
               <button
                 type="button"
@@ -196,8 +221,9 @@ export function SkillsTab({ botId }: { botId: string | null }) {
                   setAllowedConnectors(skill.allowedConnectors ?? []);
                   setSaved(false);
                   setSaveError("");
+                  setEditorOpen(true);
                 }}
-                className="rounded-full px-2.5 py-1.5 text-[11px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white"
+                className="shrink-0 rounded-full px-2.5 py-1.5 text-[11px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white"
               >
                 Edit
               </button>
@@ -221,7 +247,7 @@ export function SkillsTab({ botId }: { botId: string | null }) {
                   const response = await fetch(`/api/skills/${skill.id}`, { method: "DELETE" });
                   if (response.ok) await mutate();
                 }}
-                className="rounded-full px-2 py-1.5 text-[11px] text-neutral-600 transition hover:bg-rose-400/10 hover:text-rose-300"
+                className="shrink-0 rounded-full px-2 py-1.5 text-[11px] text-neutral-600 transition hover:bg-rose-400/10 hover:text-rose-300"
               >
                 Delete
               </button>
@@ -229,6 +255,19 @@ export function SkillsTab({ botId }: { botId: string | null }) {
           ))}
         </div>
       )}
+
+      {error && (
+        <p role="alert" className="mt-4 text-[13px] text-[#ff9aa5]">
+          {error.message}
+        </p>
+      )}
+
+      {!skills && !error && (
+        <div className="mt-4 flex items-center gap-2 text-[12.5px] text-neutral-500">
+          <Spinner size={13} /> Loading skills…
+        </div>
+      )}
+
     </div>
   );
 }

@@ -54,7 +54,7 @@ export function Gallery() {
           <LogoMark size={22} />
           <span className="text-[15px] font-semibold tracking-[-0.02em]">Bots</span>
         </div>
-        <h1 className="hidden text-[15px] font-medium text-neutral-200 md:block">All bots</h1>
+        <h1 className="hidden text-[15px] font-medium text-neutral-200 md:block">Your bots</h1>
         <div className="flex-1" />
         <button
           onClick={() => app.openBotDialog(null)}
@@ -161,6 +161,40 @@ export function Gallery() {
               </div>
             </div>
           )}
+
+          {/* Below the grid: the parts of the workspace that are not a single
+              Bot. These were only reachable from the account menu, which made
+              the gallery feel like the whole product. */}
+          <div className="mt-10">
+            <div className="mb-2.5 flex items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-[0.09em] text-neutral-500">Everything else</span>
+              <span aria-hidden className="h-px flex-1 bg-white/[0.06]" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { label: "Goals", hint: "Shared with every Bot", icon: "target" as const, tab: "goals" as const },
+                { label: "Artifacts", hint: "Work your Bots saved", icon: "archive" as const, tab: "artifacts" as const },
+                { label: "History", hint: "Cleared conversations", icon: "clock" as const, tab: "history" as const },
+                { label: "Connections", hint: "Accounts they can use", icon: "link" as const, tab: "connections" as const },
+              ].map((item, i) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => app.openSettings(item.tab)}
+                  style={{ animationDelay: `${Math.min(bots.length, 8) * 30 + i * 30}ms` }}
+                  className="fade-up group flex flex-col items-start gap-2 rounded-[16px] border border-white/[0.06] bg-white/[0.018] p-3 text-left transition hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.045] active:scale-[0.99]"
+                >
+                  <span className="grid size-8 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-neutral-300 transition group-hover:text-white">
+                    <Icon name={item.icon} size={14} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-medium text-neutral-200">{item.label}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-neutral-500">{item.hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

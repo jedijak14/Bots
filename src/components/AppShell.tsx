@@ -373,7 +373,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           aria-label="Goals"
           {...railTip("Goals")}
         >
-          <Icon name="check" size={15} className="shrink-0 text-neutral-500 transition group-hover:text-[#a8c0ff]" />
+          <Icon name="target" size={15} className="shrink-0 text-neutral-500 transition group-hover:text-[#a8c0ff]" />
           <span className={cx("min-w-0 flex-1 truncate text-left", collapsed && "md:hidden")}>Goals</span>
           <OpenGoalCount collapsed={collapsed} />
         </button>
