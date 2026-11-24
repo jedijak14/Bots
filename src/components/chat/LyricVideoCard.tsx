@@ -279,9 +279,18 @@ function themeForSpec(spec: LyricVideoSpec): string {
   font-weight: 650;
   letter-spacing: -0.02em;
 }
-/* Blurred neighbour lines: enough for depth of field, not enough to clutter. */
-.blyrics-line:not(.blyrics--active) {
-  opacity: 0.55;
+/* Neighbour lines step back so the line being sung is unmistakable. The
+   element's own class is \`blyrics--line\` (two hyphens); an earlier version of
+   this rule used \`blyrics-line\`, which matched nothing and left all five lines
+   at full strength. */
+.blyrics--line:not(.blyrics--active) {
+  opacity: 0.5;
+}
+/* Before playback the first line is the active one, so the rest should already
+   be receded — otherwise the card opens with every line bright and the first
+   line dim, which reads as broken. */
+.blyrics-container:not([data-sync="playing"]) .blyrics--line:not(.blyrics--active) {
+  opacity: 0.5;
 }
 `;
 }

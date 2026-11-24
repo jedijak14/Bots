@@ -4,6 +4,7 @@ import { bots, conversationArchives, messages, privacySessions, skills, users, t
 import { getCurrentUser } from "@/lib/auth";
 import { getBot } from "@/lib/bots";
 import { runAgent, type Hist } from "@/lib/ai/llm";
+import { fitHistory } from "@/lib/ai/history";
 import { buildToolset } from "@/lib/agent-tools";
 import { aiConfigFrom, e2bKeyFrom, getSettings } from "@/lib/settings";
 import { goalsForPrompt, listGoals } from "@/lib/goals";
@@ -102,7 +103,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(messages.botId, id), eq(messages.userId, user.id)))
     .orderBy(desc(messages.createdAt))
     .limit(40);
-  const history: Hist[] = recent
+  const history: Hist[] = fitHistory(
+    recent
     .reverse()
     .map((m) => {
       let c = m.content;
@@ -112,7 +114,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }
       return { role: m.role as "user" | "assistant", content: c.trim() };
     })
-    .filter((m) => m.content);
+    .filter((m) => m.content),
+    // Enough for a long working session without letting two pasted documents
+    // crowd the current question out of the window.
+    Number(process.env.HISTORY_TOKEN_BUDGET) || 24_000,
+  );
 
   const ac = new AbortController();
   req.signal.addEventListener("abort", () => ac.abort());

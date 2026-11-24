@@ -58,6 +58,9 @@ export function Reveal({ children, className, delay = 0 }: { children: ReactNode
 export function RotatingWord({ words, label }: { words: readonly string[]; label: string }) {
   const [index, setIndex] = useState(0);
   const [width, setWidth] = useState<number | null>(null);
+  // False for the ~430ms a width change is animating; the word is invisible
+  // then, so it can never be seen clipped by a slot it has outgrown.
+  const [settled, setSettled] = useState(true);
   const measure = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
@@ -68,12 +71,37 @@ export function RotatingWord({ words, label }: { words: readonly string[]; label
     return () => window.clearInterval(id);
   }, [words.length]);
 
-  // Runs before paint, so the slot is already the right size on the first frame.
+  // Measure synchronously on mount so the slot is already the right size on
+  // the first frame — otherwise the longest word starts in a slot sized for
+  // the shortest and spills across the rest of the headline.
   useLayoutEffect(() => {
     const node = measure.current;
     if (!node) return;
     const next = node.getBoundingClientRect().width;
-    if (next > 0) setWidth(next);
+    if (next > 0) setWidth((current) => (current === null ? Math.ceil(next) : current));
+  }, []);
+
+  // Keep the slot as wide as the widest word seen so far.
+  //
+  // Shrinking the slot mid-transition is not safe on its own: the visible word
+  // is already full size on the frame the slot starts shrinking, so it covers
+  // whatever follows it — "research" printed straight over "done". But the word
+  // is clipped to the slot, so the slot must never be *narrower* than the word
+  // being shown either. While a change is in flight the word is hidden (below),
+  // and once it settles the slot is snapped to the exact width of the current
+  // word, so the line has no hole in it on a narrow screen either.
+  useLayoutEffect(() => {
+    const node = measure.current;
+    if (!node) return;
+    const next = Math.ceil(node.getBoundingClientRect().width);
+    if (next <= 0) return;
+    setSettled(false);
+    setWidth((current) => (current === null || next > current ? next : current));
+    const id = window.setTimeout(() => {
+      setWidth(Math.ceil(node.getBoundingClientRect().width));
+      setSettled(true);
+    }, 430);
+    return () => window.clearTimeout(id);
   }, [index]);
 
   return (
@@ -90,13 +118,20 @@ export function RotatingWord({ words, label }: { words: readonly string[]; label
         <span aria-hidden className="invisible select-none">
           &#8203;
         </span>
+        {/* w-max / max-w-none matter: an absolutely positioned box is still
+            clamped by its containing block, so once the slot was narrower than
+            the word being measured it measured *itself* and never grew again —
+            on a phone that clipped "research" to "resea". */}
         <span
           ref={measure}
-          className="pointer-events-none invisible absolute left-0 top-0 whitespace-nowrap"
+          className="pointer-events-none invisible absolute left-0 top-0 w-max max-w-none whitespace-nowrap"
         >
           {words[index]}
         </span>
-        <span className="land-word absolute inset-y-0 left-0 whitespace-nowrap bg-gradient-to-r from-[#a8c0ff] via-[#c4b5fd] to-[#7dd3fc] bg-clip-text text-transparent">
+        <span
+          className="land-word absolute inset-y-0 left-0 max-w-full overflow-hidden whitespace-nowrap bg-gradient-to-r from-[#a8c0ff] via-[#c4b5fd] to-[#7dd3fc] bg-clip-text text-transparent"
+          style={{ opacity: settled ? undefined : 0 }}
+        >
           {words[index]}
         </span>
       </span>

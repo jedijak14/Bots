@@ -72,12 +72,9 @@ export function Gallery() {
         <div className="relative mx-auto w-full max-w-[960px] px-5 pb-28 pt-4 sm:px-8">
           {bots.length ? (
             <>
-              <div className="mb-6 flex items-end justify-between gap-4">
-                <div>
-                  <h2 className="text-[26px] font-semibold tracking-[-0.03em] text-white">Your bots</h2>
-                  <p className="mt-1 text-[13.5px] text-neutral-500">Each one keeps its own conversation, memory and computer.</p>
-                </div>
-                <Pill tone="neutral" className="mb-1 hidden sm:inline-flex">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <p className="text-[13px] text-neutral-500">Each one keeps its own conversation, memory and computer.</p>
+                <Pill tone="neutral" className="hidden shrink-0 sm:inline-flex">
                   {bots.length} {bots.length === 1 ? "bot" : "bots"}
                 </Pill>
               </div>
@@ -200,7 +197,9 @@ export function Gallery() {
 
       {menu && <Menu label={`Options for ${menu.bot.name}`} items={items(menu.bot)} position={menu.position} trigger={menu.trigger} onClose={() => setMenu(null)} />}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-wrap items-center justify-center gap-2 px-4">
+      {/* On a phone these sat on top of the last shortcut card, so they are
+          desktop-only and the scroll column reserves room for them. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 hidden flex-wrap items-center justify-center gap-2 px-4 md:flex">
         <button
           onClick={() => app.openSettings("ai")}
           className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#101013]/90 px-3.5 py-2 text-[12px] text-neutral-400 backdrop-blur transition hover:bg-[#19191d] hover:text-white"

@@ -20,7 +20,7 @@ const obj = (properties: Record<string, unknown>, required: string[]) => ({
 const ASK: Tool = {
   name: "ask_user",
   description:
-    "Show the user a multiple-choice question with 2-5 short options (a 'Something else' option is added automatically). Use when you need the user to pick a direction. After calling this, stop and wait for their reply.",
+    "Ask the user a multiple-choice question with 2-5 short options. After calling this, stop and wait for their reply.",
   parameters: obj(
     {
       question: { type: "string", description: "The question to show." },
@@ -50,7 +50,7 @@ const CORE_TOOLS: Tool[] = [
   {
     name: "make_lyric_video",
     description:
-      "Build a lyric video (a synchronized, word-by-word animated lyric player with the album art behind it) from a song the user uploaded plus its lyrics file. Call this once you know the audio artifact id and have the lyrics text. The user uploads the mp3 and an LRC/SRT/TTML/QRC/plain lyric file in the chat; their artifact ids are in the conversation. The video opens as a card in the chat and lives in Artifacts.",
+      "Build a lyric video from a song and lyrics the user uploaded. Use the artifact ids from their upload message. Prefer lyricsId over retyping the file.",
     parameters: obj(
       {
         title: { type: "string", description: "Song title." },
@@ -68,12 +68,12 @@ const CORE_TOOLS: Tool[] = [
   },
   {
     name: "save_artifact",
-    description: "Save a story, document, website source, or other substantial work to the user's Artifacts library. It appears as a card in the chat straight away, and stays in Artifacts for later.",
+    description: "Save substantial work (story, document, website source) to Artifacts. It appears as a chat card immediately.",
     parameters: obj({ title: { type: "string" }, kind: { type: "string", enum: ["story", "document", "html", "website"] }, content: { type: "string" } }, ["title", "kind", "content"]),
   },
   {
     name: "draft_email",
-    description: "Draft an email for the user. It appears as an editable card in the chat with a Send button — it is never sent without them pressing it. Use this whenever email is involved.",
+    description: "Draft an email. It appears as an editable card with a Send button and is never sent without the user pressing it.",
     parameters: obj(
       {
         to: { type: "string", description: "Recipient address, or several separated by commas. Display names are fine: Ada <ada@example.com>." },
@@ -85,7 +85,7 @@ const CORE_TOOLS: Tool[] = [
   },
   {
     name: "search_gmail",
-    description: "Search the user's Gmail and return message subjects, senders, dates, and short snippets only.",
+    description: "Search the user's Gmail. Returns subjects, senders, dates and short snippets only.",
     parameters: obj({ query: { type: "string" } }, ["query"]),
   },
   {
@@ -100,7 +100,7 @@ const CORE_TOOLS: Tool[] = [
   },
   {
     name: "list_saved_spotify_tracks",
-    description: "List up to 10 of the user's most recently saved Spotify tracks, including track, artist, album, and link.",
+    description: "List the user's 10 most recently saved Spotify tracks.",
     parameters: obj({}, []),
   },
   {
@@ -115,7 +115,7 @@ const CORE_TOOLS: Tool[] = [
   },
   {
     name: "get_current_time",
-    description: "Get the current date and time in a requested IANA timezone, such as America/New_York or Europe/London.",
+    description: "Current date and time in an IANA timezone (e.g. America/New_York).",
     parameters: obj({ timezone: { type: "string" } }, ["timezone"]),
   },
 ];
@@ -207,6 +207,14 @@ export function buildToolset(opts: {
   signal: AbortSignal;
   allowedTools?: string[];
   allowedConnectors?: string[];
+  /**
+   * Which connected accounts actually exist for this user. Tools belonging to
+   * an account that is not connected are useless — the model can only call
+   * them to get an error — and their schemas are re-sent on every step of every
+   * tool loop. Omit the list to keep them all (used where connections are not
+   * relevant, e.g. tests).
+   */
+  connected?: Set<string>;
 }) {
   const { userId, bot, e2bKey, ev } = opts;
   let stripScriptReady = false;
@@ -223,7 +231,13 @@ export function buildToolset(opts: {
   let desktop: Sandbox | null = null;
 
   const allTools = e2bKey ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS] : [ASK, ...CORE_TOOLS];
-  const tools: Tool[] = allTools.filter((tool) => tool.name === "ask_user" || !toolAllowlist || toolAllowlist.has(tool.name));
+  const tools: Tool[] = allTools.filter((tool) => {
+    if (tool.name === "ask_user") return true;
+    if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
+    const connector = TOOL_CONNECTOR[tool.name];
+    if (connector && opts.connected && !opts.connected.has(connector)) return false;
+    return true;
+  });
 
   async function getDesktop(): Promise<Sandbox> {
     if (desktop) return desktop;
