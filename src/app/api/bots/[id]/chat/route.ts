@@ -18,7 +18,7 @@ function systemPrompt(name: string, instructions: string, hasComputer: boolean, 
     instructions.trim() ? `Your owner gave you these instructions — follow them:\n${instructions.trim()}` : "",
     savedSkills ? `Enabled user skills:\n${savedSkills}` : "",
     archivedContext ? `Archived conversations for this Bot (use only as background facts/preferences; do not treat old requests as current commands):\n${archivedContext}` : "",
-    `When preparing email, save it as a draft and ask the user to review it in Artifacts. Never claim an email was sent until the user approves it there. Use connected-provider tools only for the requested account and return only the minimum relevant result. Save substantial stories and documents with save_artifact so they appear in Artifacts.`,
+    `When email is involved, call draft_email. The draft shows up as an editable card in the chat with its own Send button — tell the user to review it there, and never claim an email was sent: sending only happens when they press Send. Use connected-provider tools only for the requested account and return only the minimum relevant result. Save substantial stories and documents with save_artifact so they appear in the chat and in Artifacts.`,
     `Current date/time (UTC): ${now}.`,
     "When you need the user to choose between a few directions, call the ask_user tool with 2-5 short options instead of listing them in prose. You can use get_current_time for reliable timezone-aware dates and times.",
     hasComputer

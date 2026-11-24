@@ -4,81 +4,129 @@ import { useRouter } from "next/navigation";
 import { useApp } from "./AppProvider";
 import { BotAvatar } from "./BotAvatar";
 import { Icon } from "./icons";
-import { cx } from "./ui";
+import { LogoMark } from "./Logo";
+import { Pill, cx } from "./ui";
 
 export function Gallery() {
   const app = useApp();
   const router = useRouter();
   const s = app.settings;
+  const bots = app.bots;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <header className="relative flex h-[68px] shrink-0 items-center justify-center px-4">
-        <button onClick={() => app.setSidebarOpen(true)} aria-label="Open sidebar" className="absolute left-4 grid size-9 place-items-center rounded-full bg-[#1a1a1a] text-neutral-300 md:hidden">
-          <Icon name="menu" size={17} />
+      <header className="relative z-10 flex h-16 shrink-0 items-center gap-2 px-4 sm:px-6">
+        <button onClick={() => app.setSidebarOpen(true)} aria-label="Open sidebar" className="grid size-9 place-items-center rounded-full text-neutral-300 transition hover:bg-white/[0.07] md:hidden">
+          <Icon name="menu" size={18} />
         </button>
-        <h1 className="text-[15px] font-medium">{app.bots.length ? "Your Bots" : "Welcome"}</h1>
+        <div className="flex items-center gap-2 md:hidden">
+          <LogoMark size={22} />
+          <span className="text-[15px] font-semibold tracking-[-0.02em]">Bots</span>
+        </div>
+        <h1 className="hidden text-[15px] font-medium text-neutral-200 md:block">All bots</h1>
+        <div className="flex-1" />
+        <button
+          onClick={() => app.openBotDialog(null)}
+          className="flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3.5 py-2 text-[13px] font-medium text-white transition hover:bg-white/[0.14] active:scale-[0.98]"
+        >
+          <Icon name="plus" size={15} />
+          <span className="max-sm:sr-only">New bot</span>
+        </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-24">
-        {app.bots.length ? (
-          <div className="flex max-w-full flex-wrap items-start justify-center gap-x-12 gap-y-10">
-            {app.bots.map((b, i) => (
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
+        {/* soft brand glow behind the grid */}
+        <div aria-hidden className="pointer-events-none absolute left-1/2 top-[-140px] h-[380px] w-[720px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.10),transparent)] blur-2xl" />
+
+        <div className="relative mx-auto w-full max-w-[960px] px-5 pb-28 pt-4 sm:px-8">
+          {bots.length ? (
+            <>
+              <div className="mb-6 flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-[26px] font-semibold tracking-[-0.03em] text-white">Your bots</h2>
+                  <p className="mt-1 text-[13.5px] text-neutral-500">Each one keeps its own conversation, memory and computer.</p>
+                </div>
+                <Pill tone="neutral" className="mb-1 hidden sm:inline-flex">
+                  {bots.length} {bots.length === 1 ? "bot" : "bots"}
+                </Pill>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {bots.map((b, i) => (
+                  <button
+                    key={b.id}
+                    onClick={() => router.push(`/bot/${b.id}`)}
+                    className="group fade-up flex min-w-0 flex-col items-start rounded-[20px] border border-white/[0.07] bg-white/[0.025] p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.05] active:scale-[0.99]"
+                    style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}
+                  >
+                    <span className="flex w-full items-start justify-between gap-2">
+                      <span className="transition duration-200 group-hover:scale-105">
+                        <BotAvatar shape={b.shape} color={b.color} size={46} celebrate={app.celebrateId === b.id} />
+                      </span>
+                      <Icon name="arrow-right" size={15} className="mt-1 -translate-x-1 text-neutral-600 opacity-0 transition duration-200 group-hover:translate-x-0 group-hover:text-neutral-300 group-hover:opacity-100" />
+                    </span>
+                    <span className="mt-3 w-full truncate text-[14px] font-medium text-white">{b.name}</span>
+                    <span className="mt-0.5 line-clamp-2 w-full text-[12px] leading-snug text-neutral-500">{b.preview}</span>
+                    <span className="mt-3 flex items-center gap-1.5 text-[11px] text-neutral-600">
+                      <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-[#7c9bff]" : "bg-neutral-700")} />
+                      {s.hasAiKey ? "Ready" : "Needs an API key"}
+                    </span>
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => app.openBotDialog(null)}
+                  className="group fade-up flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-[20px] border border-dashed border-white/10 p-4 text-neutral-500 transition duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.02] hover:text-white active:scale-[0.99]"
+                  style={{ animationDelay: `${Math.min(bots.length, 8) * 45}ms` }}
+                >
+                  <span className="grid size-11 place-items-center rounded-full border border-white/15 transition group-hover:border-white/30">
+                    <Icon name="plus" size={19} />
+                  </span>
+                  <span className="text-[12.5px] font-medium">New bot</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="fade-up mx-auto flex max-w-[520px] flex-col items-center pt-[10vh] text-center">
+              <div className="relative">
+                <div aria-hidden className="absolute inset-0 -z-10 scale-[2.2] rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.22),transparent)] blur-2xl" />
+                <LogoMark size={88} className="float-y" />
+              </div>
+              <h2 className="mt-8 text-[32px] font-semibold tracking-[-0.035em] text-white">Make your first Bot</h2>
+              <p className="mt-3 text-[14.5px] leading-relaxed text-neutral-400">
+                Pick a shape and a color, give it a name, and start chatting. Every bot keeps its own conversation — and its own computer.
+              </p>
               <button
-                key={b.id}
-                onClick={() => router.push(`/bot/${b.id}`)}
-                className="group fade-up flex w-[120px] flex-col items-center gap-3 rounded-2xl p-2 outline-offset-4"
-                style={{ animationDelay: `${i * 60}ms` }}
+                onClick={() => app.openBotDialog(null)}
+                className="mt-8 flex items-center gap-2 rounded-full bg-white px-6 py-3 text-[14px] font-semibold text-black transition hover:bg-neutral-200 active:scale-95"
               >
-                <span className="relative transition duration-200 group-hover:-translate-y-1 group-hover:scale-110 group-active:scale-95">
-                  <BotAvatar shape={b.shape} color={b.color} size={80} celebrate={app.celebrateId === b.id} />
-                  <span
-                    className={cx("absolute bottom-0 right-[-2px] size-[13px] rounded-full border-2 border-[#0a0a0a]", s.hasAiKey ? "bg-[#3b8cff]" : "bg-neutral-600")}
-                    title={s.hasAiKey ? "Ready" : "Add an API key to wake this bot up"}
-                  />
-                </span>
-                <span className="max-w-full truncate text-[13px] text-neutral-200">{b.name}</span>
+                <Icon name="plus" size={16} strokeWidth={2.4} />
+                Create a Bot
               </button>
-            ))}
-            <button onClick={() => app.openBotDialog(null)} className="group fade-up flex w-[120px] flex-col items-center gap-3 rounded-2xl p-2" style={{ animationDelay: `${app.bots.length * 60}ms` }}>
-              <span className="grid size-[80px] place-items-center rounded-full border border-dashed border-white/20 text-neutral-500 transition duration-200 group-hover:-translate-y-1 group-hover:scale-110 group-hover:border-white/40 group-hover:text-white">
-                <Icon name="plus" size={26} />
-              </span>
-              <span className="text-[13px] text-neutral-500 transition group-hover:text-neutral-300">New Bot</span>
-            </button>
-          </div>
-        ) : (
-          <div className="fade-up flex max-w-md flex-col items-center text-center">
-            <div className="flex items-end gap-5">
-              <BotAvatar shape="heart" color="blue" size={74} />
-              <BotAvatar shape="circle" color="white" size={96} />
-              <BotAvatar shape="sparkle" color="red" size={74} />
+              <div className="mt-10 flex items-end gap-4 opacity-70">
+                <BotAvatar shape="heart" color="blue" size={54} follow={false} />
+                <BotAvatar shape="sparkle" color="purple" size={70} follow={false} />
+                <BotAvatar shape="square" color="green" size={54} follow={false} />
+              </div>
             </div>
-            <h2 className="mt-9 text-[26px] font-semibold tracking-tight">Make your first Bot</h2>
-            <p className="mt-2 text-[14.5px] leading-relaxed text-neutral-400">
-              Pick a shape and a color, give it a name, and start chatting. Every bot keeps its own conversation — and its own computer.
-            </p>
-            <button onClick={() => app.openBotDialog(null)} className="mt-7 rounded-full bg-white px-6 py-3 text-[14px] font-semibold text-black transition hover:bg-neutral-200 active:scale-95">
-              Create a Bot
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-5 flex flex-wrap items-center justify-center gap-2 px-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-wrap items-center justify-center gap-2 px-4">
         <button
           onClick={() => app.openSettings("ai")}
-          className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#121212] px-3.5 py-2 text-[12.5px] text-neutral-400 transition hover:bg-[#191919] hover:text-white"
+          className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#101013]/90 px-3.5 py-2 text-[12px] text-neutral-400 backdrop-blur transition hover:bg-[#19191d] hover:text-white"
         >
           <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-emerald-400" : "bg-amber-400")} />
-          {s.hasAiKey ? `AI: ${s.aiProviderLabel}` : "Add your AI key"}
+          {s.hasAiKey ? `AI · ${s.aiProviderLabel}` : "Add your AI key"}
         </button>
         <button
           onClick={() => app.openSettings("computer")}
-          className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#121212] px-3.5 py-2 text-[12.5px] text-neutral-400 transition hover:bg-[#191919] hover:text-white"
+          className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#101013]/90 px-3.5 py-2 text-[12px] text-neutral-400 backdrop-blur transition hover:bg-[#19191d] hover:text-white"
         >
-          <span className={cx("size-1.5 rounded-full", s.hasE2bKey ? "bg-emerald-400" : "bg-neutral-600")} />
-          {s.hasE2bKey ? "Computer: E2B connected" : "Add E2B key for a computer"}
+          <span className={cx("size-1.5 rounded-full", s.hasE2bKey ? "bg-emerald-400" : "bg-neutral-700")} />
+          {s.hasE2bKey ? "Computer · connected" : "Add E2B key for a computer"}
         </button>
       </div>
     </div>

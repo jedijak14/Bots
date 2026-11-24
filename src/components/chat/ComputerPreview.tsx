@@ -116,7 +116,7 @@ export function ComputerPreview({
             if (picker) return setPicker(null);
             setPicker({ position: placeMenu(e.currentTarget.getBoundingClientRect(), options.length, { width: PICKER_WIDTH, align: "start" }), trigger: e.currentTarget });
           }}
-          className="flex h-8 min-w-0 items-center gap-2 rounded-full bg-[#141414] pl-3 pr-2.5 text-[13px] text-neutral-200 transition enabled:hover:bg-[#1e1e1e] disabled:pr-3.5"
+          className="flex h-8 min-w-0 items-center gap-2 rounded-full bg-[#151518] pl-3 pr-2.5 text-[13px] text-neutral-200 transition enabled:hover:bg-[#1e1e1e] disabled:pr-3.5"
         >
           <Icon name="globe" size={14} className="shrink-0 text-neutral-500" />
           <span className="truncate">{label}</span>

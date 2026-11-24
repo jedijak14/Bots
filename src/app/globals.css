@@ -1,13 +1,39 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ *
+ * Design tokens
+ * ------------------------------------------------------------------ */
 :root {
   color-scheme: dark;
-  --bg: #0a0a0a;
-  --panel: #0d0d0d;
-  --raised: #151515;
-  --raised-2: #1a1a1a;
-  --line: #1d1d1d;
-  --muted: #8a8a8a;
+
+  --bg: #060608;
+  --surface-1: #0b0b0e;
+  --surface-2: #101013;
+  --surface-3: #141417;
+  --surface-4: #19191d;
+  --surface-5: #212126;
+
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+
+  --muted: #8b8b93;
+  --accent: #7c9bff;
+  --accent-strong: #a8c0ff;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html,
@@ -17,33 +43,65 @@ body {
 
 body {
   margin: 0;
-  background: #0a0a0a;
-  color: #f2f2f2;
-  font-family: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
+  background:
+    radial-gradient(1100px 700px at 50% -20%, rgba(124, 140, 255, 0.07), transparent 62%),
+    radial-gradient(900px 700px at 108% 108%, rgba(139, 92, 246, 0.05), transparent 60%),
+    var(--bg);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2a2a transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 ::selection {
-  background: rgba(80, 140, 255, 0.35);
+  background: rgba(124, 155, 255, 0.32);
 }
 
 button {
   cursor: pointer;
+  font: inherit;
+  color: inherit;
 }
 button:disabled {
   cursor: not-allowed;
 }
+input,
+textarea {
+  font: inherit;
+}
 :focus-visible {
-  outline: 2px solid rgba(90, 150, 255, 0.7);
+  outline: 2px solid rgba(124, 155, 255, 0.75);
   outline-offset: 2px;
 }
 
-/* ---------- Bot avatar animations ---------- */
+/* Text that should never blow a layout open. */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ *
+ * Motion
+ * ------------------------------------------------------------------ */
 @keyframes bot-orbit {
   to {
     transform: rotate(360deg);
@@ -119,6 +177,18 @@ button:disabled {
   animation: fade-up 0.32s ease-out both;
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.25s ease-out both;
+}
+
 @keyframes modal-in {
   from {
     opacity: 0;
@@ -153,7 +223,7 @@ button:disabled {
   }
 }
 .shimmer-text {
-  background: linear-gradient(90deg, #6b6b6b 20%, #fff 50%, #6b6b6b 80%);
+  background: linear-gradient(90deg, #6b6b73 20%, #fff 50%, #6b6b73 80%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -248,21 +318,67 @@ button:disabled {
   animation: soft-pulse 1.6s ease-in-out infinite;
 }
 
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.float-y {
+  animation: float-y 5s ease-in-out infinite;
+}
+
+@keyframes glow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.glow-in {
+  animation: glow-in 0.5s ease-out both;
+}
+
+@keyframes gradient-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+.text-gradient {
+  background: linear-gradient(100deg, #ffffff 10%, #c3d1ff 45%, #a78bfa 80%, #ffffff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 9s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .bot-wobble,
-  .bot-orbit,
-  .shimmer-text,
-  .wave-bar,
-  .soft-pulse {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
 
-/* ---------- Markdown ---------- */
+/* ------------------------------------------------------------------ *
+ * Markdown
+ * ------------------------------------------------------------------ */
 .md {
-  font-size: 15.5px;
-  line-height: 1.6;
-  color: #ececec;
+  font-size: 16px;
+  line-height: 1.68;
+  color: #ededf0;
   overflow-wrap: anywhere;
 }
 .md > *:first-child {
@@ -272,12 +388,16 @@ button:disabled {
   margin-bottom: 0;
 }
 .md p {
-  margin: 0.55em 0;
+  margin: 0.7em 0;
+}
+.md strong {
+  font-weight: 600;
+  color: #fff;
 }
 .md ul,
 .md ol {
-  margin: 0.55em 0;
-  padding-left: 1.4em;
+  margin: 0.7em 0;
+  padding-left: 1.35em;
 }
 .md ul {
   list-style: disc;
@@ -286,70 +406,86 @@ button:disabled {
   list-style: decimal;
 }
 .md li {
-  margin: 0.2em 0;
+  margin: 0.3em 0;
+}
+.md li::marker {
+  color: #6f6f78;
 }
 .md h1,
 .md h2,
 .md h3,
 .md h4 {
-  font-weight: 650;
-  margin: 1em 0 0.4em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.3em 0 0.45em;
   line-height: 1.3;
 }
 .md h1 {
-  font-size: 1.3em;
+  font-size: 1.45em;
 }
 .md h2 {
-  font-size: 1.18em;
+  font-size: 1.25em;
 }
 .md h3 {
-  font-size: 1.05em;
+  font-size: 1.1em;
 }
 .md a {
-  color: #6aa9ff;
+  color: var(--accent-strong);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: rgba(168, 192, 255, 0.35);
+  text-underline-offset: 3px;
+}
+.md a:hover {
+  text-decoration-color: currentColor;
 }
 .md blockquote {
-  border-left: 3px solid #333;
-  padding-left: 12px;
-  color: #b5b5b5;
-  margin: 0.6em 0;
+  border-left: 2px solid rgba(124, 155, 255, 0.4);
+  padding-left: 14px;
+  color: #b6b6bd;
+  margin: 0.8em 0;
 }
 .md hr {
   border: 0;
-  border-top: 1px solid #2a2a2a;
-  margin: 1em 0;
+  border-top: 1px solid var(--line);
+  margin: 1.2em 0;
 }
 .md code:not(pre code) {
-  background: #232323;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 6px;
-  padding: 0.12em 0.4em;
-  font-size: 0.88em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 0.1em 0.38em;
+  font-size: 0.86em;
+  font-family: var(--font-mono);
+  color: #e6e6ea;
 }
 .md pre {
-  background: #0b0b0b;
-  border: 1px solid #262626;
-  border-radius: 12px;
-  padding: 12px 14px;
+  background: #0a0a0d;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
   overflow-x: auto;
   font-size: 13px;
-  line-height: 1.55;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.6;
+  font-family: var(--font-mono);
 }
 .md table {
   border-collapse: collapse;
   font-size: 0.92em;
   display: block;
   overflow-x: auto;
+  margin: 0.8em 0;
 }
 .md th,
 .md td {
-  border: 1px solid #2a2a2a;
-  padding: 6px 10px;
+  border: 1px solid var(--line);
+  padding: 7px 11px;
   text-align: left;
 }
 .md th {
-  background: #1b1b1b;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+}
+.md img {
+  max-width: 100%;
+  border-radius: 12px;
 }

@@ -8,6 +8,15 @@ import { ChatView } from "@/components/chat/ChatView";
 
 export const dynamic = "force-dynamic";
 
+/** Tab title follows the bot, the way a chat app should. */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const user = await getCurrentUser();
+  const bot = user ? await getBot(user.id, id) : null;
+  if (!bot) return { title: "Bots" };
+  return { title: bot.name };
+}
+
 export default async function BotPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();

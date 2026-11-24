@@ -94,6 +94,8 @@ export type StepRecord = {
   label: string;
   ok: boolean;
   output?: string;
+  /** Set when the step produced an artifact, so the chat can show it inline. */
+  artifactId?: string;
 };
 
 export type ChoicesRecord = {

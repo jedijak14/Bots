@@ -202,7 +202,7 @@ export function ComputerPanel({
 
       <div className="flex h-[60px] shrink-0 items-center gap-2 pl-4 pr-3">
         {!privateMode && (
-          <div role="tablist" aria-label="Computer" onKeyDown={onTabKey} className="flex items-center rounded-full bg-[#151515] p-[3px]">
+          <div role="tablist" aria-label="Computer" onKeyDown={onTabKey} className="flex items-center rounded-full bg-[#16161a] p-[3px]">
             {TABS.map((t) => (
               <button
                 key={t.id}

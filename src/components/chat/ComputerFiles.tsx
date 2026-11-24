@@ -139,7 +139,7 @@ function FileView({ base, entry, onBack, onPreview }: { base: string; entry: Ent
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{entry.name}</span>
         <span className="shrink-0 px-1 text-[12px] tabular-nums text-neutral-500">{formatSize(f?.size ?? entry.size)}</span>
         {isPage(entry.name) && (
-          <button type="button" onClick={() => onPreview(entry.path)} className="shrink-0 rounded-full bg-[#1c1c1c] px-3 py-1.5 text-[12.5px] font-medium transition hover:bg-[#262626]">
+          <button type="button" onClick={() => onPreview(entry.path)} className="shrink-0 rounded-full bg-[#202024] px-3 py-1.5 text-[12.5px] font-medium transition hover:bg-[#2a2a30]">
             Preview
           </button>
         )}

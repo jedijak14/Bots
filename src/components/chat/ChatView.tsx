@@ -3,24 +3,25 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
-import type { ChoicesRecord } from "@/db/schema";
+import type { ChoicesRecord, StepRecord } from "@/db/schema";
 import type { MessageDTO } from "@/lib/bots";
 import { useApp } from "../AppProvider";
 import { BotAvatar } from "../BotAvatar";
 import { Icon } from "../icons";
 import { cx } from "../ui";
-import { Composer, type Attachment } from "./Composer";
+import { Composer, ComposerMode, type Attachment } from "./Composer";
 import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
-import { AssistantBlock, UserBubble, type LiveStep } from "./Message";
+import { AssistantBlock, UserBubble, type ArtifactRef, type LiveStep } from "./Message";
 import { ModelPicker } from "./ModelPicker";
 import type { ComputerPhase } from "./useComputer";
+import { Menu, placeMenu, type MenuItem } from "../Menu";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
 type StreamEvent =
   | { t: "start"; userMessage: { id: string; createdAt: string } }
   | { t: "text"; d: string }
   | { t: "step"; id: string; name: string; label: string }
-  | { t: "step_done"; id: string; ok: boolean; output?: string }
+  | { t: "step_done"; id: string; ok: boolean; output?: string; artifactId?: string }
   | { t: "shot"; data: string }
   | { t: "choices"; question: string; options: string[] }
   | { t: "error"; message: string }
@@ -39,7 +40,7 @@ function formatWhen(iso: string): string {
 }
 
 /** Tools that don't touch the bot's computer, so they shouldn't bring the Computer panel up. */
-const NO_COMPUTER = new Set(["ask_user", "get_current_time"]);
+const NO_COMPUTER = new Set(["ask_user", "get_current_time", "draft_email", "save_artifact"]);
 
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
@@ -52,11 +53,19 @@ const readPrivacy = async (url: string) => {
 
 function speak(markdown: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  const text = markdown.replace(/```[\s\S]*?```/g, " code block ").replace(/[#*_`>~\[\]()]+/g, " ").replace(/\s+/g, " ").trim();
+  const text = markdown.replace(/```[\s\S]*?```/g, " code block ").replace(/[#*_`>~[\]()]+/g, " ").replace(/\s+/g, " ").trim();
   if (!text) return;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.slice(0, 1500)));
 }
+
+/** Prompt suggestions on the empty conversation, one per thing a bot is good at. */
+const SUGGESTIONS: Array<{ title: string; hint: string; prompt: string; icon: "search" | "sparkles" | "mail" | "monitor" }> = [
+  { title: "Research something", hint: "Search the web and summarise it", prompt: "Research a topic for me: ", icon: "search" },
+  { title: "Plan my day", hint: "Turn a messy list into a schedule", prompt: "Help me plan my day. Here's what I have: ", icon: "sparkles" },
+  { title: "Draft an email", hint: "Write it, then send it from here", prompt: "Draft an email for me. ", icon: "mail" },
+  { title: "Use the computer", hint: "Watch it work on a live desktop", prompt: "Open a browser and show me what you can do.", icon: "monitor" },
+];
 
 export function ChatView({ botId, initialMessages, initialPrivacyMode = false }: { botId: string; initialMessages: MessageDTO[]; initialPrivacyMode?: boolean }) {
   const app = useApp();
@@ -78,6 +87,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [shot, setShot] = useState<{ n: number; data: string } | null>(null);
   const [computerOn, setComputerOn] = useState(!!bot?.hasSandbox);
   const [shareOpen, setShareOpen] = useState(false);
+  const [botMenu, setBotMenu] = useState<{ position: ReturnType<typeof placeMenu>; trigger: HTMLElement } | null>(null);
+  const [artifacts, setArtifacts] = useState<Record<string, ArtifactRef>>({});
   const mounted = useHydrated();
 
   const acc = useRef<Live>({ text: "", steps: [], choices: null });
@@ -89,6 +100,34 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const shareRef = useRef<HTMLDivElement>(null);
   /** Set when the person closes the panel mid-run, so the next step doesn't pop it back open. */
   const panelDismissed = useRef(false);
+
+  /* ---------- artifacts referenced by steps ---------- */
+  const wanted = (() => {
+    const ids = new Set<string>();
+    for (const m of messages) for (const s of m.steps ?? []) if (s.artifactId) ids.add(s.artifactId);
+    for (const s of live?.steps ?? []) if (s.artifactId) ids.add(s.artifactId);
+    return [...ids].filter((id) => !artifacts[id]);
+  })();
+  const wantedKey = wanted.join(",");
+
+  useEffect(() => {
+    if (!wantedKey) return;
+    let alive = true;
+    for (const id of wantedKey.split(",")) {
+      fetch(`/api/artifacts/${id}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((a: ArtifactRef | null) => {
+          if (alive && a?.id) setArtifacts((prev) => ({ ...prev, [a.id]: a }));
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+  }, [wantedKey]);
+
+  const artifactRefs = (steps: Array<{ artifactId?: string }> | null | undefined): ArtifactRef[] =>
+    (steps ?? []).map((s) => (s.artifactId ? artifacts[s.artifactId] : undefined)).filter((a): a is ArtifactRef => !!a);
 
   useEffect(() => {
     if (privacyActive) abortRef.current?.abort();
@@ -182,7 +221,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             id: info?.id ?? `local-${Date.now()}`,
             role: "assistant",
             content: a.text.trim(),
-            steps: a.steps.map((s) => ({ id: s.id, name: s.name, label: s.label, ok: s.status !== "error", output: s.output })),
+            steps: a.steps.map((s) => ({ id: s.id, name: s.name, label: s.label, ok: s.status !== "error", output: s.output, artifactId: s.artifactId })),
             choices: a.choices,
             createdAt: info?.createdAt ?? new Date().toISOString(),
           };
@@ -218,6 +257,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             if (s) {
               s.status = ev.ok ? "done" : "error";
               s.output = ev.output;
+              if (ev.artifactId) s.artifactId = ev.artifactId;
             }
             setWorking({ id: botId, label: "Thinking…" });
             flush();
@@ -311,51 +351,67 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const runningStep = busy ? (live?.steps.filter((x) => x.status === "running").pop() ?? null) : null;
   const usingComputer = !!runningStep && !NO_COMPUTER.has(runningStep.name);
 
+  /** A conversation that only holds the greeting gets the full welcome screen. */
+  const empty = messages.length <= 1 && messages.every((m) => m.role === "assistant") && !busy;
+
+  const openArtifacts = () => app.openSettings("artifacts");
+  const botMenuItems: MenuItem[] = [
+    { label: "Edit look & name", icon: "pencil", onSelect: () => app.openBotDialog(bot.id) },
+    { label: "Artifacts", icon: "file", onSelect: openArtifacts },
+    { label: "Conversation history", icon: "chat", onSelect: () => app.openSettings("history") },
+    { label: "Bot settings", icon: "gear", onSelect: () => app.openSettings("skills") },
+  ];
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <header className="relative z-10 flex h-[68px] shrink-0 items-center gap-2 px-4">
-        <button onClick={() => app.setSidebarOpen(true)} aria-label="Open sidebar" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#1a1a1a] text-neutral-300 md:hidden">
-          <Icon name="menu" size={17} />
+      <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 px-3 sm:px-4">
+        <button onClick={() => app.setSidebarOpen(true)} aria-label="Open sidebar" className="grid size-9 shrink-0 place-items-center rounded-full text-neutral-300 transition hover:bg-white/[0.07] md:hidden">
+          <Icon name="menu" size={18} />
         </button>
-        <button
-          onClick={() => app.openBotDialog(bot.id)}
-          title="Edit look & name"
-          className="flex min-w-0 items-center gap-2.5 rounded-full bg-[#171717] py-2 pl-3 pr-4 transition hover:bg-[#202020] active:scale-[0.97]"
-        >
-          <BotAvatar shape={bot.shape} color={bot.color} size={22} />
-          <span className="truncate text-[15px] font-medium">{bot.name}</span>
-        </button>
+
+        {/* Bot identity + menu */}
+        <div className="relative min-w-0">
+          <button
+            onClick={(e) => {
+              if (botMenu) return setBotMenu(null);
+              setBotMenu({ position: placeMenu(e.currentTarget.getBoundingClientRect(), botMenuItems.length, { align: "start" }), trigger: e.currentTarget });
+            }}
+            aria-haspopup="menu"
+            aria-expanded={!!botMenu}
+            aria-label={`${bot.name} options`}
+            className="group flex min-w-0 items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-2.5 transition hover:bg-white/[0.06] active:scale-[0.98]"
+          >
+            <BotAvatar shape={bot.shape} color={bot.color} size={26} />
+            <span className="max-w-[38vw] truncate text-[14.5px] font-medium sm:max-w-[200px]">{bot.name}</span>
+            <Icon name="chevron" size={13} className="shrink-0 text-neutral-500 transition group-hover:text-neutral-300" />
+          </button>
+        </div>
+
         <div className="flex-1" />
-        <ModelPicker botId={bot.id} />
-        <button
-          type="button"
-          onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}
-          aria-pressed={panelOpen}
-          aria-label={`Computer${usingComputer ? `, ${bot.name} is using it` : computerOn ? ", on" : ""}`}
-          title={usingComputer ? `${bot.name} is using its computer` : computerOn ? `${bot.name}'s computer is on` : `${bot.name}'s computer`}
-          className={cx(
-            "flex shrink-0 items-center gap-2 rounded-full border border-white/[0.05] px-3.5 py-2 text-[13px] transition active:scale-95",
-            panelOpen ? "bg-[#262626] text-white" : "bg-[#141414] text-neutral-200 hover:bg-[#1b1b1b] hover:text-white",
-          )}
-        >
-          {/* The icon lights up while the computer is on, and pulses while the bot is using it. */}
-          <Icon name="monitor" size={15} className={cx("transition-colors", computerOn || usingComputer ? "text-emerald-400" : "text-neutral-500", usingComputer && "soft-pulse")} />
-          <span className="max-sm:sr-only">Computer</span>
-        </button>
-        <div ref={shareRef} className="relative hidden sm:block">
-          <button onClick={() => setShareOpen((s) => !s)} className="rounded-full bg-[#171717] px-4 py-2 text-[14px] font-medium transition hover:bg-[#202020] active:scale-95">
-            Share
+        <div ref={shareRef} className="relative">
+          <button
+            onClick={() => setShareOpen((s) => !s)}
+            aria-haspopup="menu"
+            aria-expanded={shareOpen}
+            aria-label="Share"
+            className={cx(
+              "grid size-9 place-items-center rounded-full transition active:scale-95 max-md:text-neutral-300",
+              shareOpen ? "bg-white/[0.1] text-white" : "text-neutral-400 hover:bg-white/[0.06] hover:text-white",
+            )}
+          >
+            <Icon name="external" size={16} />
           </button>
           {shareOpen && (
-            <div className="modal-in absolute right-0 top-[calc(100%+8px)] z-40 w-52 overflow-hidden rounded-2xl border border-white/10 bg-[#171717] p-1.5 shadow-2xl">
+            <div className="modal-in absolute right-0 top-[calc(100%+6px)] z-40 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#19191d] p-1.5 shadow-2xl">
               <button
                 onClick={async () => {
                   await navigator.clipboard.writeText(buildMarkdown()).catch(() => {});
                   setShareOpen(false);
                   app.toast("Conversation copied.");
                 }}
-                className="w-full rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
               >
+                <Icon name="copy" size={14} className="text-neutral-500" />
                 Copy conversation
               </button>
               <button
@@ -368,91 +424,117 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                   URL.revokeObjectURL(url);
                   setShareOpen(false);
                 }}
-                className="w-full rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
               >
+                <Icon name="download" size={14} className="text-neutral-500" />
                 Download as Markdown
               </button>
             </div>
           )}
         </div>
+        {botMenu && <Menu label={`${bot.name} options`} items={botMenuItems} position={botMenu.position} trigger={botMenu.trigger} onClose={() => setBotMenu(null)} />}
       </header>
 
       {/* Not `relative` on purpose: the computer panel's full view is positioned against the whole chat, header included. */}
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
-          <div
-            ref={scrollRef}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
-            }}
-            className="min-h-0 flex-1 overflow-y-auto"
-          >
-            <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-6 pb-6 pt-4">
-              {messages.map((m, i) => {
-                const prev = messages[i - 1];
-                const showTime = mounted && (!prev || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > 30 * 60_000);
-                const next = messages[i + 1];
-                return (
-                  <div key={m.id} className="contents">
-                    {showTime && <div className="py-3 text-center text-[12.5px] text-neutral-400">{formatWhen(m.createdAt)}</div>}
-                    {m.role === "user" ? (
-                      <UserBubble text={m.content} />
-                    ) : (
-                      <AssistantBlock
-                        text={m.content}
-                        steps={(m.steps ?? []).map((s) => ({ id: s.id, name: s.name, label: s.label, status: s.ok ? "done" : "error", output: s.output }))}
-                        choices={m.choices}
-                        picked={next?.role === "user" ? next.content : undefined}
-                        choicesDisabled={busy || i < lastUserIdx}
-                        onPick={(o) => {
-                          if (/something else/i.test(o)) inputRef.current?.focus();
-                          else send(o);
-                        }}
-                        streaming={false}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+          {empty ? (
+            <EmptyChat
+              botId={bot.id}
+              name={bot.name}
+              shape={bot.shape}
+              color={bot.color}
+              hasComputer={app.settings.hasE2bKey}
+              onPick={(prompt) => void send(prompt)}
+            />
+          ) : (
+            <div
+              ref={scrollRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+              }}
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
+              <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-4 pb-4 pt-2 sm:px-6">
+                {messages.map((m, i) => {
+                  const prev = messages[i - 1];
+                  const showTime = mounted && (!prev || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > 30 * 60_000);
+                  const next = messages[i + 1];
+                  return (
+                    <div key={m.id} className="contents">
+                      {showTime && <div className="py-3 text-center text-[11.5px] text-neutral-600">{formatWhen(m.createdAt)}</div>}
+                      {m.role === "user" ? (
+                        <UserBubble text={m.content} />
+                      ) : (
+                        <AssistantBlock
+                          text={m.content}
+                          steps={(m.steps ?? []).map((s) => ({ id: s.id, name: s.name, label: s.label, status: s.ok ? "done" : "error", output: s.output, artifactId: s.artifactId }))}
+                          artifacts={artifactRefs(m.steps)}
+                          choices={m.choices}
+                          picked={next?.role === "user" ? next.content : undefined}
+                          choicesDisabled={busy || i < lastUserIdx}
+                          onPick={(o) => {
+                            if (/something else/i.test(o)) inputRef.current?.focus();
+                            else send(o);
+                          }}
+                          streaming={false}
+                          avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} />}
+                          onOpenArtifact={openArtifacts}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
 
-              {live && (live.text || live.steps.length || live.choices) && (
-                <AssistantBlock text={live.text} steps={live.steps} choices={live.choices} choicesDisabled onPick={() => {}} streaming />
-              )}
+                {live && (live.text || live.steps.length || live.choices) && (
+                  <AssistantBlock
+                    text={live.text}
+                    steps={live.steps}
+                    artifacts={artifactRefs(live.steps)}
+                    choices={live.choices}
+                    choicesDisabled
+                    onPick={() => {}}
+                    streaming
+                    avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} />}
+                    onOpenArtifact={openArtifacts}
+                  />
+                )}
 
-              <div className="flex items-center gap-4 pb-2 pl-1 pt-5">
-                <BotAvatar shape={bot.shape} color={bot.color} size={52} working={busy} />
                 {busy && (
-                  <span className="shimmer-text text-[14px] font-medium">
-                    {(() => {
-                      const run = live?.steps.filter((s) => s.status === "running").pop();
-                      return run ? run.label : live?.text ? "Writing…" : "Thinking…";
-                    })()}
-                  </span>
+                  <div className="flex items-center gap-3 pl-10">
+                    <BotAvatar shape={bot.shape} color={bot.color} size={22} working />
+                    <span className="shimmer-text text-[13px] font-medium">
+                      {(() => {
+                        const run = live?.steps.filter((s) => s.status === "running").pop();
+                        return run ? run.label : live?.text ? "Writing…" : "Thinking…";
+                      })()}
+                    </span>
+                  </div>
+                )}
+
+                {error && (
+                  <div role="alert" className="fade-up flex max-w-[min(740px,100%)] items-start gap-3 rounded-2xl border border-[#4a1c22] bg-[#241013] px-4 py-3 text-[13px] text-[#ff9aa6]">
+                    <span className="flex-1 leading-relaxed">{error.message}</span>
+                    {(error.code === "no_key" || error.code === "no_model" || /api key|rejected/i.test(error.message)) && (
+                      <button onClick={() => app.openSettings("ai")} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-white/20">
+                        Open settings
+                      </button>
+                    )}
+                    <button onClick={() => setError(null)} aria-label="Dismiss" className="shrink-0 text-neutral-400 hover:text-white">
+                      <Icon name="close" size={15} />
+                    </button>
+                  </div>
                 )}
               </div>
-
-              {error && (
-                <div role="alert" className="fade-up flex max-w-[min(740px,100%)] items-start gap-3 rounded-2xl border border-[#4a1c22] bg-[#241013] px-4 py-3 text-[13.5px] text-[#ff9aa6]">
-                  <span className="flex-1 leading-relaxed">{error.message}</span>
-                  {(error.code === "no_key" || error.code === "no_model" || /api key|rejected/i.test(error.message)) && (
-                    <button onClick={() => app.openSettings("ai")} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[12.5px] font-medium text-white transition hover:bg-white/20">
-                      Open settings
-                    </button>
-                  )}
-                  <button onClick={() => setError(null)} aria-label="Dismiss" className="shrink-0 text-neutral-400 hover:text-white">
-                    <Icon name="close" size={15} />
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
-          <div className="mx-auto w-full max-w-[1200px]">
+          <div className="mx-auto w-full max-w-[820px]">
             {!app.settings.hasAiKey && (
-              <div className="mx-6 mb-1 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-[13px] text-amber-200">
+              <div className="mx-4 mb-1 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-[12.5px] text-amber-200 sm:mx-6">
                 <span>{bot.name} needs an API key to reply.</span>
-                <button onClick={() => app.openSettings("ai")} className="rounded-full bg-amber-300 px-3.5 py-1.5 text-[12.5px] font-semibold text-black transition hover:bg-amber-200">
+                <button onClick={() => app.openSettings("ai")} className="shrink-0 rounded-full bg-amber-300 px-3.5 py-1.5 text-[12px] font-semibold text-black transition hover:bg-amber-200">
                   Add key
                 </button>
               </div>
@@ -464,17 +546,36 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               onStop={stop}
               busy={busy}
               placeholder={placeholder}
-              voiceOn={app.settings.voiceReplies}
-              onToggleVoice={() => {
-                const v = !app.settings.voiceReplies;
-                app.patchSettings({ voiceReplies: v });
-                app.toast(v ? "Replies will be read aloud." : "Voice replies off.");
-                if (!v && "speechSynthesis" in window) window.speechSynthesis.cancel();
-              }}
               attachments={attachments}
               setAttachments={setAttachments}
               inputRef={inputRef}
               onError={(m) => app.toast(m, "err")}
+              modes={
+                <>
+                  <ModelPicker botId={bot.id} variant="chip" />
+                  <ComposerMode
+                    active={panelOpen}
+                    onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}
+                    icon={<Icon name="monitor" size={14} />}
+                    label="Show the bot's computer"
+                  >
+                    <span className="max-sm:hidden">Computer</span>
+                  </ComposerMode>
+                  <ComposerMode
+                    active={app.settings.voiceReplies}
+                    onClick={() => {
+                      const v = !app.settings.voiceReplies;
+                      app.patchSettings({ voiceReplies: v });
+                      app.toast(v ? "Replies will be read aloud." : "Voice replies off.");
+                      if (!v && "speechSynthesis" in window) window.speechSynthesis.cancel();
+                    }}
+                    icon={<Icon name="volume" size={14} />}
+                    label={app.settings.voiceReplies ? "Voice replies on" : "Read replies aloud"}
+                  >
+                    <span className="max-sm:hidden">Voice</span>
+                  </ComposerMode>
+                </>
+              }
             />
           </div>
         </section>
@@ -496,6 +597,54 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             onError={onComputerError}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The welcome screen: who you're talking to and four ways to start. */
+function EmptyChat({
+  name,
+  shape,
+  color,
+  hasComputer,
+  onPick,
+}: {
+  botId: string;
+  name: string;
+  shape: string;
+  color: string;
+  hasComputer: boolean;
+  onPick: (prompt: string) => void;
+}) {
+  const suggestions = SUGGESTIONS.filter((s) => hasComputer || s.icon !== "monitor");
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-4 pt-6">
+      <div className="relative">
+        <div aria-hidden className="absolute inset-0 -z-10 scale-[2.4] rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.22),transparent)] blur-2xl" />
+        <div className="glow-in">
+          <BotAvatar shape={shape} color={color} size={88} />
+        </div>
+      </div>
+      <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hey, I&apos;m {name}.</h1>
+      <p className="mt-1.5 text-[14.5px] text-neutral-500">What can I do for you?</p>
+
+      <div className="mt-8 grid w-full max-w-[600px] grid-cols-1 gap-2 sm:grid-cols-2">
+        {suggestions.map((s) => (
+          <button
+            key={s.title}
+            onClick={() => onPick(s.prompt)}
+            className="group flex items-start gap-3 rounded-[18px] border border-white/[0.07] bg-white/[0.02] p-3.5 text-left transition hover:border-white/[0.16] hover:bg-white/[0.05] active:scale-[0.99]"
+          >
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-neutral-300 transition group-hover:border-white/[0.14] group-hover:text-white">
+              <Icon name={s.icon} size={15} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13.5px] font-medium text-neutral-200">{s.title}</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-neutral-500">{s.hint}</span>
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );

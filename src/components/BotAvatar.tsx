@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { COLORS, getShape, isColor, isShape, pointsToPath, type Pt, type ShapeId } from "@/lib/shapes";
 import { usePrefs } from "./prefs";
 
@@ -76,6 +76,10 @@ export function BotAvatar({ shape, color, size = 40, working = false, outline = 
     return { d: pointsToPath(g.pts), eye: g.eye };
   });
 
+  // A stable per-instance phase keeps each bot's idle sway out of step with the
+  // others without reaching for Math.random() during render.
+  const phase = useId().split("").reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) % 997, 7);
+
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const leanRef = useRef<SVGGElement>(null);
@@ -96,12 +100,14 @@ export function BotAvatar({ shape, color, size = 40, working = false, outline = 
     nx: 0,
     blinkNext: 0,
     blinkStart: -1,
-    phase: Math.random() * 10,
+    phase,
     rect: null as DOMRect | null,
     rectAt: 0,
   });
   const live = useRef({ working, follow: follow && prefs.followMouse, animations: prefs.animations });
-  live.current = { working, follow: follow && prefs.followMouse, animations: prefs.animations };
+  useEffect(() => {
+    live.current = { working, follow: follow && prefs.followMouse, animations: prefs.animations };
+  });
 
   const [fx, setFx] = useState<number | null>(null);
 
@@ -255,7 +261,6 @@ export function BotAvatar({ shape, color, size = 40, working = false, outline = 
       dur: 780,
     };
     playFx(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shapeId]);
 
   // keep the outline ring in sync if it appears after the shape has changed
@@ -267,7 +272,6 @@ export function BotAvatar({ shape, color, size = 40, working = false, outline = 
   useEffect(() => {
     if (first.current) return;
     playFx(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hex]);
 
   useEffect(() => {
@@ -330,8 +334,8 @@ export function BotAvatar({ shape, color, size = 40, working = false, outline = 
             suppressHydrationWarning
             style={{ fill: hex, transition: "fill .55s ease" }}
           />
-          <rect ref={eyeL} x={initial.eye.cx - initial.eye.gap / 2 - EYE_W / 2} y={initial.eye.cy - EYE_H / 2} width={EYE_W} height={EYE_H} rx={EYE_W / 2} fill="#0a0a0a" suppressHydrationWarning />
-          <rect ref={eyeR} x={initial.eye.cx + initial.eye.gap / 2 - EYE_W / 2} y={initial.eye.cy - EYE_H / 2} width={EYE_W} height={EYE_H} rx={EYE_W / 2} fill="#0a0a0a" suppressHydrationWarning />
+          <rect ref={eyeL} x={initial.eye.cx - initial.eye.gap / 2 - EYE_W / 2} y={initial.eye.cy - EYE_H / 2} width={EYE_W} height={EYE_H} rx={EYE_W / 2} fill="#08080a" suppressHydrationWarning />
+          <rect ref={eyeR} x={initial.eye.cx + initial.eye.gap / 2 - EYE_W / 2} y={initial.eye.cy - EYE_H / 2} width={EYE_W} height={EYE_H} rx={EYE_W / 2} fill="#08080a" suppressHydrationWarning />
         </g>
       </svg>
       {fx !== null && (

@@ -1,4 +1,5 @@
 import "server-only";
+import { splitRecipients } from "./email";
 import type { Sandbox } from "@e2b/desktop";
 import path from "node:path";
 import type { Tool, ToolResult } from "@/lib/ai/llm";
@@ -32,13 +33,20 @@ const ASK: Tool = {
 const CORE_TOOLS: Tool[] = [
   {
     name: "save_artifact",
-    description: "Save a story, document, website source, or other substantial work to the user's Artifacts library so they can open it later.",
+    description: "Save a story, document, website source, or other substantial work to the user's Artifacts library. It appears as a card in the chat straight away, and stays in Artifacts for later.",
     parameters: obj({ title: { type: "string" }, kind: { type: "string", enum: ["story", "document", "html", "website"] }, content: { type: "string" } }, ["title", "kind", "content"]),
   },
   {
     name: "draft_email",
-    description: "Prepare an email draft for the user to review. It will not be sent until the user presses Send in Artifacts.",
-    parameters: obj({ to: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, ["to", "subject", "body"]),
+    description: "Draft an email for the user. It appears as an editable card in the chat with a Send button — it is never sent without them pressing it. Use this whenever email is involved.",
+    parameters: obj(
+      {
+        to: { type: "string", description: "Recipient address, or several separated by commas. Display names are fine: Ada <ada@example.com>." },
+        subject: { type: "string", description: "One line, no line breaks." },
+        body: { type: "string", description: "Plain text body." },
+      },
+      ["to", "subject", "body"],
+    ),
   },
   {
     name: "search_gmail",
@@ -262,9 +270,26 @@ export function buildToolset(opts: {
       const kind = name === "draft_email" ? "email_draft" : String(a.kind ?? "document");
       const content = name === "draft_email" ? JSON.stringify({ to: String(a.to ?? "").trim(), subject: String(a.subject ?? "").trim(), body: String(a.body ?? "") }) : String(a.content ?? "");
       if (!title || !content || content.length > 100_000) return { output: "The artifact needs a title and content under 100 KB." };
-      if (name === "draft_email" && (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(a.to ?? "").trim()) || /[\\r\\n]/.test(String(a.subject ?? "")))) return { output: "That email draft has an invalid recipient or subject." };
+      // Recipients may be bare addresses or “Name <a@x.com>”, separated by commas.
+      if (name === "draft_email") {
+        const recipients = splitRecipients(String(a.to ?? ""));
+        const subjectLine = String(a.subject ?? "");
+        if (!recipients.ok.length || recipients.invalid.length) {
+          return { output: "That email draft needs at least one valid recipient (name@example.com). Separate several with commas." };
+        }
+        if (!subjectLine.trim() || /[\r\n]/.test(subjectLine)) {
+          return { output: "That email draft needs a subject on a single line." };
+        }
+        if (!String(a.body ?? "").trim()) return { output: "That email draft needs a body." };
+      }
       const [saved] = await db.insert(artifacts).values({ botId: bot.id, userId, title, kind, content }).returning({ id: artifacts.id });
-      return { output: name === "draft_email" ? `Email draft saved to Artifacts (id ${saved.id}). It has not been sent; the user must review and press Send.` : `Saved to Artifacts (id ${saved.id}).` };
+      return {
+        artifactId: saved.id,
+        output:
+          name === "draft_email"
+            ? `Email draft saved (id ${saved.id}). It is shown as a card in the chat for the user to review and send — do not say it has been sent.`
+            : `Saved to Artifacts (id ${saved.id}).`,
+      };
     }
     if (["search_gmail", "search_youtube", "search_notion", "list_github_repositories", "list_vercel_projects", "list_saved_spotify_tracks"].includes(name)) {
       const provider = name === "search_gmail" || name === "search_youtube" ? "google" : name === "search_notion" ? "notion" : name === "list_github_repositories" ? "github" : name === "list_vercel_projects" ? "vercel" : "spotify";
@@ -393,7 +418,7 @@ export function buildToolset(opts: {
       if (privacySession) throw new Error("Privacy Mode is active. Bot tools are paused until you press I'm Done.");
       const r = await exec(name, args);
       if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
-      ev.onStepEnd({ id, name, label, ok: true, output: clip(r.output, 1500) });
+      ev.onStepEnd({ id, name, label, ok: true, output: clip(r.output, 1500), ...(r.artifactId ? { artifactId: r.artifactId } : {}) });
       if (desktop && opts.wantShots && SCREEN_TOOLS.has(name) && !opts.signal.aborted) {
         const b = await captureShot(desktop);
         if (b && !opts.signal.aborted) ev.onShot(b);

@@ -268,7 +268,7 @@ export function ComputerScreen({
       <div className="flex max-w-full flex-col" style={{ width: `min(100cqw, calc((100cqh - ${BAR_H + PILL_H}px) * 4 / 3))` }}>
         <div className="flex shrink-0 items-center" style={{ height: BAR_H }}>
           {driving ? (
-            <form onSubmit={navigate} className="flex h-9 w-full items-center gap-2 rounded-full border border-white/[0.08] bg-[#141414] pl-3 pr-1 transition focus-within:border-white/25">
+            <form onSubmit={navigate} className="flex h-9 w-full items-center gap-2 rounded-full border border-white/[0.08] bg-[#151518] pl-3 pr-1 transition focus-within:border-white/25">
               <Icon name="globe" size={15} className="shrink-0 text-neutral-500" />
               <input
                 value={addr}
@@ -370,7 +370,7 @@ export function ComputerScreen({
 
         <div className="flex shrink-0 items-center justify-center" style={{ height: PILL_H }}>
           {live && (
-            <div className={cx("fade-up flex h-10 items-center rounded-full border bg-[#151515] pl-4 pr-1 text-[13px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]", driving ? "border-[#3b8cff]/40" : "border-white/[0.08]")}>
+            <div className={cx("fade-up flex h-10 items-center rounded-full border bg-[#16161a] pl-4 pr-1 text-[13px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]", driving ? "border-[#3b8cff]/40" : "border-white/[0.08]")}>
               <span className="flex items-center gap-2 pr-3.5 text-neutral-300">
                 <span className={cx("size-2 rounded-full", driving ? "bg-[#3b8cff]" : "bg-emerald-400", !driving && agentBusy && "soft-pulse")} aria-hidden="true" />
                 {driving ? "You're in control" : "Watching"}

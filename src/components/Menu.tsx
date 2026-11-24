@@ -124,7 +124,7 @@ export function Menu({
       aria-label={label}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
-      className="menu-in fixed z-[95] rounded-xl border border-white/10 bg-[#1c1c1c] shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
+      className="menu-in fixed z-[95] rounded-xl border border-white/10 bg-[#202024] shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
       style={{ left: position.left, top: position.top, width, padding: PAD, transformOrigin: position.origin }}
     >
       {items.map((m) => (

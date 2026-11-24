@@ -30,5 +30,25 @@ CREATE TABLE IF NOT EXISTS "privacy_sessions" (
 );
 CREATE INDEX IF NOT EXISTS "privacy_sessions_user_idx" ON "privacy_sessions" ("user_id", "created_at");
 
+-- Skills were originally pushed straight to the database, so a database built
+-- from these migrations alone never had the table and every migration that
+-- touched it failed. Create it here (no-op when it already exists) so a fresh
+-- install and an existing install both end up in the same shape.
+CREATE TABLE IF NOT EXISTS "skills" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+  "bot_id" uuid REFERENCES "bots"("id") ON DELETE CASCADE,
+  "name" text NOT NULL,
+  "instructions" text NOT NULL DEFAULT '',
+  "allowed_tools" jsonb NOT NULL DEFAULT '[]'::jsonb,
+  "allowed_connectors" jsonb NOT NULL DEFAULT '[]'::jsonb,
+  "version" integer NOT NULL DEFAULT 1,
+  "enabled" boolean NOT NULL DEFAULT true,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "skills_user_idx" ON "skills" ("user_id", "created_at");
+CREATE INDEX IF NOT EXISTS "skills_bot_idx" ON "skills" ("bot_id", "created_at");
+
 ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "enabled" boolean NOT NULL DEFAULT true;
 ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "updated_at" timestamptz NOT NULL DEFAULT now();
