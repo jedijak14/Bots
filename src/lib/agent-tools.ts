@@ -408,6 +408,7 @@ export function buildToolset(opts: {
 
   async function run(name: string, args: Record<string, unknown>, id: string): Promise<ToolResult> {
     const label = labelFor(name, args);
+    const startedAt = Date.now();
     ev.onStepStart({ id, name, label });
     if (opts.signal.aborted) throw new Error("aborted");
     try {
@@ -418,7 +419,7 @@ export function buildToolset(opts: {
       if (privacySession) throw new Error("Privacy Mode is active. Bot tools are paused until you press I'm Done.");
       const r = await exec(name, args);
       if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
-      ev.onStepEnd({ id, name, label, ok: true, output: clip(r.output, 1500), ...(r.artifactId ? { artifactId: r.artifactId } : {}) });
+      ev.onStepEnd({ id, name, label, ok: true, ms: Date.now() - startedAt, output: clip(r.output, 1500), ...(r.artifactId ? { artifactId: r.artifactId } : {}) });
       if (desktop && opts.wantShots && SCREEN_TOOLS.has(name) && !opts.signal.aborted) {
         const b = await captureShot(desktop);
         if (b && !opts.signal.aborted) ev.onShot(b);
@@ -427,7 +428,7 @@ export function buildToolset(opts: {
     } catch (e) {
       if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
       const msg = e instanceof Error ? e.message : "Tool failed";
-      ev.onStepEnd({ id, name, label, ok: false, output: clip(msg, 800) });
+      ev.onStepEnd({ id, name, label, ok: false, ms: Date.now() - startedAt, output: clip(msg, 800) });
       return { output: `Error: ${msg}` };
     }
   }
