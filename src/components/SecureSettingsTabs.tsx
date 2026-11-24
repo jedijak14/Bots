@@ -106,7 +106,9 @@ export function SkillsTab({ botId }: { botId: string | null }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <fieldset className="rounded-xl border border-white/[0.08] p-3">
             <legend className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-400">Allowed tools</legend>
-            <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+            {/* No height cap: the list is short, and a clipped last row read as
+                a rendering bug rather than a scroll area. */}
+            <div className="space-y-2">
               {SKILL_TOOL_OPTIONS.map((option) => (
                 <Checkbox
                   key={option.id}
