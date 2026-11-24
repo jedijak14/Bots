@@ -43,7 +43,7 @@ export function PrivacyModeGate({ initialActive, initialBotId }: { initialActive
     } finally { setEnding(false); }
   }
 
-  return <main role="dialog" aria-modal="true" aria-labelledby="privacy-mode-title" className="fixed inset-0 z-[100] flex flex-col bg-[#09090b]">
+  return <main role="dialog" aria-modal="true" aria-labelledby="privacy-mode-title" className="fixed inset-0 z-[100] flex flex-col bg-[var(--surface-1)]">
     <header className="flex min-h-[68px] items-center gap-3 border-b border-white/[0.08] px-5">
       <div className="grid size-9 place-items-center rounded-full bg-amber-300/10 text-amber-200"><Icon name="lock" size={16} /></div>
       <div className="min-w-0 flex-1"><h1 id="privacy-mode-title" className="text-sm font-semibold text-amber-100">Privacy Mode</h1><p className="text-xs text-amber-100/60">The Bot is paused and cannot see or interact with the sandbox.</p></div>

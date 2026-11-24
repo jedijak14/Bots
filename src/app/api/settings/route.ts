@@ -26,6 +26,7 @@ export async function PATCH(req: Request) {
     if (typeof b.animations === "boolean") patch.animations = b.animations;
     if (typeof b.voiceReplies === "boolean") patch.voiceReplies = b.voiceReplies;
     if (typeof b.defaultModel === "string") patch.defaultModel = b.defaultModel.slice(0, 200) || null;
+    if (b.theme === "dark" || b.theme === "light" || b.theme === "system") patch.theme = b.theme;
     await db.update(userSettings).set(patch).where(eq(userSettings.userId, user.id));
     return Response.json(publicSettings(await getSettings(user.id)));
   } catch (e) {
