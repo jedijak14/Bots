@@ -197,7 +197,9 @@ export function Gallery() {
 
       {menu && <Menu label={`Options for ${menu.bot.name}`} items={items(menu.bot)} position={menu.position} trigger={menu.trigger} onClose={() => setMenu(null)} />}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-wrap items-center justify-center gap-2 px-4">
+      {/* On a phone these sat on top of the last shortcut card, so they are
+          desktop-only and the scroll column reserves room for them. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 hidden flex-wrap items-center justify-center gap-2 px-4 md:flex">
         <button
           onClick={() => app.openSettings("ai")}
           className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#101013]/90 px-3.5 py-2 text-[12px] text-neutral-400 backdrop-blur transition hover:bg-[#19191d] hover:text-white"
