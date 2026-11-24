@@ -114,11 +114,11 @@ export function EmailPanel() {
 
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3.5">
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/[0.06] bg-white/[0.05] text-neutral-300">
           <Icon name="mail" size={17} />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[180px] flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13.5px] font-medium text-white">Email</span>
             {copy && (
@@ -142,7 +142,7 @@ export function EmailPanel() {
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 max-sm:w-full max-sm:justify-end max-sm:pl-[52px]">
           {own ? (
             <>
               <button type="button" onClick={() => void forget()} disabled={busy} className="rounded-full px-2.5 py-1 text-[11px] text-neutral-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-50">

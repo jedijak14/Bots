@@ -50,11 +50,14 @@ export function SettingsDialog() {
   return (
     <Modal onClose={app.closeSettings} width={820} label="Settings">
       <div className="flex h-[min(640px,calc(100dvh-2rem))] flex-col md:flex-row">
-        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] p-2.5 md:w-[224px] md:flex-col md:border-b-0 md:border-r md:overflow-visible">
-          <div className="mb-2 hidden items-center gap-2 px-2.5 pb-2 pt-1.5 md:flex">
+        <nav className="shrink-0 border-b border-white/[0.06] md:w-[224px] md:border-b-0 md:border-r">
+          {/* On a phone the nav is a scrolling strip, so it needs a title of its own
+              and an edge that hints there is more to the right. */}
+          <div className="flex items-center gap-2 px-4 pb-1 pt-3.5 md:mb-2 md:px-2.5 md:pb-2 md:pt-1.5">
             <LogoMark size={20} />
             <h2 className="text-[14px] font-semibold tracking-tight">Settings</h2>
           </div>
+          <div className="flex gap-1 overflow-x-auto p-2.5 pt-1.5 [mask-image:linear-gradient(to_right,transparent,black_6px,black_calc(100%-18px),transparent)] [scrollbar-width:none] md:flex-col md:overflow-visible md:p-0 md:[mask-image:none]">
           {TAB_GROUPS.map((group) => (
             <div key={group.label} className="contents md:block">
               <div className="hidden px-2.5 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600 md:block">
@@ -77,7 +80,8 @@ export function SettingsDialog() {
               ))}
             </div>
           ))}
-          <div className="mt-auto hidden px-2.5 pb-1 pt-4 text-[11px] leading-snug text-neutral-600 md:block">
+          </div>
+          <div className="mt-auto hidden px-2.5 pb-2 pt-4 text-[11px] leading-snug text-neutral-600 md:block">
             Keys are encrypted at rest and only used to talk to your provider.
           </div>
         </nav>

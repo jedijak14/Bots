@@ -1,5 +1,6 @@
 "use client";
 
+import useSWR from "swr";
 import { useState, type ReactNode } from "react";
 import { splitRecipients } from "@/lib/email";
 import { useApp } from "../AppProvider";
@@ -40,6 +41,13 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState(initial.content);
+  /** Which mailbox this will leave from, so "Send" is never a guess. */
+  const { data: mail } = useSWR<{ mode: string | null; address: string | null }>(
+    "/api/settings/email",
+    (url: string) => fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+    { revalidateOnFocus: false },
+  );
+  const sender = mail?.address ?? null;
 
   const dirty = JSON.stringify({ to, subject, body }) !== JSON.stringify(parseEmail(savedSnapshot));
 
@@ -121,6 +129,11 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
         <span className="text-[12.5px] font-medium text-neutral-200">Email draft</span>
         <div className="flex-1" />
         {sent ? <Pill tone="good">Sent</Pill> : locked ? <Pill tone="warn">Sending…</Pill> : <Pill>Saved locally</Pill>}
+        {sender && !sent && (
+          <span className="ml-1 max-w-[45%] truncate text-[11.5px] text-neutral-600" title={`Sends from ${sender}`}>
+            from {sender}
+          </span>
+        )}
       </div>
 
       <div className="space-y-2.5 p-4">
@@ -170,7 +183,11 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
             <p className="text-[12px] text-emerald-300">Delivered to {splitRecipients(to).ok.join(", ")}.</p>
           ) : (
             <p className="truncate text-[12px] text-neutral-600">
-              {locked ? "A previous send didn't finish. Retry to send it now." : "Only you can see this. Nothing sends until you press Send."}
+              {locked
+                ? "A previous send didn't finish. Retry to send it now."
+                : dirty
+                  ? "Unsaved edits — they're kept when you send."
+                  : "Only you can see this. Nothing sends until you press Send."}
             </p>
           )}
         </div>
