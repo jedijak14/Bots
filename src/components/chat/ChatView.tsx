@@ -75,12 +75,18 @@ function speak(markdown: string) {
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.slice(0, 1500)));
 }
 
-/** Prompt suggestions on the empty conversation, one per thing a bot is good at. */
-const SUGGESTIONS: Array<{ title: string; hint: string; prompt: string; icon: "search" | "sparkles" | "mail" | "monitor" }> = [
-  { title: "Research something", hint: "Search the web and summarise it", prompt: "Research a topic for me: ", icon: "search" },
-  { title: "Plan my day", hint: "Turn a messy list into a schedule", prompt: "Help me plan my day. Here's what I have: ", icon: "sparkles" },
-  { title: "Draft an email", hint: "Write it, then send it from here", prompt: "Draft an email for me. ", icon: "mail" },
-  { title: "Use the computer", hint: "Watch it work on a live desktop", prompt: "Open a browser and show me what you can do.", icon: "monitor" },
+/**
+ * What this Bot can do, shown under the greeting.
+ *
+ * These used to be four full-width cards; four stacked cards read as a quiz.
+ * They are now chips — a capability line, not a questionnaire — and the middle
+ * of the screen stays open for whatever the person actually came to say.
+ */
+const CAPABILITIES: Array<{ label: string; prompt: string; icon: "search" | "sparkles" | "mail" | "monitor" }> = [
+  { label: "Research the web", prompt: "Research a topic for me: ", icon: "search" },
+  { label: "Plan something", prompt: "Help me plan ", icon: "sparkles" },
+  { label: "Draft an email", prompt: "Draft an email for me. ", icon: "mail" },
+  { label: "Use the computer", prompt: "Open a browser and show me what you can do.", icon: "monitor" },
 ];
 
 export function ChatView({ botId, initialMessages, initialPrivacyMode = false }: { botId: string; initialMessages: MessageDTO[]; initialPrivacyMode?: boolean }) {
@@ -680,7 +686,7 @@ function EmptyChat({
   hasComputer: boolean;
   onPick: (prompt: string) => void;
 }) {
-  const suggestions = SUGGESTIONS.filter((s) => hasComputer || s.icon !== "monitor");
+  const capabilities = CAPABILITIES.filter((c) => hasComputer || c.icon !== "monitor");
   return (
     // The floor height keeps the middle of the screen from feeling empty on a
     // tall viewport while still letting the block scroll on a short one.
@@ -691,30 +697,19 @@ function EmptyChat({
           <BotAvatar shape={shape} color={color} size={88} />
         </div>
       </div>
-      <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hey, I&apos;m {name}.</h1>
-      <p className="mt-1.5 text-[14.5px] text-neutral-500">What can I do for you?</p>
+      <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hi, I&apos;m {name}.</h1>
+      <p className="mt-1.5 text-[14.5px] text-neutral-500">What are we working on?</p>
 
-      {/* Two columns only from lg. It isn't a viewport question: with the sidebar
-          open at 768px the chat column is only ~440px, so two cards got 216px each
-          and the hints wrapped to four lines. An odd last card spans the row rather
-          than leaving a hole. */}
-      <div className="mt-8 grid w-full max-w-[600px] grid-cols-1 gap-2 lg:grid-cols-2">
-        {suggestions.map((s, i) => (
+      <div className="mt-7 flex max-w-[560px] flex-wrap items-center justify-center gap-1.5">
+        {capabilities.map((c, i) => (
           <button
-            key={s.title}
-            onClick={() => onPick(s.prompt)}
-            className={cx(
-              "group flex items-start gap-3 rounded-[18px] border border-white/[0.07] bg-white/[0.02] p-3.5 text-left transition hover:border-white/[0.16] hover:bg-white/[0.05] active:scale-[0.99]",
-              suggestions.length % 2 === 1 && i === suggestions.length - 1 && "lg:col-span-2",
-            )}
+            key={c.label}
+            onClick={() => onPick(c.prompt)}
+            style={{ animationDelay: `${i * 55}ms` }}
+            className="fade-up flex items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.03] py-1.5 pl-2.5 pr-3 text-[12.5px] text-neutral-400 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white active:scale-[0.98]"
           >
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-neutral-300 transition group-hover:border-white/[0.14] group-hover:text-white">
-              <Icon name={s.icon} size={15} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[13.5px] font-medium text-neutral-200">{s.title}</span>
-              <span className="mt-0.5 block text-[12px] leading-snug text-neutral-500">{s.hint}</span>
-            </span>
+            <Icon name={c.icon} size={12} className="text-neutral-500" />
+            {c.label}
           </button>
         ))}
       </div>
