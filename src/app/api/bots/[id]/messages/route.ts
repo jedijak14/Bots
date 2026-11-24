@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversationArchives, messages } from "@/db/schema";
 import { handleError, HttpError, requireUser } from "@/lib/auth";
-import { getBot, greetingPreview, insertGreeting } from "@/lib/bots";
+import { getBot, greetingText, insertGreeting } from "@/lib/bots";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
       return current.length;
     });
     await insertGreeting(user.id, id, bot.name);
-    return Response.json({ ok: true, archived: archivedCount > 0, preview: greetingPreview(bot.name) });
+    return Response.json({ ok: true, archived: archivedCount > 0, greeting: greetingText(bot.name) });
   } catch (e) {
     return handleError(e);
   }

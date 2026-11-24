@@ -170,7 +170,11 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
             <p className="text-[12px] text-emerald-300">Delivered to {splitRecipients(to).ok.join(", ")}.</p>
           ) : (
             <p className="truncate text-[12px] text-neutral-600">
-              {locked ? "A previous send didn't finish. Retry to send it now." : "Only you can see this. Nothing sends until you press Send."}
+              {locked
+                ? "A previous send didn't finish. Retry to send it now."
+                : dirty
+                  ? "Unsaved edits — they're kept when you send."
+                  : "Only you can see this. Nothing sends until you press Send."}
             </p>
           )}
         </div>

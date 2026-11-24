@@ -77,7 +77,9 @@ export function AppShell({ children, initialCollapsed = false, initialPrivacyMod
         {app.searchOpen && <SearchDialog />}
         {app.confirmState && <ConfirmDialog />}
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-[90] flex flex-col items-center gap-2 px-4">
+        {/* Toasts sit under the top bar, not over the composer: an "Email sent."
+            pill used to land right on top of the message box. */}
+        <div className="pointer-events-none absolute inset-x-0 top-16 z-[90] flex flex-col items-center gap-2 px-4">
           {app.toasts.map((t) => (
             <div
               key={t.id}

@@ -356,7 +356,44 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const empty = messages.length <= 1 && messages.every((m) => m.role === "assistant") && !busy;
 
   const openArtifacts = () => app.openSettings("artifacts");
+  /**
+   * Starts the conversation over. The old one is archived by the server first, so
+   * "clear" never means "lose" — it is in Settings → History if it's wanted back.
+   */
+  const clearConversation = async () => {
+    if (busy) return;
+    const ok = await app.confirm({
+      title: "Start a new chat?",
+      body: `This conversation moves to History and ${bot?.name ?? "the bot"} says hello again.`,
+      confirmLabel: "New chat",
+    });
+    if (!ok) return;
+    try {
+      const response = await fetch(`/api/bots/${botId}/messages`, { method: "DELETE" });
+      const result = (await response.json().catch(() => ({}))) as { greeting?: string };
+      if (!response.ok) throw new Error("Couldn't clear this conversation.");
+      setLive(null);
+      setError(null);
+      setMessages([
+        {
+          id: `greeting-${Date.now()}`,
+          role: "assistant",
+          content: result.greeting ?? "Hi — ready when you are. What should we work on?",
+          steps: null,
+          choices: null,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      // Keep the sidebar line in step with the conversation that is now on screen.
+      if (result.greeting) app.setPreview(botId, result.greeting);
+      app.toast("New chat started.");
+    } catch (reason) {
+      app.toast(reason instanceof Error ? reason.message : "Couldn't clear this conversation.", "err");
+    }
+  };
+
   const botMenuItems: MenuItem[] = [
+    { label: "New chat", icon: "plus", onSelect: () => void clearConversation() },
     { label: "Edit look & name", icon: "pencil", onSelect: () => app.openBotDialog(bot.id) },
     { label: "Artifacts", icon: "file", onSelect: openArtifacts },
     { label: "Conversation history", icon: "chat", onSelect: () => app.openSettings("history") },
