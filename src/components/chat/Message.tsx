@@ -275,6 +275,11 @@ export function ChoiceCard({
        640px cap left the card 184px narrower than the paragraph it follows, so
        its edge did not line up with anything. */
     <div className="mt-3 w-full rounded-[22px] border border-white/[0.06] bg-[#101013] p-3 fade-up">
+      {choices.action === "privacy" && (
+        <div className="mx-1.5 mb-1 mt-1 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.08em] text-amber-200/70">
+          <Icon name="lock" size={11} /> Privacy Mode
+        </div>
+      )}
       <h3 className="px-2.5 pb-2 pt-1.5 text-[15.5px] font-semibold leading-snug text-white">{choices.question}</h3>
       <div className="flex flex-col gap-0.5">
         {opts.map((o, i) => {

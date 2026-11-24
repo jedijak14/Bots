@@ -257,7 +257,7 @@ export function buildToolset(opts: {
   async function exec(name: string, a: Record<string, unknown>): Promise<ToolResult> {
     if (name === "ask_user") {
       const options = (Array.isArray(a.options) ? a.options : []).map((o) => String(o).trim()).filter(Boolean).slice(0, 5);
-      ev.onChoices({ question: String(a.question ?? "Choose one"), options });
+      ev.onChoices({ question: String(a.question ?? "Choose one"), options, ...(a.privacy === true ? { action: "privacy" as const } : {}) });
       return { output: "The question is now displayed to the user. Stop and wait for their answer.", stop: true };
     }
     if (name === "get_current_time") {

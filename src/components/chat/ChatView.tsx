@@ -88,7 +88,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const { setWorking, toast } = app;
   const router = useRouter();
   const bot = app.bots.find((b) => b.id === botId);
-  const { data: privacyState } = useSWR("/api/privacy", readPrivacy, { fallbackData: initialPrivacyMode ? { status: "active" as const } : undefined, revalidateOnFocus: true });
+  const { data: privacyState, mutate: mutatePrivacy } = useSWR("/api/privacy", readPrivacy, { fallbackData: initialPrivacyMode ? { status: "active" as const } : undefined, revalidateOnFocus: true });
   const privacyActive = privacyState?.status === "active" || (initialPrivacyMode && privacyState?.status !== "idle");
 
   const [messages, setMessages] = useState<MessageDTO[]>(initialMessages);
@@ -190,6 +190,27 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       setLive({ text: acc.current.text, steps: acc.current.steps.map((s) => ({ ...s })), choices: acc.current.choices });
     });
   }, []);
+
+  /**
+   * The Bot offers Privacy Mode in chat rather than the app offering a button.
+   * Choosing the privacy option opens the session for this Bot and refreshes
+   * the state that pauses tools, without leaving the conversation.
+   */
+  const openPrivacy = useCallback(async () => {
+    try {
+      const response = await fetch("/api/privacy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "take_control", botId }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Could not open Privacy Mode.");
+      await mutatePrivacy();
+      app.toast("Privacy Mode is on — the Bot cannot see the screen.");
+    } catch (reason) {
+      app.toast(reason instanceof Error ? reason.message : "Could not open Privacy Mode.", "err");
+    }
+  }, [botId, app, mutatePrivacy]);
 
   const send = useCallback(
     async (raw: string, atts: Attachment[] = []) => {
@@ -523,7 +544,10 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                           choicesDisabled={busy || i < lastUserIdx}
                           onPick={(o) => {
                             if (/something else/i.test(o)) inputRef.current?.focus();
-                            else send(o);
+                            else if (m.choices?.action === "privacy" && o === m.choices.options[0]) {
+                              void openPrivacy();
+                              send(o);
+                            } else send(o);
                           }}
                           streaming={false}
                           startedAt={m.steps?.length ? stepsElapsed(m.steps) : null}
