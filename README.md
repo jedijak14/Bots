@@ -59,6 +59,8 @@ key (and optionally an E2B key) under Settings.
 | `APP_SECRET`           | no       | Secret used to encrypt stored API keys (falls back to the DB URL)   |
 | `APP_ORIGIN`           | no       | Public URL, used as the OAuth callback origin for connections       |
 | `BLOB_READ_WRITE_TOKEN`| no       | Vercel Blob token, used for avatar uploads                          |
+| `RESEND_API_KEY`       | no       | Deployment-wide sender via Resend's HTTP API                        |
+| `RESEND_FROM`          | no       | From header for Resend sends                                        |
 | `SMTP_HOST`            | no       | Deployment-wide SMTP relay used to send mail                        |
 | `SMTP_PORT`            | no       | `587` (STARTTLS) by default, `465` for TLS                          |
 | `SMTP_USER`            | no       | SMTP username                                                       |
@@ -76,18 +78,21 @@ Connections → Email and save a Gmail address with a 16-character
 mailbox through SMTP, encrypted at rest and used only for sending.
 
 If you would rather not use per-account credentials, the deployment can carry its
-own sender. Lowest common denominator is SMTP (`SMTP_HOST`, `SMTP_USER`, …), which
-works with Resend, Postmark, Fastmail or any relay. On Vercel you can also install
-the Google connector and let people press **Connect Google** (per-user tokens via
-Vercel Connect), or set the three `GOOGLE_*` variables to use an OAuth client of
-your own.
+own sender. On Vercel, prefer an HTTP mail API (`RESEND_API_KEY`, `RESEND_FROM`) —
+Vercel pauses work as soon as a function responds, which makes a held-open SMTP
+connection the less reliable choice. SMTP is there too (`SMTP_HOST`, `SMTP_USER`,
+…, works with Postmark, Fastmail or any relay; Vercel allows 465 and 587 but
+blocks 25). Or install the Google connector and let people press **Connect Google**
+(per-user tokens via Vercel Connect), or set the three `GOOGLE_*` variables to use
+an OAuth client of your own.
 
 Order of preference when a send starts:
 
 1. the person's saved mailbox (their own address, app password)
 2. their Google connection from Vercel Connect
 3. the deployment's Google OAuth client (`GOOGLE_*`)
-4. the deployment's SMTP relay (`SMTP_*`)
+4. the deployment's Resend account (`RESEND_*`)
+5. the deployment's SMTP relay (`SMTP_*`)
 
 Whichever one is used, the flow is the same: a bot drafts an email, it lands in the
 chat as an editable card, and nothing leaves until you press **Send**. A draft is

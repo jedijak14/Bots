@@ -59,13 +59,23 @@ function smtpConfig() {
   return { host, port, secure: port === 465, user, pass, from };
 }
 
+/**
+ * Resend's HTTP API. Preferred over SMTP on serverless hosts: one request, no
+ * socket to keep alive while the function finishes.
+ */
+function resendConfig() {
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM;
+  return key && from ? { key, from } : null;
+}
+
 /** True when email can be sent without a per-user Google connection. */
 export function hasAppGoogleCredentials(): boolean {
   return appGoogleConfig() !== null;
 }
 
 export function hasSmtpCredentials(): boolean {
-  return smtpConfig() !== null;
+  return smtpConfig() !== null || resendConfig() !== null;
 }
 
 /**
@@ -181,6 +191,8 @@ export async function mailStatus(userId: string): Promise<{ mode: MailMode; addr
   const user = await userSmtpConfig(userId).catch(() => null);
   if (user) return { mode: "smtp", address: user.from };
   if (appGoogleConfig()) return { mode: "app", address: process.env.SMTP_FROM ?? null };
+  const resend = resendConfig();
+  if (resend) return { mode: "smtp", address: resend.from };
   const smtp = smtpConfig();
   if (smtp) return { mode: "smtp", address: smtp.from };
   return null;
@@ -255,6 +267,32 @@ async function sendViaGmail(context: MailContext, to: string[], subject: string,
 
 type SmtpConfig = { host: string; port: number; secure: boolean; user: string; pass: string; from: string };
 
+async function sendViaResend(config: { key: string; from: string }, to: string[], subject: string, body: string): Promise<{ messageId: string }> {
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: config.from, to, subject, text: body }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    throw new MailError("network", "Couldn't reach the mail service. Your draft is safe — press Send to try again.", 502);
+  }
+  const data = (await response.json().catch(() => ({}))) as { id?: string; message?: string };
+  if (response.status === 401 || response.status === 403) {
+    throw new MailError("auth", "The mail service rejected this deployment's API key.", 502);
+  }
+  if (response.status === 429) {
+    throw new MailError("rate_limit", "The mail service is rate limiting sends. Wait a minute, then try again.", 429);
+  }
+  if (!response.ok) {
+    throw new MailError("gmail", data.message ? `The mail service refused the message. ${data.message.slice(0, 140)}` : "The mail service refused the message.", 502);
+  }
+  return { messageId: data.id ?? "" };
+}
+
 async function sendViaSmtp(config: SmtpConfig, to: string[], subject: string, body: string): Promise<{ messageId: string }> {
   const transporter = nodemailer.createTransport({
     host: config.host,
@@ -319,13 +357,16 @@ export async function sendEmail(input: SendEmailInput): Promise<{ messageId: str
     connectUnavailable = true;
   }
 
+  const resend = resendConfig();
+  if (resend) return sendViaResend(resend, to, subject, body);
+
   const smtp = smtpConfig();
   if (smtp) return sendViaSmtp(smtp, to, subject, body);
 
   if (connectUnavailable) {
     throw new MailError(
       "not_connected",
-      "Email isn't set up on this deployment yet. Save a Gmail address in Settings → Connections, or set SMTP_HOST, SMTP_USER and SMTP_PASS for the whole deployment.",
+      "Email isn't set up on this deployment yet. Save a Gmail address in Settings → Connections, or set RESEND_API_KEY or SMTP_HOST for the whole deployment.",
       409,
     );
   }
