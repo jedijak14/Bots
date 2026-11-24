@@ -39,7 +39,7 @@ export async function authenticateAction(
   } catch {
     return { error: "We couldn't start your session. Please try again.", mode };
   }
-  redirect("/");
+  redirect("/bots");
 }
 
 /** Sign out: drop the session and send the user back to the sign-in page. */

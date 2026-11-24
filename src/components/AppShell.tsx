@@ -166,7 +166,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const { setSidebarOpen } = app;
   const router = useRouter();
   const pathname = usePathname();
-  const activeId = pathname.startsWith("/bot/") ? pathname.split("/")[2] : null;
+  const activeId = pathname.startsWith("/bots/") ? pathname.split("/")[2] : null;
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [acct, setAcct] = useState<AcctMenu | null>(null);
   const tip = useTooltip();
@@ -211,7 +211,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       app.toast(`Couldn't delete ${b.name}.`, "err");
       return;
     }
-    if (b.id === activeId) router.push("/");
+    if (b.id === activeId) router.push("/bots");
     app.removeBot(b.id);
     app.toast(`${b.name} was deleted.`);
   }
@@ -266,13 +266,13 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         </button>
 
         {/* Mobile always shows the full lockup; the rail is a desktop-only idea. */}
-        <Link href="/" aria-label="Bots home" className="flex min-w-0 items-center gap-2 rounded-lg outline-offset-4 md:hidden">
+        <Link href="/bots" aria-label="Bots home" className="flex min-w-0 items-center gap-2 rounded-lg outline-offset-4 md:hidden">
           <LogoMark size={24} />
           <span className="text-[16px] font-semibold tracking-[-0.02em] text-white">Bots</span>
         </Link>
 
         <Link
-          href="/"
+          href="/bots"
           aria-label="Bots home"
           className={cx("hidden min-w-0 items-center gap-2 rounded-lg outline-offset-4 md:flex", collapsed && "md:hidden")}
         >
@@ -342,10 +342,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           <span className="text-[11px] tabular-nums text-neutral-600">{app.bots.length || ""}</span>
         </div>
         <Link
-          href="/"
-          aria-current={pathname === "/" ? "page" : undefined}
+          href="/bots"
+          aria-current={pathname === "/bots" ? "page" : undefined}
           aria-label="All bots"
-          className={cx(row(pathname === "/"), collapsed && "md:justify-center md:pl-0")}
+          className={cx(row(pathname === "/bots"), collapsed && "md:justify-center md:pl-0")}
           {...railTip("All bots")}
         >
           <span className={cx("grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-neutral-300")}>
@@ -361,7 +361,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           return (
             <div key={b.id} className="group relative">
               <Link
-                href={`/bot/${b.id}`}
+                href={`/bots/${b.id}`}
                 aria-current={active ? "page" : undefined}
                 aria-label={b.name}
                 onContextMenu={(e) => openMenuAtPointer(b, e)}

@@ -19,7 +19,7 @@ export function Gallery() {
   const [menu, setMenu] = useState<{ bot: Bot; position: MenuPosition; trigger: HTMLElement } | null>(null);
 
   const items = (bot: Bot): MenuItem[] => [
-    { label: "Open", icon: "arrow-right", onSelect: () => router.push(`/bot/${bot.id}`) },
+    { label: "Open", icon: "arrow-right", onSelect: () => router.push(`/bots/${bot.id}`) },
     { label: "Edit look & name", icon: "pencil", onSelect: () => app.openBotDialog(bot.id) },
     {
       label: "Delete",
@@ -93,7 +93,7 @@ export function Gallery() {
                         options button so it is never a button inside a button. */}
                     <button
                       type="button"
-                      onClick={() => router.push(`/bot/${b.id}`)}
+                      onClick={() => router.push(`/bots/${b.id}`)}
                       className="absolute inset-0 z-0 rounded-[20px] outline-none"
                       aria-label={`Open ${b.name}`}
                     />

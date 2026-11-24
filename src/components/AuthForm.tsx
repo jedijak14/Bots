@@ -13,11 +13,14 @@ export type AuthFormState = { error: string | null; mode: "signin" | "signup" };
 
 export function AuthForm({
   action,
+  initialMode = "signin",
 }: {
   action: (state: AuthFormState, formData: FormData) => Promise<AuthFormState>;
+  /** Deep links from the landing page open straight on the sign-up tab. */
+  initialMode?: "signin" | "signup";
 }) {
-  const [state, formAction, pending] = useActionState(action, { error: null, mode: "signin" });
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [state, formAction, pending] = useActionState(action, { error: null, mode: initialMode });
+  const [mode, setMode] = useState<"signin" | "signup">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");

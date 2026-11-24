@@ -35,7 +35,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
             Try again
           </button>
           <Link
-            href="/"
+            href="/bots"
             className="rounded-full px-4 py-2 text-[13px] font-medium text-neutral-400 transition hover:bg-white/[0.06] hover:text-white"
           >
             Back to your bots

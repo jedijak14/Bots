@@ -473,3 +473,216 @@ button:disabled {
   max-width: 100%;
   border-radius: 12px;
 }
+
+/* ------------------------------------------------------------------ *
+ * Landing page
+ * The front door is motion-first: an aurora field, a drifting star grid,
+ * a marquee of Bot faces and a rotating word in the headline. Everything
+ * here is decorative and every animation is switched off when the person
+ * asks for reduced motion.
+ * ------------------------------------------------------------------ */
+@keyframes land-drift {
+  0% {
+    transform: translate3d(-6%, -4%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 6%, 0) scale(1.14);
+  }
+  100% {
+    transform: translate3d(-6%, -4%, 0) scale(1);
+  }
+}
+@keyframes land-sheen {
+  from {
+    transform: translateX(-120%) skewX(-14deg);
+  }
+  to {
+    transform: translateX(320%) skewX(-14deg);
+  }
+}
+@keyframes land-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes land-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+@keyframes land-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translate3d(0, -14px, 0) rotate(var(--tilt, 0deg));
+  }
+}
+@keyframes land-blink {
+  0% {
+    transform: translate3d(0, 0, 0);
+    box-shadow: 0 -46px 90px -30px rgba(124, 155, 255, 0.45);
+  }
+  50% {
+    transform: translate3d(0, -6px, 0);
+    box-shadow: 0 -46px 120px -26px rgba(139, 92, 246, 0.5);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    box-shadow: 0 -46px 90px -30px rgba(124, 155, 255, 0.45);
+  }
+}
+@keyframes land-word {
+  0%,
+  18% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  22%,
+  23% {
+    opacity: 0;
+    transform: translateY(-0.35em);
+    filter: blur(6px);
+  }
+  27%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes land-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes land-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+@keyframes land-beam {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scaleY(0.6);
+  }
+  30% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-160px) scaleY(1.2);
+  }
+}
+
+.land-aurora {
+  background:
+    radial-gradient(48% 42% at 22% 18%, rgba(124, 155, 255, 0.34), transparent 62%),
+    radial-gradient(40% 38% at 78% 12%, rgba(139, 92, 246, 0.3), transparent 60%),
+    radial-gradient(46% 44% at 62% 72%, rgba(56, 189, 248, 0.16), transparent 64%),
+    radial-gradient(36% 34% at 14% 82%, rgba(236, 72, 153, 0.14), transparent 60%);
+  animation: land-drift 26s ease-in-out infinite;
+  filter: blur(10px);
+}
+.land-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(70% 58% at 50% 32%, #000 20%, transparent 78%);
+  -webkit-mask-image: radial-gradient(70% 58% at 50% 32%, #000 20%, transparent 78%);
+}
+.land-noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+}
+.land-rise {
+  animation: land-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.land-marquee-track {
+  animation: land-marquee 34s linear infinite;
+  width: max-content;
+}
+.land-float {
+  animation: land-float 7s ease-in-out infinite;
+}
+.land-orb {
+  animation: land-blink 9s ease-in-out infinite;
+}
+.land-beam {
+  animation: land-beam 6s ease-in infinite;
+}
+.land-glow {
+  animation: land-glow 7s ease-in-out infinite;
+}
+.land-cta-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  width: 40%;
+  animation: land-sheen 3.4s ease-in-out infinite;
+}
+/* Scroll-reveal: only animates once the browser says the element is near. */
+.land-reveal {
+  opacity: 0;
+  transform: translate3d(0, 26px, 0);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.land-reveal[data-shown="true"] {
+  opacity: 1;
+  transform: none;
+}
+/* If scripting is off the observer never runs, so never leave the page blank. */
+@media (scripting: none) {
+  .land-reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+.land-word {
+  display: inline-block;
+  animation: land-word 9s ease-in-out infinite;
+  will-change: transform, opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .land-aurora,
+  .land-marquee-track,
+  .land-float,
+  .land-orb,
+  .land-beam,
+  .land-glow,
+  .land-rise,
+  .land-word,
+  .land-cta-sheen::after {
+    animation: none !important;
+  }
+  .land-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

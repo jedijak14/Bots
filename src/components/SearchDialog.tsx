@@ -42,7 +42,7 @@ export function SearchDialog() {
 
   const open = (r: Result) => {
     app.setSearchOpen(false);
-    router.push(`/bot/${r.id}`);
+    router.push(`/bots/${r.id}`);
   };
 
   return (
