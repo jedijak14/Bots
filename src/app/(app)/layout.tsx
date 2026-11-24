@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { db, schemaReady } from "@/db";
 import { privacySessions } from "@/db/schema";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -14,6 +14,10 @@ import { AppShell } from "@/components/AppShell";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  // The first request to a cold deployment can arrive before the schema
+  // bootstrap has finished; wait for it instead of querying a table that may
+  // not exist yet.
+  await schemaReady;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const [bots, settings, jar, activePrivacy] = await Promise.all([

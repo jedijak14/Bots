@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { LogoMark } from "@/components/Logo";
 
-export const metadata: Metadata = { title: "Page not found" };
+export const metadata: Metadata = { title: { absolute: "Page not found · Bots" } };
 
 /**
  * A wrong URL should still look like this product. Next's stock 404 is a plain

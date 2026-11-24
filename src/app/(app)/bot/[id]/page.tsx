@@ -13,7 +13,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const user = await getCurrentUser();
   const bot = user ? await getBot(user.id, id) : null;
-  if (!bot) return { title: "Bots" };
+  // Absolute, because the root layout appends "· Bots" to every title; a bare
+  // "Bots" here rendered the tab as "Bots · Bots".
+  if (!bot) return { title: { absolute: "Page not found · Bots" } };
   return { title: bot.name };
 }
 

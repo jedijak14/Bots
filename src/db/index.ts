@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { ensureSchema } from "./bootstrap";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -24,26 +25,18 @@ if (process.env.NODE_ENV !== "production") {
   globalForDb.__arenaNextJsPostgresqlPool = pool;
 }
 
+// Kick off schema provisioning on first import. It is idempotent and runs in the
+// background; routes that cannot work without a table await `schemaReady`.
+export const schemaReady = ensureSchema(pool);
+
 export const db = drizzle(pool);
 
 /**
- * Columns added after the first deploy. Drizzle migrations are the source of
- * truth, but a deployment can be running against a database that has not had the
- * newest SQL applied yet, and one missing column would take the whole Settings
- * page down. `ADD COLUMN IF NOT EXISTS` is cheap, idempotent and runs once per
- * process, so the feature that needs these columns brings them with it.
+ * Kept for the email settings route: the columns it needs are part of the
+ * schema bootstrap, so this simply waits for that.
  */
-let emailColumns: Promise<void> | null = null;
 export function ensureEmailColumns(): Promise<void> {
-  emailColumns ??= pool
-    .query(
-      `alter table user_settings add column if not exists smtp_user text;
-       alter table user_settings add column if not exists smtp_pass_enc text;
-       alter table user_settings add column if not exists smtp_host text;
-       alter table user_settings add column if not exists smtp_port integer;
-       alter table user_settings add column if not exists smtp_from text;`,
-    )
-    .then(() => undefined)
-    .catch(() => undefined);
-  return emailColumns;
+  // The full bootstrap already adds these, and is idempotent; keeping the old
+  // entry point means call sites did not have to change.
+  return schemaReady;
 }
