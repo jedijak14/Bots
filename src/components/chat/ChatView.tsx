@@ -168,8 +168,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-    // `mounted` is here because the timestamps appear after hydration and push the last message down.
-  }, [messages, live, busy, error, mounted]);
+    // `mounted` is here because the timestamps appear after hydration and push the last
+    // message down; `artifacts` because a draft card arrives after the message is painted.
+  }, [messages, live, busy, error, mounted, artifacts]);
 
   const flush = useCallback(() => {
     if (frame.current) return;
@@ -456,7 +457,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               }}
               className="min-h-0 flex-1 overflow-y-auto"
             >
-              <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-4 pb-4 pt-2 sm:px-6">
+              <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-4 pb-8 pt-2 sm:px-6">
                 {messages.map((m, i) => {
                   const prev = messages[i - 1];
                   const showTime = mounted && (!prev || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > 30 * 60_000);
