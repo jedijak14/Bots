@@ -112,16 +112,21 @@ export function AppProvider({
     [],
   );
 
-  // A session can expire while the tab stays open. Every API call then answers
-  // 401, so send the user back to the sign-in page instead of leaving them
-  // sitting in a shell that can no longer do anything.
+  // A session can expire while the tab stays open, and then every API call answers
+  // 401. Only a 401 that really means "not signed in" should bounce the tab to the
+  // sign-in page: a feature telling you to set something up is not an expired
+  // session, and sending someone to /login mid-send loses their draft.
   useEffect(() => {
     const original = window.fetch.bind(window);
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const res = await original(...args);
       const url = typeof args[0] === "string" ? args[0] : args[0] instanceof Request ? args[0].url : "";
-      if (res.status === 401 && !url.includes("/api/auth/")) {
-        window.location.assign("/login");
+      if (res.status === 401 && url.includes("/api/") && !url.includes("/api/auth/")) {
+        const body = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        if (!body || /sign in/i.test(String(body.error ?? ""))) window.location.assign("/login");
       }
       return res;
     };

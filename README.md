@@ -59,26 +59,42 @@ key (and optionally an E2B key) under Settings.
 | `APP_SECRET`           | no       | Secret used to encrypt stored API keys (falls back to the DB URL)   |
 | `APP_ORIGIN`           | no       | Public URL, used as the OAuth callback origin for connections       |
 | `BLOB_READ_WRITE_TOKEN`| no       | Vercel Blob token, used for avatar uploads                          |
-| `GOOGLE_CLIENT_ID`     | no       | Fallback Gmail sender: OAuth client ID (`gmail.send`)                 |
-| `GOOGLE_CLIENT_SECRET` | no       | Fallback Gmail sender: OAuth client secret                            |
-| `GOOGLE_REFRESH_TOKEN` | no       | Fallback Gmail sender: refresh token with `gmail.send`                |
+| `SMTP_HOST`            | no       | Deployment-wide SMTP relay used to send mail                        |
+| `SMTP_PORT`            | no       | `587` (STARTTLS) by default, `465` for TLS                          |
+| `SMTP_USER`            | no       | SMTP username                                                       |
+| `SMTP_PASS`            | no       | SMTP password                                                       |
+| `SMTP_FROM`            | no       | From header for SMTP sends (defaults to `SMTP_USER`)                |
+| `GOOGLE_CLIENT_ID`     | no       | Alternative sender: OAuth client ID (`gmail.send`)                  |
+| `GOOGLE_CLIENT_SECRET` | no       | Alternative sender: OAuth client secret                             |
+| `GOOGLE_REFRESH_TOKEN` | no       | Alternative sender: refresh token with `gmail.send`                 |
 
 ## Sending email
 
-Email goes out through the Gmail API, with a token from one of two places:
+The simplest setup needs **no environment variables at all**: open Settings →
+Connections → Email and save a Gmail address with a 16-character
+[app password](https://myaccount.google.com/apppasswords). Mail is sent from that
+mailbox through SMTP, encrypted at rest and used only for sending.
 
-1. **Vercel Connect** (the default on Vercel). Users press **Connect Google** under
-   Settings → Connections and consent to `gmail.send` plus read-only Gmail and YouTube
-   access. This needs the Google connector installed on the Vercel project and OIDC
-   enabled, so it only works in a real deployment — never on `localhost`.
-2. **Your own Google OAuth client**, if `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
-   `GOOGLE_REFRESH_TOKEN` are set. Connect is tried first and this is the fallback, so a
-   self-hosted deployment can send mail without any per-user consent screen.
+If you would rather not use per-account credentials, the deployment can carry its
+own sender. Lowest common denominator is SMTP (`SMTP_HOST`, `SMTP_USER`, …), which
+works with Resend, Postmark, Fastmail or any relay. On Vercel you can also install
+the Google connector and let people press **Connect Google** (per-user tokens via
+Vercel Connect), or set the three `GOOGLE_*` variables to use an OAuth client of
+your own.
 
-Either way the flow is the same: a bot drafts an email, it lands in the chat as an
-editable card, and nothing leaves until you press **Send**. A draft is claimed while it
-is in flight so two tabs can't send it twice, and it is released again if Gmail or the
-network fails, so pressing Send once more is always safe.
+Order of preference when a send starts:
+
+1. the person's saved mailbox (their own address, app password)
+2. their Google connection from Vercel Connect
+3. the deployment's Google OAuth client (`GOOGLE_*`)
+4. the deployment's SMTP relay (`SMTP_*`)
+
+Whichever one is used, the flow is the same: a bot drafts an email, it lands in the
+chat as an editable card, and nothing leaves until you press **Send**. A draft is
+claimed while it is in flight so two tabs can't send it twice, and it is released
+again if the send fails, so pressing Send once more is always safe. Settings →
+Connections shows which sender is active, and a failed send explains what is
+missing instead of just saying "couldn't send".
 
 ## Deploying
 

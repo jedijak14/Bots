@@ -64,7 +64,7 @@ export function SearchDialog() {
           }}
           placeholder="Search bots and conversations"
           aria-label="Search"
-          className="flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-neutral-600"
+          className="flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-neutral-600 focus-visible:outline-none"
         />
         {searching ? <Spinner size={15} /> : <Kbd>esc</Kbd>}
       </div>

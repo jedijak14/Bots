@@ -47,6 +47,12 @@ export const userSettings = pgTable("user_settings", {
   followMouse: boolean("follow_mouse").notNull().default(true),
   animations: boolean("animations").notNull().default(true),
   voiceReplies: boolean("voice_replies").notNull().default(false),
+  // Their own Gmail address + app password, so sending works even when the
+  // deployment has no Google app of its own.
+  smtpUser: text("smtp_user"),
+  smtpPassEnc: text("smtp_pass_enc"),
+  smtpHost: text("smtp_host"),
+  smtpFrom: text("smtp_from"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
