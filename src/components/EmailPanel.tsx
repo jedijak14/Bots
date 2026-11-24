@@ -11,6 +11,7 @@ type EmailStatus = {
   address: string | null;
   own: boolean;
   host: string;
+  port: number | null;
   replyTo: string;
   available: boolean;
   deploymentSmtp: boolean;
@@ -53,6 +54,9 @@ export function EmailPanel() {
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
   const [from, setFrom] = useState("");
+  const [server, setServer] = useState("");
+  const [port, setPort] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,7 +70,7 @@ export function EmailPanel() {
       const response = await fetch("/api/settings/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, password, from }),
+        body: JSON.stringify({ address, password, from, host: server, port: port.trim() || undefined }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error ?? "Couldn't save that mailbox.");
@@ -75,6 +79,9 @@ export function EmailPanel() {
       setPassword("");
       setAddress("");
       setFrom("");
+      setServer("");
+      setPort("");
+      setShowAdvanced(false);
       app.toast("Saved — bots can send from that address now.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Couldn't save that mailbox.");
@@ -133,12 +140,18 @@ export function EmailPanel() {
             )}
           </div>
           <p className="mt-1 text-[12px] leading-relaxed text-neutral-500">
-            {copy?.body ?? "No sender is set up on this deployment yet, so Send will fail. Add a Gmail address and app password below, or connect Google."}
+            {copy?.body ?? "No sender is set up on this deployment yet, so Send will fail. Add a mailbox and password below, or connect Google."}
           </p>
           {own && data.address && (
             <p className="mt-2 flex items-center gap-1.5 text-[12px] text-neutral-400">
               <Icon name="check" size={12} className="text-emerald-400" />
               <span className="truncate">{data.address}</span>
+              {data.host && (
+                <span className="truncate text-neutral-600">
+                  · {data.host}
+                  {data.port ? `:${data.port}` : ""}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -154,7 +167,7 @@ export function EmailPanel() {
             </>
           ) : (
             <button type="button" onClick={() => setEditing((v) => !v)} className="rounded-full border border-white/10 px-3 py-1.5 text-[11.5px] font-medium transition hover:border-white/20 hover:bg-white/[0.06]">
-              Use my Gmail
+              Use my mailbox
             </button>
           )}
         </div>
@@ -169,12 +182,12 @@ export function EmailPanel() {
           }}
         >
           <label className="block">
-            <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-neutral-600">Gmail address</span>
+            <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-neutral-600">Email address</span>
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="you@gmail.com"
-              aria-label="Gmail address"
+              placeholder="you@example.com"
+              aria-label="Email address"
               autoComplete="email"
               className={cx(inputCls, "py-2 text-[13px]")}
             />
@@ -186,7 +199,7 @@ export function EmailPanel() {
                 type={show ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="16 characters from Google"
+                placeholder="App password from your mail provider"
                 aria-label="App password"
                 autoComplete="off"
                 spellCheck={false}
@@ -207,14 +220,54 @@ export function EmailPanel() {
               className={cx(inputCls, "py-2 text-[13px]")}
             />
           </label>
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              aria-expanded={showAdvanced}
+              className="flex items-center gap-1 text-[11.5px] text-neutral-500 transition hover:text-white"
+            >
+              <Icon name="chevron" size={11} className={cx("transition-transform", showAdvanced && "rotate-180")} />
+              Mail server
+              {data.host && !showAdvanced && <span className="text-neutral-600">· {data.host}{data.port ? `:${data.port}` : ""}</span>}
+            </button>
+            {showAdvanced && (
+              <div className="mt-2 grid grid-cols-[1fr_88px] gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-neutral-600">Server</span>
+                  <input
+                    value={server}
+                    onChange={(e) => setServer(e.target.value)}
+                    placeholder={data.host || "smtp.example.com"}
+                    aria-label="Mail server"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={cx(inputCls, "py-2 font-mono text-[12.5px]")}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-neutral-600">Port</span>
+                  <input
+                    value={port}
+                    onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder={data.port ? String(data.port) : "587"}
+                    inputMode="numeric"
+                    aria-label="Mail server port"
+                    autoComplete="off"
+                    className={cx(inputCls, "py-2 font-mono text-[12.5px]")}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
           <p className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-neutral-600">
             <Icon name="info" size={12} className="mt-[3px] shrink-0" />
             <span>
-              Google account → Security → 2-Step Verification →{" "}
+              Gmail needs 2-Step Verification and an{" "}
               <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-neutral-400 underline decoration-white/20 underline-offset-2 transition hover:text-white">
-                App passwords
+                app password
               </a>
-              . Stored encrypted, used only to send mail, never shown again.
+              . Other providers work too — set their SMTP server above if it differs. Stored encrypted, used only to send mail, never shown again.
             </span>
           </p>
           {error && <p role="alert" className="text-[12px] leading-relaxed text-[#ff9aa5]">{error}</p>}

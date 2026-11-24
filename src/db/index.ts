@@ -40,6 +40,7 @@ export function ensureEmailColumns(): Promise<void> {
       `alter table user_settings add column if not exists smtp_user text;
        alter table user_settings add column if not exists smtp_pass_enc text;
        alter table user_settings add column if not exists smtp_host text;
+       alter table user_settings add column if not exists smtp_port integer;
        alter table user_settings add column if not exists smtp_from text;`,
     )
     .then(() => undefined)

@@ -85,7 +85,7 @@ export function hasSmtpCredentials(): boolean {
 async function userSmtpConfig(userId: string): Promise<SmtpConfig | null> {
   await ensureEmailColumns();
   const [row] = await db
-    .select({ host: userSettings.smtpHost, user: userSettings.smtpUser, pass: userSettings.smtpPassEnc, from: userSettings.smtpFrom })
+    .select({ host: userSettings.smtpHost, port: userSettings.smtpPort, user: userSettings.smtpUser, pass: userSettings.smtpPassEnc, from: userSettings.smtpFrom })
     .from(userSettings)
     .where(eq(userSettings.userId, userId))
     .limit(1);
@@ -96,11 +96,15 @@ async function userSmtpConfig(userId: string): Promise<SmtpConfig | null> {
   // a self-hosted mail server or a local test sink gets used without a code change.
   const host = process.env.SMTP_HOST || row.host || (row.user.endsWith("@gmail.com") || row.user.endsWith("@googlemail.com") ? "smtp.gmail.com" : "");
   if (!host) return null;
-  // Gmail wants 465/SSL. Anything else follows SMTP_PORT (587 by default), and a
-  // host on this machine is plain text on whatever port it listens on.
+  // Port order: environment (a self-hosted relay), then the saved port, then a
+  // sensible default. Previously only localhost honoured a non-587 port, so a
+  // relay on 2525/2465 or any other submission port could never be reached even
+  // though the person had entered one.
   const local = /^(localhost|127\.0\.0\.1|::1)$/.test(host);
-  const port = local ? Number(process.env.SMTP_PORT ?? 2525) : Number(process.env.SMTP_PORT ?? 587);
-  return { host, port, secure: !local && port === 465, user: row.user, pass, from: row.from || row.user };
+  const port = Number(process.env.SMTP_PORT ?? row.port ?? (local ? 2525 : 587));
+  if (!Number.isFinite(port)) return null;
+  // 465 is implicit TLS; everything else negotiates STARTTLS.
+  return { host, port, secure: port === 465, user: row.user, pass, from: row.from || row.user };
 }
 
 export type MailContext = {
