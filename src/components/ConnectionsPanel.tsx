@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
+import { useApp } from "./AppProvider";
 import { Icon, Spinner } from "./icons";
 import { cx } from "./ui";
 
@@ -24,6 +25,7 @@ const fetcher = async (url: string): Promise<Status> => {
 };
 
 function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)[number]) {
+  const app = useApp();
   const { data, error, mutate, isLoading } = useSWR<Status>(`/api/connections/${provider}`, fetcher, {
     revalidateOnFocus: true,
     shouldRetryOnError: false,
@@ -35,7 +37,13 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
   const viaApp = data?.mode === "app";
 
   async function disconnect() {
-    if (!window.confirm(`Disconnect your ${name} account? Bots will lose access until you connect again.`)) return;
+    const ok = await app.confirm({
+      title: `Disconnect ${name}?`,
+      body: "Your Bots lose access to this account until you connect it again.",
+      confirmLabel: "Disconnect",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setActionError("");
     try {

@@ -25,6 +25,7 @@ const fetcher = async (url: string) => {
 };
 
 export function SkillsTab({ botId }: { botId: string | null }) {
+  const app = useApp();
   const { data: skills, error, mutate } = useSWR<Skill[]>(`/api/skills?botId=${encodeURIComponent(botId ?? "global")}`, fetcher, {
     shouldRetryOnError: false,
   });
@@ -220,7 +221,7 @@ export function SkillsTab({ botId }: { botId: string | null }) {
                 type="button"
                 aria-label={`Delete ${skill.name}`}
                 onClick={async () => {
-                  if (!window.confirm(`Delete “${skill.name}”?`)) return;
+                  if (!(await app.confirm({ title: "Delete this skill?", body: `“${skill.name}” will stop applying to your Bots.`, confirmLabel: "Delete", danger: true }))) return;
                   const response = await fetch(`/api/skills/${skill.id}`, { method: "DELETE" });
                   if (response.ok) await mutate();
                 }}

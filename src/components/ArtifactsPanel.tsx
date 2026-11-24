@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
+import { useApp } from "./AppProvider";
 import { Icon } from "./icons";
 import { EmailDraftCard } from "./chat/EmailDraftCard";
 import { btnQuiet, cx } from "./ui";
@@ -28,6 +29,7 @@ function artifactFileName(artifact: Artifact) {
 }
 
 export function ArtifactsPanel() {
+  const app = useApp();
   const [includeArchived, setIncludeArchived] = useState(false);
   const [actionError, setActionError] = useState("");
   const { data, error, isLoading, mutate } = useSWR(`/api/artifacts${includeArchived ? "?includeArchived=true" : ""}`, fetcher, { revalidateOnFocus: true });
@@ -60,7 +62,13 @@ export function ArtifactsPanel() {
     await mutate();
   }
   async function remove(artifact: Artifact) {
-    if (!window.confirm(`Permanently delete “${artifact.title}”? This cannot be undone.`)) return;
+    const ok = await app.confirm({
+      title: "Delete this artifact?",
+      body: `“${artifact.title}” will be gone for good.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setActionError("");
     const response = await fetch(`/api/artifacts/${artifact.id}`, { method: "DELETE" });
     const result = await response.json();

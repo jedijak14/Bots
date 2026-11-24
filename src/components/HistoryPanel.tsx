@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { useMemo, useState } from "react";
+import { useApp } from "./AppProvider";
 import { Icon, Spinner } from "./icons";
 import { cx, inputCls } from "./ui";
 
@@ -17,6 +18,7 @@ const fetcher = async (url: string): Promise<Archive[]> => {
 const roleLabel = (role: string) => (role === "user" ? "You" : role === "assistant" ? "Bot" : role);
 
 export function HistoryPanel({ botId }: { botId: string | null }) {
+  const app = useApp();
   const { data, error, isLoading, mutate } = useSWR(`/api/history${botId ? `?botId=${encodeURIComponent(botId)}` : ""}`, fetcher, {
     shouldRetryOnError: false,
   });
@@ -33,7 +35,13 @@ export function HistoryPanel({ botId }: { botId: string | null }) {
   );
 
   async function remove(archive: Archive) {
-    if (!window.confirm(`Permanently delete “${archive.title}”? This cannot be undone.`)) return;
+    const ok = await app.confirm({
+      title: "Delete this conversation?",
+      body: `“${archive.title || "Untitled conversation"}” will be removed from your history for good.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setDeleting(archive.id);
     setActionError("");
     try {
