@@ -45,6 +45,19 @@ const NO_COMPUTER = new Set(["ask_user", "get_current_time", "draft_email", "sav
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
 const useHydrated = () => useSyncExternalStore(subscribeNothing, () => true, () => false);
+
+/** Narrow screens get the short form of long placeholder copy (see the composer). */
+function useNarrow(query = "(max-width: 639px)") {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
+}
 const readPrivacy = async (url: string) => {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error("Could not verify Privacy Mode.");
@@ -90,6 +103,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [botMenu, setBotMenu] = useState<{ position: ReturnType<typeof placeMenu>; trigger: HTMLElement } | null>(null);
   const [artifacts, setArtifacts] = useState<Record<string, ArtifactRef>>({});
   const mounted = useHydrated();
+  // Hooks must stay above the `if (!bot) return null` below.
+  const narrow = useNarrow();
 
   const acc = useRef<Live>({ text: "", steps: [], choices: null });
   const abortRef = useRef<AbortController | null>(null);
@@ -342,7 +357,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   // `lastMsg` is the welcome message, and asking the composer for an answer to a
   // question the person can't see reads as a bug.
   const awaiting = lastMsg?.role === "assistant" && !!lastMsg.choices && !busy && !empty;
-  const placeholder = awaiting ? "Type your answer, or talk about something else" : `Message ${bot.name}`;
+  // 44 characters does not fit a 228px field at 390 without dropping below a
+  // readable size, so narrow screens get a short form rather than a wrapped one.
+  const placeholder = awaiting ? (narrow ? "Answer, or ask something else" : "Type your answer, or talk about something else") : `Message ${bot.name}`;
 
   const runningStep = busy ? (live?.steps.filter((x) => x.status === "running").pop() ?? null) : null;
   const usingComputer = !!runningStep && !NO_COMPUTER.has(runningStep.name);

@@ -200,6 +200,10 @@ export function Composer({
           >
             <Icon name="plus" size={19} />
           </button>
+          {/* The awaiting prompt is long: at 390 the field is 228px wide, so it
+              wrapped to two lines inside a one-line box and started mid-height.
+              Shrinking only the placeholder on narrow screens keeps it on one line
+              without shortening the sentence. */}
           <textarea
             ref={inputRef}
             value={value}
@@ -213,7 +217,7 @@ export function Composer({
             }}
             placeholder={placeholder}
             aria-label="Message"
-            className="max-h-[168px] min-h-[60px] flex-1 resize-none bg-transparent py-2.5 text-[15.5px] leading-[22px] text-white outline-none placeholder:text-neutral-600"
+            className="max-h-[168px] flex-1 resize-none bg-transparent py-2.5 text-[15.5px] leading-[22px] text-white outline-none placeholder:text-neutral-600"
           />
           {canDictate && (
             <button
