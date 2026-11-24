@@ -68,12 +68,26 @@ export function RotatingWord({ words, label }: { words: readonly string[]; label
     return () => window.clearInterval(id);
   }, [words.length]);
 
-  // Runs before paint, so the slot is already the right size on the first frame.
+  // Measure synchronously on mount so the slot is already the right size on
+  // the first frame — otherwise the longest word starts in a slot sized for
+  // the shortest and spills across the rest of the headline.
   useLayoutEffect(() => {
     const node = measure.current;
     if (!node) return;
     const next = node.getBoundingClientRect().width;
-    if (next > 0) setWidth(next);
+    if (next > 0) setWidth((current) => (current === null ? Math.ceil(next) : current));
+  }, []);
+
+  // Growing the slot is safe; shrinking it is not. The visible word is already
+  // full size on the frame the slot starts shrinking, so for the length of the
+  // width transition it covers whatever follows the word — "research" printed
+  // straight over "done". Hold the widest word and let the extra space sit at
+  // the end of the line instead.
+  useLayoutEffect(() => {
+    const node = measure.current;
+    if (!node) return;
+    const next = Math.ceil(node.getBoundingClientRect().width);
+    if (next > 0) setWidth((current) => (current === null || next > current ? next : current));
   }, [index]);
 
   return (
@@ -96,7 +110,7 @@ export function RotatingWord({ words, label }: { words: readonly string[]; label
         >
           {words[index]}
         </span>
-        <span className="land-word absolute inset-y-0 left-0 whitespace-nowrap bg-gradient-to-r from-[#a8c0ff] via-[#c4b5fd] to-[#7dd3fc] bg-clip-text text-transparent">
+        <span className="land-word absolute inset-y-0 left-0 max-w-full overflow-hidden whitespace-nowrap bg-gradient-to-r from-[#a8c0ff] via-[#c4b5fd] to-[#7dd3fc] bg-clip-text text-transparent">
           {words[index]}
         </span>
       </span>
