@@ -234,7 +234,9 @@ export function Composer({
         <div className="flex min-h-[38px] items-center gap-1 px-2 pb-2 pl-3">
           {modes}
           <div className="flex-1" />
-          <span className="hidden pr-2 text-[11px] text-neutral-600 md:block">{hint}</span>
+          {/* Only where there is room: between md and lg this shared row has no
+              space left and the hint turns into three stacked words. */}
+          <span className="hidden pr-2 text-[11px] whitespace-nowrap text-neutral-600 lg:block">{hint}</span>
         </div>
       </div>
     </div>
