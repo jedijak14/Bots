@@ -12,6 +12,7 @@ import { PrivacyTab, SkillsTab } from "./SecureSettingsTabs";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { HistoryPanel } from "./HistoryPanel";
+import { GoalsPanel } from "./GoalsPanel";
 
 const TAB_GROUPS: { label: string; items: { id: SettingsTab; label: string; icon: IconName }[] }[] = [
   {
@@ -27,6 +28,7 @@ const TAB_GROUPS: { label: string; items: { id: SettingsTab; label: string; icon
     items: [
       { id: "connections", label: "Connections", icon: "link" },
       { id: "skills", label: "Skills", icon: "sparkles" },
+      { id: "goals", label: "Goals", icon: "check" },
       { id: "privacy", label: "Privacy Mode", icon: "lock" },
     ],
   },
@@ -96,6 +98,15 @@ export function SettingsDialog() {
           {tab === "data" && <DataTab />}
           {tab === "connections" && <ConnectionsPanel />}
           {tab === "skills" && <SkillsTab botId={currentBotId} />}
+          {tab === "goals" && (
+            <div className="fade-up">
+              <h3 className="text-[18px] font-semibold tracking-tight text-white">Goals</h3>
+              <p className="mb-4 mt-1 max-w-[540px] text-[13.5px] leading-relaxed text-neutral-400">
+                One list, seen by every Bot. Anything here is in the mind of whichever Bot you are talking to, and a Bot can add or tick off a goal as it works.
+              </p>
+              <GoalsPanel />
+            </div>
+          )}
           {tab === "privacy" && <PrivacyTab botId={currentBotId} />}
           {tab === "artifacts" && <ArtifactsPanel />}
           {tab === "history" && <HistoryPanel botId={currentBotId} />}

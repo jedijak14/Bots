@@ -84,6 +84,20 @@ create table if not exists messages (
 create index if not exists messages_bot_idx on messages (bot_id, created_at);
 create index if not exists messages_user_idx on messages (user_id);
 
+create table if not exists goals (
+  id uuid primary key default gen_random_uuid() not null,
+  user_id uuid not null references users(id) on delete cascade,
+  bot_id uuid references bots(id) on delete set null,
+  title text not null,
+  detail text default '' not null,
+  status text default 'open' not null,
+  due_at timestamp with time zone,
+  done_at timestamp with time zone,
+  created_at timestamp with time zone default now() not null,
+  updated_at timestamp with time zone default now() not null
+);
+create index if not exists goals_user_idx on goals (user_id, created_at);
+
 create table if not exists conversation_archives (
   id uuid primary key default gen_random_uuid() not null,
   bot_id uuid not null references bots(id) on delete cascade,

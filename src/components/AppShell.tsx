@@ -131,6 +131,29 @@ function ConfirmDialog() {
   );
 }
 
+/**
+ * How many goals are still open, shown next to the Goals row. SWR keeps it
+ * fresh after any Bot or the panel changes the list.
+ */
+function OpenGoalCount({ collapsed }: { collapsed: boolean }) {
+  const { data } = useSWR<Array<{ status: string }>>("/api/goals", async (url: string) => {
+    const response = await fetch(url, { cache: "no-store" });
+    return response.ok ? response.json() : [];
+  });
+  const open = data?.filter((goal) => goal.status !== "done").length ?? 0;
+  if (!open) return null;
+  return (
+    <span
+      className={cx(
+        "shrink-0 rounded-full bg-white/[0.07] px-1.5 py-0.5 text-[10.5px] font-medium tabular-nums text-neutral-400",
+        collapsed && "md:hidden",
+      )}
+    >
+      {open}
+    </span>
+  );
+}
+
 function RailButton({ label, className, children, ...rest }: { label: string } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -333,6 +356,24 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         >
           <Icon name="plus" size={17} />
           <span className={cx(collapsed && "md:hidden")}>New bot</span>
+        </button>
+      </div>
+
+      {/* Goals — shared with every Bot, one click from anywhere */}
+      <div className={cx("mt-1.5 shrink-0 px-2.5", collapsed && "md:px-0")}>
+        <button
+          type="button"
+          onClick={() => app.openSettings("goals")}
+          className={cx(
+            "group flex h-9 w-full items-center gap-2 rounded-xl px-2 text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white",
+            collapsed && "md:w-9 md:justify-center md:px-0",
+          )}
+          aria-label="Goals"
+          {...railTip("Goals")}
+        >
+          <Icon name="check" size={15} className="shrink-0 text-neutral-500 transition group-hover:text-[#a8c0ff]" />
+          <span className={cx("min-w-0 flex-1 truncate text-left", collapsed && "md:hidden")}>Goals</span>
+          <OpenGoalCount collapsed={collapsed} />
         </button>
       </div>
 

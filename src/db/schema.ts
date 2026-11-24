@@ -118,6 +118,32 @@ export type ChoicesRecord = {
   action?: "privacy";
 };
 
+/**
+ * Things the person wants done. Every Bot can read the whole list, so a goal
+ * set while talking to one Bot is known to all of them; `botId` narrows a goal
+ * to the Bot that created it when that is the right scope.
+ */
+export const goals = pgTable(
+  "goals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The Bot that created it, for attribution. Null once that Bot is gone. */
+    botId: uuid("bot_id").references(() => bots.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    detail: text("detail").notNull().default(""),
+    /** "open" | "doing" | "done" */
+    status: text("status").notNull().default("open"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("goals_user_idx").on(t.userId, t.createdAt)],
+);
+
 export const conversationArchives = pgTable(
   "conversation_archives",
   {
