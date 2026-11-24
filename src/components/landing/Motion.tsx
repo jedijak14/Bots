@@ -11,19 +11,23 @@ import { cx } from "@/components/ui";
  */
 export function Reveal({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [shown, setShown] = useState(false);
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    // No observer (very old browser, or scripting restricted): the CSS
+    // `scripting: none` fallback and this attribute both keep the content
+    // visible rather than stuck at opacity 0.
     if (typeof IntersectionObserver === "undefined") {
-      setShown(true);
+      node.dataset.shown = "true";
       return;
     }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          setShown(true);
+          // Write straight to the DOM: one attribute flip does not need a
+          // re-render, and this keeps the effect free of a state update.
+          if (node) node.dataset.shown = "true";
           observer.disconnect();
         }
       },
@@ -36,7 +40,7 @@ export function Reveal({ children, className, delay = 0 }: { children: ReactNode
   return (
     <div
       ref={ref}
-      data-shown={shown ? "true" : "false"}
+      data-shown={false}
       className={cx("land-reveal", className)}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
     >
