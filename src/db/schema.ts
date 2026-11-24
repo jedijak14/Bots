@@ -102,6 +102,8 @@ export type StepRecord = {
   label: string;
   ok: boolean;
   output?: string;
+  /** Wall-clock milliseconds the tool took, so the transcript can show a duration. */
+  ms?: number;
   /** Set when the step produced an artifact, so the chat can show it inline. */
   artifactId?: string;
 };

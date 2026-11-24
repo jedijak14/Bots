@@ -17,11 +17,14 @@ import type { ComputerPhase } from "./useComputer";
 import { Menu, placeMenu, type MenuItem, type MenuPosition } from "../Menu";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
+
+/** Total time of a finished assistant turn, from the stored per-tool timings. */
+const stepsElapsed = (steps: Array<{ ms?: number }>) => steps.reduce((sum, s) => sum + (s.ms ?? 0), 0);
 type StreamEvent =
   | { t: "start"; userMessage: { id: string; createdAt: string } }
   | { t: "text"; d: string }
   | { t: "step"; id: string; name: string; label: string }
-  | { t: "step_done"; id: string; ok: boolean; output?: string; artifactId?: string }
+  | { t: "step_done"; id: string; ok: boolean; output?: string; ms?: number; artifactId?: string }
   | { t: "shot"; data: string }
   | { t: "choices"; question: string; options: string[] }
   | { t: "error"; message: string }
@@ -90,6 +93,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
 
   const [messages, setMessages] = useState<MessageDTO[]>(initialMessages);
   const [live, setLive] = useState<Live | null>(null);
+  /** Set when this run starts, so the reasoning line can count up. */
+  const [liveStart, setLiveStart] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [input, setInput] = useState("");
@@ -201,6 +206,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       app.setPreview(botId, raw.trim() || content.slice(0, 80));
       acc.current = { text: "", steps: [], choices: null };
       setLive({ text: "", steps: [], choices: null });
+      setLiveStart(Date.now());
       setBusy(true);
       setWorking({ id: botId, label: "Thinking…" });
       panelDismissed.current = false;
@@ -264,6 +270,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             if (s) {
               s.status = ev.ok ? "done" : "error";
               s.output = ev.output;
+              s.ms = ev.ms;
               if (ev.artifactId) s.artifactId = ev.artifactId;
             }
             setWorking({ id: botId, label: "Thinking…" });
@@ -509,7 +516,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                       ) : (
                         <AssistantBlock
                           text={m.content}
-                          steps={(m.steps ?? []).map((s) => ({ id: s.id, name: s.name, label: s.label, status: s.ok ? "done" : "error", output: s.output, artifactId: s.artifactId }))}
+                          steps={(m.steps ?? []).map((s) => ({ id: s.id, name: s.name, label: s.label, status: s.ok ? "done" : "error", output: s.output, ms: s.ms, artifactId: s.artifactId }))}
                           artifacts={artifactRefs(m.steps)}
                           choices={m.choices}
                           picked={next?.role === "user" ? next.content : undefined}
@@ -519,6 +526,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                             else send(o);
                           }}
                           streaming={false}
+                          startedAt={m.steps?.length ? stepsElapsed(m.steps) : null}
                           avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} />}
                           onOpenArtifact={openArtifacts}
                         />
@@ -536,22 +544,12 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     choicesDisabled
                     onPick={() => {}}
                     streaming
+                    startedAt={liveStart}
                     avatar={<BotAvatar shape={bot.shape} color={bot.color} size={26} follow={false} />}
                     onOpenArtifact={openArtifacts}
                   />
                 )}
 
-                {busy && (
-                  <div className="flex items-center gap-3 pl-10">
-                    <BotAvatar shape={bot.shape} color={bot.color} size={22} working />
-                    <span className="shimmer-text text-[13px] font-medium">
-                      {(() => {
-                        const run = live?.steps.filter((s) => s.status === "running").pop();
-                        return run ? run.label : live?.text ? "Writing…" : "Thinking…";
-                      })()}
-                    </span>
-                  </div>
-                )}
 
                 {error && (
                   <div role="alert" className="fade-up flex max-w-[min(740px,100%)] items-start gap-3 rounded-2xl border border-[#4a1c22] bg-[#241013] px-4 py-3 text-[13px] text-[#ff9aa6]">
