@@ -111,12 +111,14 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
       )}
 
       {/* One actionable line, and only where there is something to act on. */}
-      {!viaApp && !error && data?.available === false && (data.reason === "connector" || provider === "google") && (
+      {!viaApp && !error && data?.available === false && (
         <p className="mt-2.5 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-neutral-500">
           <Icon name="info" size={12} className="mt-[3px] shrink-0" />
           {data.reason === "connector"
             ? `The ${name} connector is not installed on this deployment yet, so connecting is unavailable here.`
-            : "Vercel Connect isn't set up on this deployment. Saving a Gmail address under Email above does the same job."}
+            : provider === "google"
+              ? "Vercel Connect isn't set up on this deployment. Saving a Gmail address under Email above does the same job."
+              : `Connecting ${name} needs Vercel Connect, which isn't set up on this deployment. Until then your Bots have no ${name} access.`}
         </p>
       )}
     </div>

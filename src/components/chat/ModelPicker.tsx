@@ -102,7 +102,9 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
       {open && (
         <div
           className={cx(
-            "modal-in absolute z-40 w-[300px] overflow-hidden rounded-2xl border border-white/10 bg-[#19191d] shadow-[0_24px_70px_rgba(0,0,0,0.65)]",
+            // max-h keeps the panel inside the viewport: the chip sits at the
+            // bottom of the screen, so a tall list used to run off the top edge.
+            "modal-in absolute z-40 w-[272px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-white/10 bg-[#19191d] shadow-[0_24px_70px_rgba(0,0,0,0.65)]",
             variant === "chip" ? "bottom-[calc(100%+8px)] left-0" : "right-0 top-[calc(100%+6px)]",
           )}
         >
@@ -116,10 +118,13 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
               }}
               placeholder={models?.length ? "Search models" : "Type a model name + Enter"}
               aria-label="Search models"
-              className="w-full rounded-xl bg-black/30 px-3 py-2 text-[13px] outline-none placeholder:text-neutral-600"
+              // No focus ring: the panel already reads as a field, and a 2px
+              // outline around a full-width input made the search look like the
+              // largest control in the composer.
+              className="panel-input w-full rounded-lg bg-black/[0.06] px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-neutral-500 focus:bg-black/[0.09]"
             />
           </div>
-          <div className="max-h-[320px] overflow-y-auto p-1.5" role="listbox">
+          <div className="max-h-[min(320px,calc(100dvh-220px))] overflow-y-auto p-1.5" role="listbox">
             {bot?.model && !q && (
               <button
                 onClick={() => choose(null)}
