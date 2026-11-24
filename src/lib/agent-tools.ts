@@ -48,6 +48,25 @@ const CORE_TOOLS: Tool[] = [
     ),
   },
   {
+    name: "make_lyric_video",
+    description:
+      "Build a lyric video (a synchronized, word-by-word animated lyric player with the album art behind it) from a song the user uploaded plus its lyrics file. Call this once you know the audio artifact id and have the lyrics text. The user uploads the mp3 and an LRC/SRT/TTML/QRC/plain lyric file in the chat; their artifact ids are in the conversation. The video opens as a card in the chat and lives in Artifacts.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "Song title." },
+        artist: { type: "string", description: "Artist, if known." },
+        audioId: { type: "string", description: "Artifact id of the uploaded song." },
+        artId: { type: "string", description: "Artifact id of the uploaded cover art, if any." },
+        lyricsId: { type: "string", description: "Artifact id of the uploaded lyrics file (preferred)." },
+        lyrics: { type: "string", description: "Only when there is no lyrics artifact: the lyrics text, verbatim." },
+        lyricFormat: { type: "string", enum: ["lrc", "srt", "ttml", "qrc", "plain"], description: "Format of the lyrics text, if known." },
+        preset: { type: "string", enum: ["aurora", "ember", "mint", "mono"], description: "Colour look. Defaults to aurora." },
+        accent: { type: "string", description: "Optional CSS colour for the sung line." },
+      },
+      ["title", "audioId"],
+    ),
+  },
+  {
     name: "save_artifact",
     description: "Save a story, document, website source, or other substantial work to the user's Artifacts library. It appears as a card in the chat straight away, and stays in Artifacts for later.",
     parameters: obj({ title: { type: "string" }, kind: { type: "string", enum: ["story", "document", "html", "website"] }, content: { type: "string" } }, ["title", "kind", "content"]),
@@ -314,6 +333,67 @@ export function buildToolset(opts: {
         return { output: (await deleteGoal(userId, id)) ? "Goal removed." : "No goal with that id." };
       }
       return { output: `Unknown goal action: ${action}` };
+    }
+    if (name === "make_lyric_video") {
+      const { LYRIC_PRESETS } = await import("@/lib/lyric-video");
+      const audioId = String(a.audioId ?? "");
+      const title = String(a.title ?? "").trim();
+      if (!title) return { output: "A lyric video needs a song title." };
+      if (!audioId) return { output: "I need the audio artifact id. Ask the user to upload the song in the chat first." };
+      // The id must belong to this user and be a real audio upload.
+      const { and, eq } = await import("drizzle-orm");
+      const { db } = await import("@/db");
+      const { artifacts } = await import("@/db/schema");
+      const [audio] = await db.select({ id: artifacts.id, kind: artifacts.kind }).from(artifacts).where(and(eq(artifacts.id, audioId), eq(artifacts.userId, userId))).limit(1);
+      if (!audio || audio.kind !== "audio") return { output: "That audio id is not one of the user's uploads. Ask them to attach the song again." };
+      // Lyrics come from the uploaded file when there is one, so a long file
+      // never has to be retyped into the tool call.
+      const lyricsId = String(a.lyricsId ?? "");
+      let lyrics = String(a.lyrics ?? "");
+      if (lyricsId) {
+        const { eq: eqOp } = await import("drizzle-orm");
+        const { db: mediaDb } = await import("@/db");
+        const { artifacts: mediaArtifacts } = await import("@/db/schema");
+        const [file] = await mediaDb
+          .select({ content: mediaArtifacts.content, kind: mediaArtifacts.kind })
+          .from(mediaArtifacts)
+          .where(and(eqOp(mediaArtifacts.id, lyricsId), eqOp(mediaArtifacts.userId, userId)))
+          .limit(1);
+        if (!file || file.kind !== "lyrics") return { output: "That lyrics id is not one of the user's lyric uploads. Ask them to attach the file again." };
+        lyrics = file.content;
+      }
+      if (!lyrics.trim()) return { output: "I need the lyrics. Ask the user to attach their .lrc, .srt or .ttml file." };
+      // The lyrics must actually parse into timed lines, or the card would
+      // render an empty stage and look broken.
+      const { detectParser } = await import("@braccato/parsers");
+      let lineCount = 0;
+      try {
+        lineCount = detectParser(lyrics).parse(lyrics).length;
+      } catch {
+        lineCount = 0;
+      }
+      if (!lineCount) return { output: "Those lyrics did not parse into timed lines. Ask the user for an .lrc, .srt, .ttml or .qrc file, or their plain lyrics one line at a time." };
+      const presetRaw = String(a.preset ?? "aurora");
+      const preset = presetRaw in LYRIC_PRESETS ? (presetRaw as keyof typeof LYRIC_PRESETS) : "aurora";
+      const spec = {
+        version: 1 as const,
+        title,
+        artist: a.artist ? String(a.artist) : undefined,
+        audioId,
+        artId: a.artId ? String(a.artId) : undefined,
+        lyrics,
+        lyricFormat: a.lyricFormat ? String(a.lyricFormat) : undefined,
+        preset,
+        accent: a.accent ? String(a.accent) : undefined,
+      };
+      const [row] = await db.insert(artifacts).values({
+        userId,
+        botId: bot.id,
+        title: `${title}${spec.artist ? ` — ${spec.artist}` : ""} · lyric video`,
+        kind: "lyric_video",
+        content: JSON.stringify(spec),
+      }).returning({ id: artifacts.id });
+      return { output: `Lyric video ready (artifact ${row.id}). It is now a card in the chat with a player. Tell the user to press play.`, artifactId: row.id };
     }
     if (name === "save_artifact" || name === "draft_email") {
       const title = String(a.title ?? (name === "draft_email" ? `Email to ${String(a.to ?? "recipient")}` : "Untitled artifact")).trim().slice(0, 160);

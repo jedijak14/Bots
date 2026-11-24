@@ -866,3 +866,61 @@ button:disabled {
   background-color: #0b0b0e !important;
   color: #ffffff !important;
 }
+
+/* Lyric video scrubber: a thin rail that thickens on hover, like the site's sliders. */
+.lv-seek {
+  appearance: none;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.lv-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 26%, transparent);
+}
+.lv-seek::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 26%, transparent);
+}
+.lv-seek::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  margin-top: -3px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 120ms ease;
+}
+.lv-seek::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+}
+.lv-seek:hover::-webkit-slider-thumb {
+  transform: scale(1.35);
+}
+.lv-seek:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Lyric video stage
+ *
+ * The stage is a player, not paper: it is dark in both themes, so the light
+ * token bridge (where `white` means ink) must not reach inside it. Pinning the
+ * three colours it uses keeps the title and the play control legible.
+ * ------------------------------------------------------------------ */
+.lv-stage {
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  color-scheme: dark;
+}

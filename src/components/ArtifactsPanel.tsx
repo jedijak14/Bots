@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useApp } from "./AppProvider";
 import { Icon } from "./icons";
 import { EmailDraftCard } from "./chat/EmailDraftCard";
+import { LyricVideoCard } from "./chat/LyricVideoCard";
 import { btnQuiet, cx } from "./ui";
 
 type Artifact = { id: string; title: string; kind: string; content: string; archived: boolean; createdAt: string };
@@ -16,6 +17,8 @@ const fetcher = async (url: string): Promise<Artifact[]> => {
 };
 
 const isEmail = (kind: string) => kind.startsWith("email_") || kind === "sent_email";
+/** Uploaded songs and covers back a lyric video; they are not documents. */
+const isMedia = (kind: string) => kind === "audio" || kind === "image";
 
 function artifactBlob(artifact: Artifact) {
   const type = artifact.kind === "html" || artifact.kind === "website" ? "text/html" : isEmail(artifact.kind) ? "application/json" : "text/plain";
@@ -83,7 +86,7 @@ export function ArtifactsPanel() {
     <div className="fade-up">
       <h3 className="text-[18px] font-semibold tracking-tight">Artifacts</h3>
       <p className="mt-1 max-w-[520px] text-[13px] leading-relaxed text-neutral-400">
-        Stories, documents, websites and reviewed email drafts your Bots save for you.
+        Stories, documents, websites, lyric videos and reviewed email drafts your Bots save for you.
       </p>
 
       <div className="mt-4 flex items-center gap-2">
@@ -130,7 +133,18 @@ export function ArtifactsPanel() {
           <article key={artifact.id} className="rounded-[20px] border border-white/[0.07] bg-white/[0.02] p-4">
             <div className="flex items-start gap-3">
               <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-neutral-300">
-                <Icon name={isEmail(artifact.kind) ? "mail" : "file"} size={16} />
+                <Icon
+                  name={
+                    artifact.kind === "lyric_video"
+                      ? "volume"
+                      : isEmail(artifact.kind)
+                        ? "mail"
+                        : isMedia(artifact.kind)
+                          ? artifact.kind === "audio" ? "volume" : "image"
+                          : "file"
+                  }
+                  size={16}
+                />
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="truncate text-[13.5px] font-medium text-white">{artifact.title}</h4>
@@ -140,14 +154,16 @@ export function ArtifactsPanel() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
-                {!isEmail(artifact.kind) && (
+                {!isEmail(artifact.kind) && !isMedia(artifact.kind) && (
                   <button type="button" onClick={() => openArtifact(artifact)} className={btnQuiet}>
                     Open
                   </button>
                 )}
-                <button type="button" onClick={() => downloadArtifact(artifact)} className={btnQuiet}>
-                  Save
-                </button>
+                {!isMedia(artifact.kind) && (
+                  <button type="button" onClick={() => downloadArtifact(artifact)} className={btnQuiet}>
+                    Save
+                  </button>
+                )}
                 <button type="button" onClick={() => void setArchived(artifact, !artifact.archived)} className={btnQuiet}>
                   {artifact.archived ? "Restore" : "Archive"}
                 </button>
@@ -162,9 +178,23 @@ export function ArtifactsPanel() {
               </div>
             </div>
 
-            {isEmail(artifact.kind) ? (
+            {artifact.kind === "lyric_video" ? (
+              <div className="mt-3">
+                <LyricVideoCard artifact={artifact} />
+              </div>
+            ) : isEmail(artifact.kind) ? (
               <div className="mt-3">
                 <EmailDraftCard artifact={artifact} />
+              </div>
+            ) : isMedia(artifact.kind) ? (
+              <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <Icon name={artifact.kind === "audio" ? "volume" : "image"} size={14} className="text-neutral-500" />
+                <span className="text-[12px] text-neutral-500">
+                  {artifact.kind === "audio" ? "Uploaded song" : "Uploaded cover art"} — used by a lyric video.
+                </span>
+                <button type="button" onClick={() => downloadArtifact(artifact)} className={cx(btnQuiet, "ml-auto shrink-0")}>
+                  Save
+                </button>
               </div>
             ) : (
               <details className="mt-3">

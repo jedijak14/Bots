@@ -7,6 +7,7 @@ import type { ChoicesRecord } from "@/db/schema";
 import { Icon, Spinner } from "../icons";
 import { cx } from "../ui";
 import { ArtifactCard, EmailDraftCard } from "./EmailDraftCard";
+import { LyricVideoCard } from "./LyricVideoCard";
 
 export type LiveStep = {
   id: string;
@@ -251,7 +252,8 @@ const TOOL_VERB: Record<string, string> = {
 
 function StepIcon({ name }: { name: string }) {
   if (name === "run_command") return <Icon name="terminal" size={10} />;
-  if (name === "save_artifact" || name === "make_lyric_video") return <Icon name="sparkles" size={10} />;
+  if (name === "make_lyric_video") return <Icon name="volume" size={10} />;
+  if (name === "save_artifact") return <Icon name="sparkles" size={10} />;
   if (name === "draft_email") return <Icon name="mail" size={10} />;
   if (name === "web_search" || name === "fetch_page" || name === "open_url") return <Icon name="globe" size={10} />;
   if (name === "read_file" || name === "write_file") return <Icon name="file" size={10} />;
@@ -308,11 +310,30 @@ export function ChoiceCard({
   );
 }
 
+/**
+ * How much of a long message to show before the "Show more" control. Uploads
+ * send a whole lyrics file with the request, and echoing 40 KB into the
+ * transcript buries the conversation.
+ */
+const BUBBLE_LIMIT = 900;
+
 export function UserBubble({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = text.length > BUBBLE_LIMIT;
+  const shown = long && !expanded ? `${text.slice(0, BUBBLE_LIMIT).trimEnd()}…` : text;
   return (
     <div className="ml-auto flex max-w-[82%] flex-col items-end fade-up sm:max-w-[76%]">
       <div className="wrap-anywhere rounded-[22px] rounded-br-[8px] bg-white/[0.09] px-4 py-2.5 text-[15.5px] leading-relaxed text-white whitespace-pre-wrap">
-        {text}
+        {shown}
+        {long && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1.5 block text-[12.5px] font-medium text-neutral-400 transition hover:text-white"
+          >
+            {expanded ? "Show less" : `Show ${Math.ceil((text.length - BUBBLE_LIMIT) / 1000)}k more`}
+          </button>
+        )}
       </div>
       <CopyLink text={text} align="right" />
     </div>
@@ -359,7 +380,11 @@ export function AssistantBlock({
           </>
         )}
         {artifacts?.map((a) =>
-          a.kind === "email_draft" || a.kind === "sent_email" || a.kind === "email_sending" ? (
+          a.kind === "lyric_video" ? (
+            <div key={a.id} className="mt-3">
+              <LyricVideoCard artifact={a} />
+            </div>
+          ) : a.kind === "email_draft" || a.kind === "sent_email" || a.kind === "email_sending" ? (
             <div key={a.id} className="mt-3">
               <EmailDraftCard artifact={a} />
             </div>
