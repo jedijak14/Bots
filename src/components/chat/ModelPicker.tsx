@@ -13,6 +13,7 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   const effective = bot?.model || app.settings.defaultModel;
 
@@ -21,8 +22,28 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
     const close = (e: MouseEvent) => {
       if (!wrap.current?.contains(e.target as Node)) setOpen(false);
     };
+    // Escape has to work wherever focus is: tabbing out of the search box used to
+    // leave the panel floating over the page with no way to dismiss it from the
+    // keyboard, because only the input's own handler listened for Escape.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        trigger.current?.focus({ preventScroll: true });
+      }
+    };
+    // Focus leaving the picker (Tab, or a click on another control) closes it.
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as Node | null;
+      if (t && !wrap.current?.contains(t)) setOpen(false);
+    };
     window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("focusin", onFocusIn);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("focusin", onFocusIn);
+    };
   }, [open]);
 
   async function toggle() {
@@ -59,6 +80,7 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
   return (
     <div ref={wrap} className="relative">
       <button
+        ref={trigger}
         onClick={toggle}
         className={cx(
           "group flex items-center gap-1.5 rounded-full font-medium transition",
@@ -91,7 +113,6 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && q.trim()) choose(list[0] ?? q.trim());
-                if (e.key === "Escape") setOpen(false);
               }}
               placeholder={models?.length ? "Search models" : "Type a model name + Enter"}
               aria-label="Search models"
