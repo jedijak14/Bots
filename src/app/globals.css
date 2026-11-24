@@ -31,6 +31,89 @@
 }
 
 /* ------------------------------------------------------------------ *
+ * Light mode
+ *
+ * The app was written with dark-first literals (`text-white`,
+ * `bg-white/[0.04]`, `text-neutral-400`). Rather than rewrite 500 class names
+ * and hope, the theme swaps the *meaning* of those tokens: `white` becomes ink
+ * and `neutral` becomes the step ladder on paper. That keeps every existing
+ * utility working in both themes, including hovers and focus rings, and the
+ * handful of genuinely fixed things (bot bodies, brand gradient) are already
+ * explicit hex values that do not move.
+ *
+ * `data-theme` is set on <html> before paint by ThemeScript, so there is no
+ * flash of the wrong theme.
+ * ------------------------------------------------------------------ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f7f7f8;
+  --surface-1: #ffffff;
+  --surface-2: #fbfbfc;
+  --surface-3: #f4f4f6;
+  --surface-4: #ededf0;
+  --surface-5: #e5e5ea;
+
+  --line: rgba(9, 9, 12, 0.08);
+  --line-strong: rgba(9, 9, 12, 0.16);
+
+  --muted: #5c5c66;
+  --accent: #3d63dc;
+  --accent-strong: #2f4fc4;
+
+  /* Token bridge: remap the palette utilities in this scope only. */
+  --color-white: #0b0b0e;
+  --color-neutral-50: #ffffff;
+  --color-neutral-100: #16161a;
+  --color-neutral-200: #232329;
+  --color-neutral-300: #33333b;
+  --color-neutral-400: #4b4b55;
+  --color-neutral-500: #5f5f6a;
+  --color-neutral-600: #7b7b86;
+  --color-neutral-700: #a2a2ac;
+  --color-neutral-800: #cfcfd6;
+  --color-neutral-900: #e9e9ee;
+  --color-neutral-950: #f4f4f7;
+
+  /* The page canvas the app blends into. */
+  --app-canvas: #f7f7f8;
+}
+
+:root {
+  --app-canvas: #060608;
+}
+
+:root[data-theme="light"] body {
+  background: var(--bg);
+  color: #0b0b0e;
+}
+
+/* Anything that painted "black at 40%" as a scrim should read as paper tint. */
+:root[data-theme="light"] .skeleton {
+  background-image: linear-gradient(
+    100deg,
+    rgba(9, 9, 12, 0.03) 20%,
+    rgba(9, 9, 12, 0.06) 42%,
+    rgba(9, 9, 12, 0.03) 64%
+  );
+}
+
+/* Markdown prose and code blocks need their own light treatment: they use
+   literal hex values that the token bridge cannot reach. */
+:root[data-theme="light"] .md code:not(pre code) {
+  background: rgba(9, 9, 12, 0.06);
+  border-color: rgba(9, 9, 12, 0.06);
+  color: #1a1a20;
+}
+:root[data-theme="light"] .md pre {
+  background: #ffffff;
+  border-color: rgba(9, 9, 12, 0.1);
+}
+:root[data-theme="light"] .md th {
+  background: rgba(9, 9, 12, 0.04);
+}
+
+/* ------------------------------------------------------------------ *
  * Reset
  * Tailwind's preflight already resets buttons and inputs inside its own
  * layer. All that belongs here is the pointer cursor: anything unlayered
@@ -362,7 +445,7 @@ button:disabled {
 .md {
   font-size: 16px;
   line-height: 1.68;
-  color: #ededf0;
+  color: var(--prose, #ededf0);
   overflow-wrap: anywhere;
 }
 .md > *:first-child {
@@ -376,7 +459,7 @@ button:disabled {
 }
 .md strong {
   font-weight: 600;
-  color: #fff;
+  color: var(--prose-strong, #fff);
 }
 .md ul,
 .md ol {
@@ -685,4 +768,101 @@ button:disabled {
     transform: none;
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Light mode: surface bridge
+ *
+ * A dozen hex values carry the app's "raised on black" surfaces — the
+ * composer, the choice card, code blocks, popovers, the user bubble. They are
+ * listed here once, in a scope that only exists in light mode, so the same
+ * utilities resolve to paper instead. Accents, error reds and brand colours are
+ * deliberately untouched.
+ * ------------------------------------------------------------------ */
+:root[data-theme="light"] {
+  --prose: #1b1b21;
+  --prose-strong: #0b0b0e;
+  --paper-0: #ffffff;
+  --paper-1: #fbfbfc;
+  --paper-2: #f4f4f6;
+  --paper-3: #ececf0;
+  --ink-1: #dcdce1;
+}
+
+:root[data-theme="light"] .bg-\[\#101013\],
+:root[data-theme="light"] .bg-\[\#121215\],
+:root[data-theme="light"] .bg-\[\#141417\],
+:root[data-theme="light"] .bg-\[\#151518\],
+:root[data-theme="light"] .bg-\[\#16161a\],
+:root[data-theme="light"] .bg-\[\#19191d\],
+:root[data-theme="light"] .bg-\[\#202024\],
+:root[data-theme="light"] .bg-\[\#212126\],
+:root[data-theme="light"] .bg-\[\#26262b\],
+:root[data-theme="light"] .bg-\[\#2a2a30\],
+:root[data-theme="light"] .bg-\[\#303036\],
+:root[data-theme="light"] .bg-\[\#3a3f66\] {
+  background-color: var(--paper-2) !important;
+}
+
+:root[data-theme="light"] .bg-\[\#08080a\],
+:root[data-theme="light"] .bg-\[\#0a0a0c\],
+:root[data-theme="light"] .bg-\[\#0a0a0d\],
+:root[data-theme="light"] .bg-\[\#0b0b0b\],
+:root[data-theme="light"] .bg-\[\#0b0b0e\],
+:root[data-theme="light"] .bg-\[\#0e0e0e\],
+:root[data-theme="light"] .bg-\[\#0e0e11\],
+:root[data-theme="light"] .bg-\[\#111\],
+:root[data-theme="light"] .bg-\[\#1e1e1e\],
+:root[data-theme="light"] .bg-\[\#1d2038\],
+:root[data-theme="light"] .bg-\[\#242424\] {
+  background-color: var(--paper-1) !important;
+}
+
+/* Slightly deeper paper for the composer, which must read as a field. */
+:root[data-theme="light"] .bg-\[\#101013\] {
+  background-color: var(--paper-0) !important;
+}
+
+/* Borders drawn in hard-coded white alphas are invisible on paper; the token
+   bridge already flips the plain ones, these cover the opaque hex borders. */
+:root[data-theme="light"] .border-\[\#3a3f66\],
+:root[data-theme="light"] .border-\[\#2a2a30\] {
+  border-color: rgba(9, 9, 12, 0.12) !important;
+}
+
+/* The assistant/user split must stay legible: the user bubble on paper is a
+   soft grey, not a light-on-light wash. */
+:root[data-theme="light"] .rounded-\[22px\].rounded-br-\[8px\] {
+  background-color: #e9e9ee !important;
+}
+
+/* Modal scrim: a black 65% wash over paper is too heavy. */
+:root[data-theme="light"] .backdrop-in.bg-black\/65,
+:root[data-theme="light"] .bg-black\/70 {
+  background-color: rgba(9, 9, 12, 0.3) !important;
+}
+/* Close buttons and icon buttons that relied on a dark hover. */
+:root[data-theme="light"] .hover\:bg-white\/10:hover,
+:root[data-theme="light"] .hover\:bg-white\/\[0\.07\]:hover,
+:root[data-theme="light"] .hover\:bg-white\/\[0\.06\]:hover,
+:root[data-theme="light"] .hover\:bg-white\/\[0\.05\]:hover {
+  background-color: rgba(9, 9, 12, 0.06);
+}
+
+/* The sign-in card is a glass panel on black; on paper it is a white card. */
+:root[data-theme="light"] .bg-\[\#0e0e11\]\/90 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 24px 70px rgba(9, 9, 12, 0.12) !important;
+}
+/* Buttons built as "white pill, black label" keep that contrast on paper. The
+   selected tab in the sign-in card is such a pill, and inverting it here made
+   a dark blob with dark text. */
+
+/* Inverted pills ("white fill, black label") are intentional contrast, not an
+   ink-on-paper surface: the theme bridge would otherwise turn the label white
+   on a white fill. The sign-in card's selected tab and submit button use them. */
+:root[data-theme="light"] .bg-white.text-black,
+:root[data-theme="light"] .bg-white.text-black:hover {
+  background-color: #0b0b0e !important;
+  color: #ffffff !important;
 }

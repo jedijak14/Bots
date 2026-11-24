@@ -45,6 +45,7 @@ export function publicSettings(s: SettingsRow) {
     followMouse: s.followMouse,
     animations: s.animations,
     voiceReplies: s.voiceReplies,
+    theme: (s.theme === "light" || s.theme === "system" ? s.theme : "dark") as "dark" | "light" | "system",
   };
 }
 export type PublicSettings = ReturnType<typeof publicSettings>;

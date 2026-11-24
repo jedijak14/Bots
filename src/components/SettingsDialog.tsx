@@ -454,6 +454,53 @@ function PreferencesTab() {
   ];
   return (
     <Section title="Preferences" desc="How the app looks and moves. These follow you to every device.">
+      <Card title="Appearance" desc="Choose a side. System follows your device." icon={<Icon name="sparkles" size={15} />}>
+        <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-3 gap-2">
+          {([
+            { id: "light", label: "Light" },
+            { id: "dark", label: "Dark" },
+            { id: "system", label: "System" },
+          ] as const).map((option) => {
+            const active = (s.theme ?? "dark") === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => app.patchSettings({ theme: option.id })}
+                className={cx(
+                  "group overflow-hidden rounded-xl border text-left transition",
+                  active ? "border-white/25 ring-1 ring-white/20" : "border-white/[0.07] hover:border-white/15",
+                )}
+              >
+                {/* A miniature of the app in each mode, so the choice is visual. */}
+                <span
+                  aria-hidden
+                  style={{
+                    background:
+                      option.id === "light"
+                        ? "#f2f2f4"
+                        : option.id === "dark"
+                          ? "#0b0b0e"
+                          : "linear-gradient(110deg,#0b0b0e 0%,#0b0b0e 49.5%,#f2f2f4 50.5%,#f2f2f4 100%)",
+                  }}
+                  className="flex h-11 items-end gap-1 p-1.5"
+                >
+                  {/* Explicit hex, not alpha utilities: the theme bridge flips
+                      those, which turned the "dark" preview into a pale ghost. */}
+                  <span className="h-full w-1/4 rounded-[3px]" style={{ background: option.id === "light" ? "#dcdce2" : option.id === "system" ? "linear-gradient(90deg,#26262b 50%,#dcdce2 50%)" : "#26262b" }} />
+                  <span className="h-2/3 flex-1 rounded-[3px]" style={{ background: option.id === "light" ? "#e6e6eb" : option.id === "system" ? "linear-gradient(90deg,#1a1a1f 50%,#e6e6eb 50%)" : "#1a1a1f" }} />
+                </span>
+                <span className={cx("flex items-center gap-1.5 px-2 py-1.5 text-[12px]", active ? "text-white" : "text-neutral-400")}>
+                  <span className={cx("size-1.5 rounded-full", active ? "bg-[#7c9bff]" : "bg-transparent")} />
+                  {option.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
       <Card>
         <div className="divide-y divide-white/[0.05]">
           {rows.map((r) => (

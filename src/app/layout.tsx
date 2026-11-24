@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { GeistSans } from "geist/font/sans";
 import { BRAND } from "@/lib/brand";
+import { THEME_SCRIPT } from "@/components/ThemeSync";
 import "./globals.css";
 
 /**
@@ -46,7 +47,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={GeistSans.variable}>
+    <html lang="en" data-theme="dark" className={GeistSans.variable} suppressHydrationWarning>
+      <head>
+        {/* Runs before first paint so the saved theme is on the document
+            immediately; without it a light-mode visitor sees a black flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

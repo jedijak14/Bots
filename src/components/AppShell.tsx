@@ -15,6 +15,7 @@ import { Menu, placeMenu, type MenuItem, type MenuPosition } from "./Menu";
 import { SearchDialog } from "./SearchDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { PrivacyModeGate } from "./PrivacyModeGate";
+import { ThemeSync } from "./ThemeSync";
 import { useTooltip } from "./Tooltip";
 import { Icon } from "./icons";
 import { btnDanger, btnGhost, btnWhite, cx, Kbd, Modal } from "./ui";
@@ -62,7 +63,7 @@ export function AppShell({ children, initialCollapsed = false, initialPrivacyMod
 
   return (
     <>
-      <div className="relative flex h-dvh overflow-hidden" inert={privacyActive} aria-hidden={privacyActive}>
+      <div className="relative flex h-dvh overflow-hidden bg-[var(--app-canvas)] text-white transition-colors" inert={privacyActive} aria-hidden={privacyActive}>
         {/* Keyboard users can jump the 12-stop sidebar straight to the page. */}
         <a
           href="#main"
@@ -101,6 +102,7 @@ export function AppShell({ children, initialCollapsed = false, initialPrivacyMod
           ))}
         </div>
       </div>
+      <ThemeSync />
       <PrivacyModeGate initialActive={initialPrivacyMode} initialBotId={privacyBotId} />
     </>
   );
@@ -270,7 +272,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       id="app-sidebar"
       aria-label="Sidebar"
       className={cx(
-        "z-40 flex w-[288px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06] bg-[#08080a] transition-[width,translate,visibility]",
+        "z-40 flex w-[288px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06] bg-[var(--surface-1)] transition-[width,translate,visibility]",
         SIZE,
         "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:max-w-[88vw] max-md:shadow-[20px_0_60px_rgba(0,0,0,0.5)]",
         collapsed && "md:w-[68px]",

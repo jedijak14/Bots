@@ -37,7 +37,7 @@ export function AuthForm({
   const error = state.mode === mode ? state.error : null;
 
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-[#060608]">
+    <div className="fixed inset-0 overflow-y-auto bg-[var(--app-canvas)]">
       {/* brand backdrop */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-10%] top-[-20%] h-[600px] w-[600px] rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.14),transparent)] blur-3xl" />

@@ -47,6 +47,8 @@ export const userSettings = pgTable("user_settings", {
   followMouse: boolean("follow_mouse").notNull().default(true),
   animations: boolean("animations").notNull().default(true),
   voiceReplies: boolean("voice_replies").notNull().default(false),
+  /** "dark" | "light" | "system" — follows the person to every device. */
+  theme: text("theme").notNull().default("dark"),
   // Their own Gmail address + app password, so sending works even when the
   // deployment has no Google app of its own.
   smtpUser: text("smtp_user"),
