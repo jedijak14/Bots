@@ -53,6 +53,37 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------------ *
+ * Loading placeholders
+ * A soft diagonal sheen, so a page that is still arriving reads as
+ * "loading" rather than "broken layout".
+ * ------------------------------------------------------------------ */
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  display: block;
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.045) 20%,
+    rgba(255, 255, 255, 0.085) 42%,
+    rgba(255, 255, 255, 0.045) 64%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Motion
  * ------------------------------------------------------------------ */
 @keyframes bot-orbit {
