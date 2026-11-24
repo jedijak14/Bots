@@ -196,7 +196,7 @@ export function ComputerPanel({
           onDoubleClick={resetWidth}
           className="group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize touch-none outline-none max-lg:hidden"
         >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-white/25 group-focus-visible:bg-[#3b8cff] group-active:bg-[#3b8cff]" />
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-white/25 group-focus-visible:bg-[#7c9bff] group-active:bg-[#7c9bff]" />
         </div>
       )}
 

@@ -325,7 +325,7 @@ export function ComputerScreen({
           onBlur={flushTyped}
           className={cx(
             "relative aspect-[4/3] w-full shrink-0 overflow-hidden rounded-xl bg-[#070707] outline-none ring-1 transition-shadow duration-200",
-            driving ? "cursor-default ring-2 ring-[#3b8cff] focus:shadow-[0_0_0_5px_rgba(59,140,255,0.18)]" : "ring-white/[0.08]",
+            driving ? "cursor-default ring-2 ring-[#7c9bff] focus:shadow-[0_0_0_5px_rgba(124,155,255,0.18)]" : "ring-white/[0.08]",
           )}
         >
           {live ? (
@@ -362,7 +362,7 @@ export function ComputerScreen({
           {ripple && (
             <span
               key={ripple.k}
-              className="pointer-events-none absolute size-8 rounded-full border-2 border-[#3b8cff] bg-[#3b8cff]/30"
+              className="pointer-events-none absolute size-8 rounded-full border-2 border-[#7c9bff] bg-[#7c9bff]/30"
               style={{ left: `${ripple.x}%`, top: `${ripple.y}%`, animation: "click-ripple .6s ease-out forwards" }}
             />
           )}
@@ -370,9 +370,9 @@ export function ComputerScreen({
 
         <div className="flex shrink-0 items-center justify-center" style={{ height: PILL_H }}>
           {live && (
-            <div className={cx("fade-up flex h-10 items-center rounded-full border bg-[#16161a] pl-4 pr-1 text-[13px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]", driving ? "border-[#3b8cff]/40" : "border-white/[0.08]")}>
+            <div className={cx("fade-up flex h-10 items-center rounded-full border bg-[#16161a] pl-4 pr-1 text-[13px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]", driving ? "border-[#7c9bff]/40" : "border-white/[0.08]")}>
               <span className="flex items-center gap-2 pr-3.5 text-neutral-300">
-                <span className={cx("size-2 rounded-full", driving ? "bg-[#3b8cff]" : "bg-emerald-400", !driving && agentBusy && "soft-pulse")} aria-hidden="true" />
+                <span className={cx("size-2 rounded-full", driving ? "bg-[#7c9bff]" : "bg-emerald-400", !driving && agentBusy && "soft-pulse")} aria-hidden="true" />
                 {driving ? "You're in control" : "Watching"}
               </span>
               <span className="h-4 w-px bg-white/10" aria-hidden="true" />

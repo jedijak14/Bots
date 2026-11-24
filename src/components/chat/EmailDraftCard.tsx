@@ -158,10 +158,10 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
         />
       </div>
 
-      <div className="flex items-center gap-3 border-t border-white/[0.06] px-4 py-3">
+      <div className="flex items-start gap-3 border-t border-white/[0.06] px-4 py-3">
         <div className="min-w-0 flex-1">
           {error ? (
-            <p role="alert" className="truncate text-[12px] text-[#ff8b98]">
+            <p role="alert" className="line-clamp-3 text-[12px] leading-relaxed text-[#ff8b98]">
               {error}
             </p>
           ) : saving ? (
@@ -175,12 +175,24 @@ export function EmailDraftCard({ artifact: initial }: { artifact: Artifact }) {
           )}
         </div>
         {status !== "sent_email" && (
-          <button type="button" onClick={() => void send()} disabled={sending} className={cx(btnWhite, "px-4 py-1.5 text-[12.5px]")}>
-            {sending ? <Spinner size={13} /> : <Icon name="send" size={13} />}
-            {sending ? "Sending…" : locked ? "Retry send" : "Send"}
+          <button
+            type="button"
+            onClick={() => void send()}
+            disabled={sending}
+            className={cx(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition active:scale-[0.97] disabled:opacity-60",
+              sending ? "bg-white/10 text-white" : "bg-white text-black hover:bg-neutral-200",
+            )}
+          >
+            {sending ? <Spinner size={13} /> : <Icon name="arrow-up" size={13} strokeWidth={2.4} />}
+            <span>{sending ? "Sending…" : locked ? "Retry" : "Send"}</span>
           </button>
         )}
-        {error && <button onClick={() => app.openSettings("connections")} className={cx(btnGhost, "px-3 py-1.5 text-[12px]")}>Connections</button>}
+        {error && (
+          <button onClick={() => app.openSettings("connections")} className={cx(btnGhost, "shrink-0 px-3 py-1.5 text-[12px]")}>
+            Connections
+          </button>
+        )}
       </div>
     </div>
   );

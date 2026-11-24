@@ -30,64 +30,17 @@
   --radius-xl: 26px;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  color: #f4f4f5;
-  font-family: var(--font-sans);
-  font-feature-settings: "ss01", "cv11";
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  overflow: hidden;
-  background:
-    radial-gradient(1100px 700px at 50% -20%, rgba(124, 140, 255, 0.07), transparent 62%),
-    radial-gradient(900px 700px at 108% 108%, rgba(139, 92, 246, 0.05), transparent 60%),
-    var(--bg);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
-}
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::selection {
-  background: rgba(124, 155, 255, 0.32);
-}
-
+/* ------------------------------------------------------------------ *
+ * Reset
+ * Tailwind's preflight already resets buttons and inputs inside its own
+ * layer. All that belongs here is the pointer cursor: anything unlayered
+ * that sets `color` or `font` would beat every `text-*` utility.
+ * ------------------------------------------------------------------ */
 button {
   cursor: pointer;
-  font: inherit;
-  color: inherit;
 }
 button:disabled {
   cursor: not-allowed;
-}
-input,
-textarea {
-  font: inherit;
 }
 :focus-visible {
   outline: 2px solid rgba(124, 155, 255, 0.75);

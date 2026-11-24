@@ -7,7 +7,7 @@ import { Icon, Spinner } from "./icons";
 import { cx } from "./ui";
 
 type Provider = "google" | "github" | "notion" | "vercel" | "spotify";
-type Status = { connected: boolean; provider?: Provider; mode?: "user" | "app"; error?: string };
+type Status = { connected: boolean; available?: boolean; provider?: Provider; mode?: "user" | "app"; reason?: "connector" | "unconfigured"; error?: string };
 
 const providers: Array<{ id: Provider; name: string; detail: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
   { id: "google", name: "Google", detail: "Gmail search and send, YouTube read access", icon: "mail" },
@@ -84,7 +84,16 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
           <div className="text-[13.5px] font-medium text-white">{name}</div>
           <div className="text-[12px] text-neutral-500">{detail}</div>
         </div>
-        <StatusPill connected={connected} viaApp={viaApp} loading={isLoading} error={!!error} onConnect={() => void connect()} onDisconnect={() => void disconnect()} busy={busy} />
+        <StatusPill
+          connected={connected}
+          viaApp={viaApp}
+          loading={isLoading}
+          error={!!error}
+          busy={busy}
+          unavailable={data?.available === false}
+          onConnect={() => void connect()}
+          onDisconnect={() => void disconnect()}
+        />
       </div>
 
       {(error || actionError) && (
@@ -99,6 +108,16 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
           Email is sent with this deployment&apos;s Google credentials, so no per-account connection is needed.
         </p>
       )}
+
+      {/* One actionable line, and only where there is something to act on. */}
+      {!viaApp && !error && data?.available === false && (data.reason === "connector" || provider === "google") && (
+        <p className="mt-2.5 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-neutral-500">
+          <Icon name="info" size={12} className="mt-[3px] shrink-0" />
+          {data.reason === "connector"
+            ? `The ${name} connector is not installed on this deployment yet, so connecting is unavailable here.`
+            : "No Vercel Connect here. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN to send mail from this deployment."}
+        </p>
+      )}
     </div>
   );
 }
@@ -109,10 +128,11 @@ function StatusPill(props: {
   loading: boolean;
   error: boolean;
   busy: boolean;
+  unavailable: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  const { connected, viaApp, loading, error, busy, onConnect, onDisconnect } = props;
+  const { connected, viaApp, loading, error, busy, unavailable, onConnect, onDisconnect } = props;
   if (loading) {
     return (
       <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
@@ -138,6 +158,13 @@ function StatusPill(props: {
           </button>
         )}
       </div>
+    );
+  }
+  if (unavailable) {
+    return (
+      <span className="rounded-full border border-white/[0.08] px-2.5 py-1 text-[11px] font-medium text-neutral-500" title="Not available on this deployment">
+        Not set up
+      </span>
     );
   }
   return (
