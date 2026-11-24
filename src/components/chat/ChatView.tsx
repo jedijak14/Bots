@@ -337,14 +337,17 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
 
   const lastUserIdx = messages.reduce((acc2, m, i) => (m.role === "user" ? i : acc2), -1);
   const lastMsg = messages[messages.length - 1];
-  const awaiting = lastMsg?.role === "assistant" && !!lastMsg.choices && !busy;
+  const empty = messages.length <= 1 && messages.every((m) => m.role === "assistant") && !busy;
+  // Only when the question is actually on screen: with a lone greeting,
+  // `lastMsg` is the welcome message, and asking the composer for an answer to a
+  // question the person can't see reads as a bug.
+  const awaiting = lastMsg?.role === "assistant" && !!lastMsg.choices && !busy && !empty;
   const placeholder = awaiting ? "Type your answer, or talk about something else" : `Message ${bot.name}`;
 
   const runningStep = busy ? (live?.steps.filter((x) => x.status === "running").pop() ?? null) : null;
   const usingComputer = !!runningStep && !NO_COMPUTER.has(runningStep.name);
 
-  /** A conversation that only holds the greeting gets the full welcome screen. */
-  const empty = messages.length <= 1 && messages.every((m) => m.role === "assistant") && !busy;
+  /** A conversation that only holds the greeting gets the full welcome screen (see `empty` above). */
 
   const openArtifacts = () => app.openSettings("artifacts");
   /**
@@ -639,7 +642,9 @@ function EmptyChat({
 }) {
   const suggestions = SUGGESTIONS.filter((s) => hasComputer || s.icon !== "monitor");
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-4 pt-6">
+    // The floor height keeps the middle of the screen from feeling empty on a
+    // tall viewport while still letting the block scroll on a short one.
+    <div className="flex min-h-[420px] flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-4 pt-6">
       <div className="relative">
         <div aria-hidden className="absolute inset-0 -z-10 scale-[2.4] rounded-full bg-[radial-gradient(closest-side,rgba(124,140,255,0.22),transparent)] blur-2xl" />
         <div className="glow-in">
@@ -649,12 +654,19 @@ function EmptyChat({
       <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hey, I&apos;m {name}.</h1>
       <p className="mt-1.5 text-[14.5px] text-neutral-500">What can I do for you?</p>
 
-      <div className="mt-8 grid w-full max-w-[600px] grid-cols-1 gap-2 sm:grid-cols-2">
-        {suggestions.map((s) => (
+      {/* Two columns only from lg. It isn't a viewport question: with the sidebar
+          open at 768px the chat column is only ~440px, so two cards got 216px each
+          and the hints wrapped to four lines. An odd last card spans the row rather
+          than leaving a hole. */}
+      <div className="mt-8 grid w-full max-w-[600px] grid-cols-1 gap-2 lg:grid-cols-2">
+        {suggestions.map((s, i) => (
           <button
             key={s.title}
             onClick={() => onPick(s.prompt)}
-            className="group flex items-start gap-3 rounded-[18px] border border-white/[0.07] bg-white/[0.02] p-3.5 text-left transition hover:border-white/[0.16] hover:bg-white/[0.05] active:scale-[0.99]"
+            className={cx(
+              "group flex items-start gap-3 rounded-[18px] border border-white/[0.07] bg-white/[0.02] p-3.5 text-left transition hover:border-white/[0.16] hover:bg-white/[0.05] active:scale-[0.99]",
+              suggestions.length % 2 === 1 && i === suggestions.length - 1 && "lg:col-span-2",
+            )}
           >
             <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-neutral-300 transition group-hover:border-white/[0.14] group-hover:text-white">
               <Icon name={s.icon} size={15} />
