@@ -8,7 +8,7 @@ import { PrefsContext } from "./prefs";
 import { appFocusReturn } from "./ui";
 
 export type AppUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
-export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data" | "connections" | "skills" | "privacy" | "artifacts" | "history";
+export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data" | "connections" | "skills" | "privacy" | "goals" | "artifacts" | "history";
 type ConfirmOpts = { title: string; body: string; confirmLabel?: string; danger?: boolean };
 type Toast = { id: number; msg: string; kind: "ok" | "err" };
 

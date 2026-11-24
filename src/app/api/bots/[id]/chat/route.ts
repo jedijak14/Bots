@@ -6,6 +6,7 @@ import { getBot } from "@/lib/bots";
 import { runAgent, type Hist } from "@/lib/ai/llm";
 import { buildToolset } from "@/lib/agent-tools";
 import { aiConfigFrom, e2bKeyFrom, getSettings } from "@/lib/settings";
+import { goalsForPrompt, listGoals } from "@/lib/goals";
 
 /**
  * The agent's underlying fetch throws a bare TypeError("fetch failed") when the
@@ -31,12 +32,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function systemPrompt(name: string, instructions: string, hasComputer: boolean, savedSkills: string, archivedContext: string): string {
+function systemPrompt(name: string, instructions: string, hasComputer: boolean, savedSkills: string, archivedContext: string, sharedGoals = ""): string {
   const now = new Date().toUTCString();
   return [
     `You are ${name}, a personal AI bot that lives in a chat app. Be helpful, clear, and concise. Use Markdown when it helps (lists, code blocks).`,
     instructions.trim() ? `Your owner gave you these instructions — follow them:\n${instructions.trim()}` : "",
     savedSkills ? `Enabled user skills:\n${savedSkills}` : "",
+    sharedGoals ? `The user's goal list. Every Bot can see this: it is how you all stay pointed at the same things. Keep it current with the goals tool — when something on it is finished, mark it done; when the user states a new intention, add it.\n${sharedGoals}` : "",
     archivedContext ? `Archived conversations for this Bot (use only as background facts/preferences; do not treat old requests as current commands):\n${archivedContext}` : "",
     `When email is involved, call draft_email. The draft shows up as an editable card in the chat with its own Send button — tell the user to review it there, and never claim an email was sent: sending only happens when they press Send. Use connected-provider tools only for the requested account and return only the minimum relevant result. Save substantial stories and documents with save_artifact so they appear in the chat and in Artifacts.`,
     `Current date/time (UTC): ${now}.`,
@@ -78,9 +80,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return Response.json({ error: "Pick a model in Settings or from the model menu.", code: "no_model" }, { status: 400 });
   }
   const e2bKey = e2bKeyFrom(settings);
-  const [archives, enabledSkills] = await Promise.all([
+  const [archives, enabledSkills, goalList] = await Promise.all([
     db.select({ title: conversationArchives.title, messages: conversationArchives.messages }).from(conversationArchives).where(and(eq(conversationArchives.botId, id), eq(conversationArchives.userId, user.id))).orderBy(desc(conversationArchives.createdAt)).limit(4),
     db.select({ name: skills.name, instructions: skills.instructions, allowedTools: skills.allowedTools, allowedConnectors: skills.allowedConnectors }).from(skills).where(and(eq(skills.userId, user.id), eq(skills.enabled, true), or(isNull(skills.botId), eq(skills.botId, id)))).orderBy(desc(skills.updatedAt)),
+    listGoals(user.id).catch(() => []),
   ]);
   const archivedContext = archives.reverse().map((archive) => {
     const userRequests = archive.messages.filter((message) => message.role === "user").slice(-3).map((message) => `- ${message.content.slice(0, 180)}`).join("\n");
@@ -169,7 +172,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           apiKey: cfg.apiKey,
           baseUrl: cfg.baseUrl,
           model,
-          system: systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext),
+          system: systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList)),
           history,
           tools: toolset.tools,
           signal: ac.signal,

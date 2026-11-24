@@ -32,6 +32,22 @@ const ASK: Tool = {
 
 const CORE_TOOLS: Tool[] = [
   {
+    name: "goals",
+    description:
+      "Read and change the shared goal list every Bot can see. Actions: list (default), add, update, complete, remove. Use it when the user sets an intention ('I want to launch by June'), when you finish something on it, or when they ask what is left. Give status as open, doing or done.",
+    parameters: obj(
+      {
+        action: { type: "string", enum: ["list", "add", "update", "complete", "remove"], description: "What to do. Defaults to list." },
+        id: { type: "string", description: "Goal id, for update/complete/remove." },
+        title: { type: "string", description: "Short goal title, for add/update." },
+        detail: { type: "string", description: "Optional detail or acceptance criteria." },
+        status: { type: "string", enum: ["open", "doing", "done"], description: "New status, for update." },
+        due: { type: "string", description: "Optional ISO date the goal is due." },
+      },
+      [],
+    ),
+  },
+  {
     name: "save_artifact",
     description: "Save a story, document, website source, or other substantial work to the user's Artifacts library. It appears as a card in the chat straight away, and stays in Artifacts for later.",
     parameters: obj({ title: { type: "string" }, kind: { type: "string", enum: ["story", "document", "html", "website"] }, content: { type: "string" } }, ["title", "kind", "content"]),
@@ -264,6 +280,40 @@ export function buildToolset(opts: {
       const timezone = String(a.timezone ?? "UTC");
       try { return { output: new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(new Date()) }; }
       catch { return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` }; }
+    }
+    if (name === "goals") {
+      const action = String(a.action ?? "list");
+      const { listGoals, addGoal, updateGoal, deleteGoal, goalsForPrompt } = await import("@/lib/goals");
+      if (action === "list") {
+        const list = await listGoals(userId);
+        if (!list.length) return { output: "The goal list is empty. Add one when the user sets an intention." };
+        return { output: `Goals (${list.length} \u2014 shared by every Bot):\n${goalsForPrompt(list)}` };
+      }
+      if (action === "add") {
+        const title = String(a.title ?? "").trim();
+        if (!title) return { output: "A goal needs a title." };
+        const goal = await addGoal(userId, { title, detail: a.detail ? String(a.detail) : "", botId: bot.id, dueAt: a.due ? String(a.due) : null });
+        return { output: `Added goal ${goal.id}: ${goal.title}` };
+      }
+      const id = String(a.id ?? "");
+      if (!id) return { output: `Give the id of the goal to ${action}.` };
+      if (action === "update") {
+        const goal = await updateGoal(userId, id, {
+          title: a.title !== undefined ? String(a.title) : undefined,
+          detail: a.detail !== undefined ? String(a.detail) : undefined,
+          status: a.status as "open" | "doing" | "done" | undefined,
+          dueAt: a.due !== undefined ? String(a.due) : undefined,
+        });
+        return { output: goal ? `Updated goal: ${goal.title} (${goal.status})` : "No goal with that id." };
+      }
+      if (action === "complete") {
+        const goal = await updateGoal(userId, id, { status: "done" });
+        return { output: goal ? `Completed: ${goal.title}` : "No goal with that id." };
+      }
+      if (action === "remove") {
+        return { output: (await deleteGoal(userId, id)) ? "Goal removed." : "No goal with that id." };
+      }
+      return { output: `Unknown goal action: ${action}` };
     }
     if (name === "save_artifact" || name === "draft_email") {
       const title = String(a.title ?? (name === "draft_email" ? `Email to ${String(a.to ?? "recipient")}` : "Untitled artifact")).trim().slice(0, 160);
