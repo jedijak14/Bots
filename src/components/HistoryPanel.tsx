@@ -107,29 +107,35 @@ export function HistoryPanel({ botId }: { botId: string | null }) {
       <div className="mt-5 flex flex-col gap-2">
         {filtered.map((archive) => (
           <details key={archive.id} className="group rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-white/[0.11]">
+            {/* The whole row is the summary. No interactive element can live in
+                here (the old Delete <button> did, which is invalid HTML), so
+                deleting moved beside the title of the expanded conversation. */}
             <summary className="flex cursor-pointer list-none items-center gap-3">
               <Icon name="chevron" size={14} className="shrink-0 -rotate-90 text-neutral-600 transition group-open:rotate-0" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-white">{archive.title || "Untitled conversation"}</span>
-                <span className="block text-[11px] text-neutral-600">
-                  {new Date(archive.createdAt).toLocaleString()} · {archive.messages.length} {archive.messages.length === 1 ? "message" : "messages"}
+                {/* Date and time on one short line: toLocaleString() produced
+                    "11/24/2026, 5:50:26 PM", which wrapped to three lines at 390. */}
+                <span className="block truncate text-[11px] text-neutral-600">
+                  {new Date(archive.createdAt).toLocaleDateString()} · {new Date(archive.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} ·{" "}
+                  {archive.messages.length} {archive.messages.length === 1 ? "message" : "messages"}
                 </span>
               </span>
+            </summary>
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
+              <span className="text-[11px] text-neutral-600">Archived conversation</span>
               <button
                 type="button"
                 aria-label={`Permanently delete ${archive.title || "this conversation"}`}
                 disabled={deleting === archive.id}
-                onClick={(event) => {
-                  event.preventDefault();
-                  void remove(archive);
-                }}
-                className="rounded-full px-2 py-1 text-[11px] text-neutral-600 transition hover:bg-rose-400/10 hover:text-rose-300 disabled:opacity-50"
+                onClick={() => void remove(archive)}
+                className="rounded-full px-2 py-1 text-[11px] text-neutral-500 transition hover:bg-rose-400/10 hover:text-rose-300 disabled:opacity-50"
               >
                 {deleting === archive.id ? "Deleting…" : "Delete"}
               </button>
-            </summary>
-
-            <div className="mt-3 flex max-h-[360px] flex-col gap-1.5 overflow-y-auto border-t border-white/[0.06] pt-3">
+            </div>
+            <div className="mt-2 flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
               {archive.messages.map((message, index) => (
                 <div key={`${archive.id}-${index}`} className="rounded-xl bg-black/25 px-3 py-2">
                   <p className="mb-1 text-[10px] uppercase tracking-[0.08em] text-neutral-600">{roleLabel(message.role)}</p>

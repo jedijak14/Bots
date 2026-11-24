@@ -117,10 +117,12 @@ export function AppProvider({
     setWorkingState((cur) => (cur?.id === w?.id && cur?.label === w?.label ? cur : w));
   }, []);
 
-  const confirm = useCallback(
-    (o: ConfirmOpts) => new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve })),
-    [],
-  );
+  const confirm = useCallback((o: ConfirmOpts) => {
+    // Recorded too: a confirm often opens from deep inside a panel, and without
+    // this it fell back to a stale handoff from whichever menu opened the panel.
+    rememberTrigger();
+    return new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve }));
+  }, [rememberTrigger]);
 
   // A session can expire while the tab stays open, and then every API call answers
   // 401. Only a 401 that really means "not signed in" should bounce the tab to the

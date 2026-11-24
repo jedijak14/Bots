@@ -35,13 +35,20 @@ export function Modal({
   // focus at mount.
   const restoreTo = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    // Read and consume in one go: a stale value left behind would make the *next*
+    // dialog restore focus to a trigger from a different part of the page.
+    const active = document.activeElement;
+    const own = active instanceof HTMLElement && active !== document.body ? active : null;
     const handed = appFocusReturn.current;
     appFocusReturn.current = null;
-    const active = document.activeElement;
-    restoreTo.current = handed ?? (active instanceof HTMLElement && active !== document.body ? active : null);
+    restoreTo.current = handed ?? own;
+    // Publish this dialog's trigger so a confirm opened on top of it — which can
+    // only see <body> as active — returns focus here instead of to <body>.
+    if (own) appFocusReturn.current = own;
     return () => {
       const t = restoreTo.current;
       if (t?.isConnected) t.focus({ preventScroll: true });
+      if (appFocusReturn.current === own) appFocusReturn.current = null;
     };
   }, []);
 
@@ -55,7 +62,15 @@ export function Modal({
   }, []);
 
   useEffect(() => {
+    // Every dialog listens on window, and stopPropagation() does not stop other
+    // listeners on the same target. So Escape in a confirm used to close the
+    // Settings dialog underneath it as well. Only the topmost dialog reacts.
+    const isTopmost = () => {
+      const open = document.querySelectorAll('[role="dialog"]');
+      return !open.length || open[open.length - 1] === panelRef.current;
+    };
     const onKey = (e: KeyboardEvent) => {
+      if (!isTopmost()) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
