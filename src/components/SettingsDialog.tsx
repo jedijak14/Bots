@@ -11,58 +11,87 @@ import { btnDanger, btnGhost, btnWhite, cx, inputCls, Modal, Toggle } from "./ui
 import { PrivacyTab, SkillsTab } from "./SecureSettingsTabs";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
+import { Card, TabHeader } from "./settings/parts";
 import { HistoryPanel } from "./HistoryPanel";
 import { GoalsPanel } from "./GoalsPanel";
 
-const TAB_GROUPS: { label: string; items: { id: SettingsTab; label: string; icon: IconName }[] }[] = [
+type TabMeta = { id: SettingsTab; label: string; icon: IconName; summary: string };
+
+const TAB_GROUPS: { label: string; items: TabMeta[] }[] = [
   {
     label: "Setup",
     items: [
-      { id: "ai", label: "AI Provider", icon: "grid" },
-      { id: "computer", label: "Computer", icon: "monitor" },
-      { id: "preferences", label: "Preferences", icon: "gear" },
+      { id: "ai", label: "AI Provider", icon: "grid", summary: "The model behind your bots" },
+      { id: "computer", label: "Computer", icon: "monitor", summary: "The desktop bots work on" },
+      { id: "preferences", label: "Preferences", icon: "gear", summary: "Motion, voice and feel" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { id: "connections", label: "Connections", icon: "link" },
-      { id: "skills", label: "Skills", icon: "sparkles" },
-      { id: "goals", label: "Goals", icon: "check" },
-      { id: "privacy", label: "Privacy Mode", icon: "lock" },
+      { id: "connections", label: "Connections", icon: "link", summary: "Accounts your bots can use" },
+      { id: "skills", label: "Skills", icon: "sparkles", summary: "Reusable instructions and grants" },
+      { id: "goals", label: "Goals", icon: "check", summary: "One list every bot can see" },
+      { id: "privacy", label: "Privacy Mode", icon: "lock", summary: "Private moments, bot hands off" },
     ],
   },
   {
     label: "You",
     items: [
-      { id: "account", label: "Account", icon: "pencil" },
-      { id: "artifacts", label: "Artifacts", icon: "file" },
-      { id: "history", label: "History", icon: "chat" },
-      { id: "data", label: "Data", icon: "download" },
+      { id: "account", label: "Account", icon: "pencil", summary: "Name, photo and password" },
+      { id: "artifacts", label: "Artifacts", icon: "file", summary: "Everything your bots made" },
+      { id: "history", label: "History", icon: "chat", summary: "Conversations you cleared" },
+      { id: "data", label: "Data", icon: "download", summary: "Export or clear everything" },
     ],
   },
 ];
+
+const ALL_TABS = TAB_GROUPS.flatMap((group) => group.items);
 
 export function SettingsDialog() {
   const app = useApp();
   const pathname = usePathname();
   const currentBotId = pathname.match(/\/bot\/([^/]+)/)?.[1] ?? null;
   const [tab, setTab] = useState<SettingsTab>(app.settingsTab ?? "ai");
+  const [query, setQuery] = useState("");
+
+  // Filtering the rail is how people find a setting they cannot name a home
+  // for ("where do I change my photo"). Matches the label or the summary.
+  const needle = query.trim().toLowerCase();
+  const groups = needle
+    ? TAB_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => `${item.label} ${item.summary}`.toLowerCase().includes(needle)),
+      })).filter((group) => group.items.length)
+    : TAB_GROUPS;
+  const meta = ALL_TABS.find((item) => item.id === tab);
 
   return (
-    <Modal onClose={app.closeSettings} width={820} label="Settings">
-      <div className="flex h-[min(640px,calc(100dvh-2rem))] flex-col md:flex-row">
-        <nav className="shrink-0 border-b border-white/[0.06] md:w-[224px] md:border-b-0 md:border-r">
+    <Modal onClose={app.closeSettings} width={900} label="Settings">
+      <div className="flex h-[min(680px,calc(100dvh-2rem))] flex-col md:flex-row">
+        <nav className="shrink-0 border-b border-white/[0.06] md:w-[248px] md:border-b-0 md:border-r">
           {/* On a phone the nav is a scrolling strip, so it needs a title of its own
               and an edge that hints there is more to the right. */}
           <div className="flex items-center gap-2 px-4 pb-1 pt-3.5 md:mb-2 md:px-2.5 md:pb-2 md:pt-1.5">
             <LogoMark size={20} />
             <h2 className="text-[14px] font-semibold tracking-tight">Settings</h2>
           </div>
-          <div className="flex gap-1 overflow-x-auto p-2.5 pt-1.5 [mask-image:linear-gradient(to_right,transparent,black_6px,black_calc(100%-18px),transparent)] [scrollbar-width:none] md:flex-col md:overflow-visible md:p-0 md:[mask-image:none]">
-          {TAB_GROUPS.map((group) => (
+          <div className="px-2.5 pb-2">
+            <label className="relative block">
+              <Icon name="search" size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-600" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Find a setting"
+                aria-label="Find a setting"
+                className={cx(inputCls, "h-8 py-0 pl-8 text-[12.5px]")}
+              />
+            </label>
+          </div>
+          <div className="flex gap-1 overflow-x-auto p-2.5 pt-1.5 [mask-image:linear-gradient(to_right,transparent,black_6px,black_calc(100%-18px),transparent)] [scrollbar-width:none] md:flex-col md:gap-0 md:overflow-visible md:p-0 md:[mask-image:none]">
+          {groups.map((group) => (
             <div key={group.label} className="contents md:block">
-              <div className="hidden px-2.5 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600 md:block">
+              <div className="hidden px-3 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600 md:block">
                 {group.label}
               </div>
               {group.items.map((t) => (
@@ -70,11 +99,11 @@ export function SettingsDialog() {
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   className={cx(
-                    "relative flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[13px] transition",
+                    "relative flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[13px] transition md:mx-2",
                     tab === t.id ? "bg-white/[0.08] text-white" : "text-neutral-400 hover:bg-white/[0.05] hover:text-white",
                   )}
                 >
-                  <Icon name={t.icon} size={15} className={cx(tab === t.id ? "text-[#a8c0ff]" : "text-neutral-500")} />
+                  <Icon name={t.icon} size={15} className={cx("shrink-0", tab === t.id ? "text-[#a8c0ff]" : "text-neutral-500")} />
                   {t.label}
                   {t.id === "ai" && !app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-amber-400" />}
                   {t.id === "ai" && app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />}
@@ -82,6 +111,7 @@ export function SettingsDialog() {
               ))}
             </div>
           ))}
+          {!groups.length && <p className="px-3 py-4 text-[12.5px] text-neutral-600">No setting matches “{query}”.</p>}
           </div>
           <div className="mt-auto hidden px-2.5 pb-2 pt-4 text-[11px] leading-snug text-neutral-600 md:block">
             Keys are encrypted at rest and only used to talk to your provider.
@@ -91,6 +121,13 @@ export function SettingsDialog() {
           <button onClick={app.closeSettings} aria-label="Close settings" className="absolute right-4 top-4 z-10 grid size-8 place-items-center rounded-full text-neutral-400 transition hover:bg-white/10 hover:text-white">
             <Icon name="close" size={16} />
           </button>
+          {meta && (
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-600">
+              <Icon name={meta.icon} size={11} />
+              {meta.label}
+              <span className="ml-1 normal-case tracking-normal text-neutral-700">· {meta.summary}</span>
+            </div>
+          )}
           {tab === "ai" && <AiTab />}
           {tab === "computer" && <ComputerTab />}
           {tab === "preferences" && <PreferencesTab />}
@@ -116,12 +153,15 @@ export function SettingsDialog() {
   );
 }
 
+/**
+ * Tab shell: title, one-line purpose, then the tab's content. Every tab goes
+ * through this so the type scale and the rhythm between blocks are identical.
+ */
 function Section({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
     <div className="fade-up">
-      <h3 className="text-[18px] font-semibold tracking-tight">{title}</h3>
-      {desc && <p className="mt-1 max-w-[520px] text-[13.5px] leading-relaxed text-neutral-400">{desc}</p>}
-      <div className="mt-5 space-y-5">{children}</div>
+      <TabHeader title={title} desc={desc ?? ""} />
+      <div className="max-w-[600px] space-y-3.5">{children}</div>
     </div>
   );
 }
@@ -413,16 +453,20 @@ function PreferencesTab() {
     { key: "voiceReplies", title: "Read replies aloud", desc: "Uses your browser's text-to-speech when a bot finishes replying." },
   ];
   return (
-    <Section title="Preferences">
-      {rows.map((r) => (
-        <div key={r.key} className="flex items-center justify-between gap-6">
-          <div>
-            <div className="text-[14px] font-medium">{r.title}</div>
-            <div className="mt-0.5 text-[12.5px] text-neutral-500">{r.desc}</div>
-          </div>
-          <Toggle checked={s[r.key]} onChange={(v) => app.patchSettings({ [r.key]: v })} label={r.title} />
+    <Section title="Preferences" desc="How the app looks and moves. These follow you to every device.">
+      <Card>
+        <div className="divide-y divide-white/[0.05]">
+          {rows.map((r) => (
+            <div key={r.key} className="flex items-center justify-between gap-6 py-3 first:pt-0 last:pb-0">
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-medium text-white">{r.title}</div>
+                <div className="mt-0.5 text-[12.5px] leading-relaxed text-neutral-500">{r.desc}</div>
+              </div>
+              <Toggle checked={s[r.key]} onChange={(v) => app.patchSettings({ [r.key]: v })} label={r.title} />
+            </div>
+          ))}
         </div>
-      ))}
+      </Card>
     </Section>
   );
 }
@@ -619,20 +663,17 @@ function DataTab() {
   const router = useRouter();
   return (
     <Section title="Data" desc="Your bots and conversations are saved to your account in the cloud, separate from everyone else's.">
-      <div className="flex items-center justify-between gap-6">
-        <div>
-          <div className="text-[14px] font-medium">Export everything</div>
-          <div className="mt-0.5 text-[12.5px] text-neutral-500">Download all bots and conversations as JSON.</div>
-        </div>
+      <Card title="Export everything" desc="Download all bots, conversations and goals as one JSON file." icon={<Icon name="download" size={15} />} action={
         <a href="/api/export" className={btnGhost}>
           <Icon name="download" size={15} /> Export
         </a>
-      </div>
-      <div className="flex items-center justify-between gap-6">
-        <div>
-          <div className="text-[14px] font-medium">Clear all conversations</div>
-          <div className="mt-0.5 text-[12.5px] text-neutral-500">Keeps your bots, removes every message.</div>
-        </div>
+      } />
+      <Card
+        tone="danger"
+        title="Clear all conversations"
+        desc="Keeps your bots and their settings, removes every message in every thread."
+        icon={<Icon name="trash" size={15} />}
+        action={
         <button
           className={btnDanger}
           onClick={async () => {
@@ -647,7 +688,8 @@ function DataTab() {
         >
           Clear
         </button>
-      </div>
+        }
+      />
     </Section>
   );
 }
