@@ -108,7 +108,7 @@ export function Gallery() {
                           onClick={(e) => {
                             setMenu({ bot: b, position: placeMenu(e.currentTarget.getBoundingClientRect(), 3, { align: "end" }), trigger: e.currentTarget });
                           }}
-                          className="pointer-events-auto -mr-1 grid size-7 shrink-0 place-items-center rounded-full text-neutral-500 opacity-0 transition hover:bg-white/[0.1] hover:text-white focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                          className="pointer-events-auto -mr-1 grid size-7 shrink-0 place-items-center rounded-full text-neutral-500 opacity-0 transition hover:bg-white/[0.1] hover:text-white focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 max-md:opacity-100"
                         >
                           <Icon name="dots" size={15} />
                         </button>
