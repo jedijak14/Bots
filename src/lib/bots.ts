@@ -78,8 +78,16 @@ export async function listMessages(userId: string, botId: string, limit = 500): 
   }));
 }
 
-export const greetingText = (name: string) =>
-  `Hi, I'm ${name}. Glad to meet you. Tell me what you'd like help with, and I'll get set up for it.`;
+/**
+ * The one line a new conversation opens with.
+ *
+ * It used to end in a menu of "what do you want the bot to do?" cards. Those
+ * put a multiple-choice gate in front of a conversation that already has an
+ * empty message box, and the answer told the Bot nothing it could not read from
+ * the first real message. The greeting now just says hello; everything after it
+ * is whatever the person actually types, and it stays in the Bot's memory.
+ */
+export const greetingText = (name: string) => `Hi, I'm ${name}. What are we working on?`;
 
 /** The sidebar line for a conversation that only holds the greeting. */
 export const greetingPreview = (name: string) => previewText(greetingText(name));
@@ -90,9 +98,5 @@ export async function insertGreeting(userId: string, botId: string, name: string
     userId,
     role: "assistant",
     content: greetingText(name),
-    choices: {
-      question: "What would you like me to help with first?",
-      options: ["Research and information", "Planning and organization", "Writing and content", "Something else"],
-    },
   });
 }
