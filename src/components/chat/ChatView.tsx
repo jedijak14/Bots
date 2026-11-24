@@ -14,7 +14,7 @@ import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
 import { AssistantBlock, UserBubble, type ArtifactRef, type LiveStep } from "./Message";
 import { ModelPicker } from "./ModelPicker";
 import type { ComputerPhase } from "./useComputer";
-import { Menu, placeMenu, type MenuItem } from "../Menu";
+import { Menu, placeMenu, type MenuItem, type MenuPosition } from "../Menu";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
 type StreamEvent =
@@ -86,7 +86,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [expanded, setExpanded] = useState(false);
   const [shot, setShot] = useState<{ n: number; data: string } | null>(null);
   const [computerOn, setComputerOn] = useState(!!bot?.hasSandbox);
-  const [shareOpen, setShareOpen] = useState(false);
+  const [share, setShare] = useState<{ position: MenuPosition; trigger: HTMLElement } | null>(null);
   const [botMenu, setBotMenu] = useState<{ position: ReturnType<typeof placeMenu>; trigger: HTMLElement } | null>(null);
   const [artifacts, setArtifacts] = useState<Record<string, ArtifactRef>>({});
   const mounted = useHydrated();
@@ -97,7 +97,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const stick = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const frame = useRef(0);
-  const shareRef = useRef<HTMLDivElement>(null);
+
   /** Set when the person closes the panel mid-run, so the next step doesn't pop it back open. */
   const panelDismissed = useRef(false);
 
@@ -155,15 +155,6 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
     else if (p === "asleep") setComputerOn(false);
   }, []);
   const onComputerError = useCallback((message: string) => toast(message, "err"), [toast]);
-
-  useEffect(() => {
-    if (!shareOpen) return;
-    const close = (e: MouseEvent) => {
-      if (!shareRef.current?.contains(e.target as Node)) setShareOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [shareOpen]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -400,6 +391,23 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
     { label: "Bot settings", icon: "gear", onSelect: () => app.openSettings("skills") },
   ];
 
+  const copyConversation = async () => {
+    await navigator.clipboard.writeText(buildMarkdown()).catch(() => {});
+    app.toast("Conversation copied.");
+  };
+  const downloadConversation = () => {
+    const url = URL.createObjectURL(new Blob([buildMarkdown()], { type: "text/markdown" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${bot.name}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const shareItems: MenuItem[] = [
+    { label: "Copy conversation", icon: "copy", onSelect: () => void copyConversation() },
+    { label: "Download as Markdown", icon: "download", onSelect: downloadConversation },
+  ];
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 px-3 sm:px-4">
@@ -426,50 +434,24 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         </div>
 
         <div className="flex-1" />
-        <div ref={shareRef} className="relative">
+        <div className="relative">
           <button
-            onClick={() => setShareOpen((s) => !s)}
+            onClick={(e) => {
+              if (share) return setShare(null);
+              setShare({ position: placeMenu(e.currentTarget.getBoundingClientRect(), shareItems.length, { align: "end" }), trigger: e.currentTarget });
+            }}
             aria-haspopup="menu"
-            aria-expanded={shareOpen}
+            aria-expanded={!!share}
             aria-label="Share"
             className={cx(
               "grid size-9 place-items-center rounded-full transition active:scale-95 max-md:text-neutral-300",
-              shareOpen ? "bg-white/[0.1] text-white" : "text-neutral-400 hover:bg-white/[0.06] hover:text-white",
+              share ? "bg-white/[0.1] text-white" : "text-neutral-400 hover:bg-white/[0.06] hover:text-white",
             )}
           >
             <Icon name="external" size={16} />
           </button>
-          {shareOpen && (
-            <div className="modal-in absolute right-0 top-[calc(100%+6px)] z-40 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#19191d] p-1.5 shadow-2xl">
-              <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(buildMarkdown()).catch(() => {});
-                  setShareOpen(false);
-                  app.toast("Conversation copied.");
-                }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
-              >
-                <Icon name="copy" size={14} className="text-neutral-500" />
-                Copy conversation
-              </button>
-              <button
-                onClick={() => {
-                  const url = URL.createObjectURL(new Blob([buildMarkdown()], { type: "text/markdown" }));
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `${bot.name}.md`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  setShareOpen(false);
-                }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/[0.07]"
-              >
-                <Icon name="download" size={14} className="text-neutral-500" />
-                Download as Markdown
-              </button>
-            </div>
-          )}
         </div>
+        {share && <Menu label="Share" items={shareItems} position={share.position} trigger={share.trigger} onClose={() => setShare(null)} />}
         {botMenu && <Menu label={`${bot.name} options`} items={botMenuItems} position={botMenu.position} trigger={botMenu.trigger} onClose={() => setBotMenu(null)} />}
       </header>
 
