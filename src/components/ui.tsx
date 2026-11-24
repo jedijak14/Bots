@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Icon } from "./icons";
 
 export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(" ");
 }
+
+/**
+ * Holds the element a dialog should hand focus back to. A dialog opened from a
+ * menu can't work this out for itself: opening the menu moves focus into the
+ * menu, and choosing an item closes the menu, which drops focus to <body> before
+ * the dialog mounts. The provider records the trigger on the way in.
+ */
+export const appFocusReturn = { current: null as HTMLElement | null };
 
 export function Modal({
   onClose,
@@ -20,11 +28,59 @@ export function Modal({
   label: string;
   z?: number;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Take the element to return to from the provider (which records it before the
+  // menu that opened this dialog clears focus), then fall back to whatever had
+  // focus at mount.
+  const restoreTo = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const handed = appFocusReturn.current;
+    appFocusReturn.current = null;
+    const active = document.activeElement;
+    restoreTo.current = handed ?? (active instanceof HTMLElement && active !== document.body ? active : null);
+    return () => {
+      const t = restoreTo.current;
+      if (t?.isConnected) t.focus({ preventScroll: true });
+    };
+  }, []);
+
+  // Initial focus: [autofocus] if the dialog has one, else the first control, else
+  // the panel itself (which is focusable but not tabbable).
+  useEffect(() => {
+    const root = panelRef.current;
+    if (!root || root.contains(document.activeElement)) return;
+    const target = root.querySelector<HTMLElement>("[autofocus]") ?? root.querySelector<HTMLElement>("button, a[href], input, textarea, select");
+    (target ?? root).focus({ preventScroll: true });
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      // Keep Tab inside the dialog: without this, Tab walks into the page behind
+      // it, which is still scrollable and reachable.
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (current === first || !panel.contains(current))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (current === last || !panel.contains(current))) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -32,10 +88,20 @@ export function Modal({
   }, [onClose]);
   return (
     <div className="absolute inset-0 flex items-center justify-center p-4" style={{ zIndex: z }}>
-      <div className="backdrop-in absolute inset-0 bg-black/65 backdrop-blur-md" onMouseDown={onClose} />
+      {/* preventDefault: without it the matching mouseup/click blurs the element
+          the dialog just restored focus to, leaving focus on <body>. */}
       <div
+        className="backdrop-in absolute inset-0 bg-black/65 backdrop-blur-md"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         aria-label={label}
         className="modal-in relative flex max-h-full flex-col overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#121215] shadow-[0_40px_120px_rgba(0,0,0,0.75)]"
         style={{ width: `min(${width}px, 100%)` }}

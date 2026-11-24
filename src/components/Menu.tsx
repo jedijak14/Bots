@@ -134,6 +134,10 @@ export function Menu({
           disabled={m.disabled}
           onClick={() => {
             onClose();
+            // Put focus back on the trigger before running the action: a dialog
+            // opened from here records the active element to restore focus to, and
+            // by the time it mounts this item no longer exists.
+            if (trigger?.isConnected) trigger.focus({ preventScroll: true });
             m.onSelect();
           }}
           style={{ height: ITEM_H }}
