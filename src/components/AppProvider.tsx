@@ -5,6 +5,7 @@ import type { BotDTO } from "@/lib/bots";
 import { previewText } from "@/lib/preview";
 import type { PublicSettings } from "@/lib/settings";
 import { PrefsContext } from "./prefs";
+import { appFocusReturn } from "./ui";
 
 export type AppUser = { id: string; email: string; displayName: string; avatarUrl: string | null };
 export type SettingsTab = "account" | "ai" | "computer" | "preferences" | "data" | "connections" | "skills" | "privacy" | "artifacts" | "history";
@@ -71,6 +72,15 @@ export function AppProvider({
   const [working, setWorkingState] = useState<AppCtx["working"]>(null);
   const [botDialog, setBotDialog] = useState<{ id: string | null } | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+
+  // A dialog opened from a menu needs to know what to give focus back to. By the
+  // time it mounts the menu has closed and focus sits on <body>; a plain mousedown
+  // click on a button would leave the button focused, but keyboard and menu paths
+  // lose it. Capture it as each dialog opens.
+  const rememberTrigger = useCallback(() => {
+    const el = document.activeElement;
+    appFocusReturn.current = el instanceof HTMLElement && el !== document.body ? el : null;
+  }, []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -163,13 +173,22 @@ export function AppProvider({
       setSettings,
       patchSettings,
       botDialog,
-      openBotDialog: (id = null) => setBotDialog({ id }),
+      openBotDialog: (id = null) => {
+        rememberTrigger();
+        setBotDialog({ id });
+      },
       closeBotDialog: () => setBotDialog(null),
       settingsTab,
-      openSettings: (tab = "ai") => setSettingsTab(tab),
+      openSettings: (tab = "ai") => {
+        rememberTrigger();
+        setSettingsTab(tab);
+      },
       closeSettings: () => setSettingsTab(null),
       searchOpen,
-      setSearchOpen,
+      setSearchOpen: (v: boolean) => {
+        if (v) rememberTrigger();
+        setSearchOpen(v);
+      },
       sidebarOpen,
       setSidebarOpen,
       toast,
@@ -178,7 +197,7 @@ export function AppProvider({
       confirmState,
       setConfirmState,
     }),
-    [user, name, avatarUrl, bots, celebrateId, working, setWorking, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState],
+    [user, name, avatarUrl, bots, celebrateId, working, setWorking, settings, patchSettings, botDialog, settingsTab, searchOpen, sidebarOpen, toast, toasts, confirm, confirmState, rememberTrigger],
   );
 
   return (
