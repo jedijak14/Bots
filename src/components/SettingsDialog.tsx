@@ -213,6 +213,7 @@ function AiTab() {
   const [mode, setMode] = useState<string>(s.aiProviderMode || "auto");
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   const [model, setModel] = useState(s.defaultModel ?? "");
+  const [imageModel, setImageModel] = useState(s.imageModel ?? "");
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -240,6 +241,7 @@ function AiTab() {
       app.setSettings(j.settings);
       setModels(j.models ?? []);
       setModel(j.settings.defaultModel ?? "");
+      setImageModel(j.settings.imageModel ?? "");
       setKey("");
       setMsg({ ok: true, text: `Connected to ${j.detected}${j.models?.length ? ` · ${j.models.length} models available` : ""}.` });
     } catch (e) {
@@ -350,6 +352,17 @@ function AiTab() {
               className={inputCls}
             />
           )}
+          <div className="mt-3">
+            <Label hint="Only needed when your provider serves pictures on a different model.">Image model</Label>
+            <input
+              value={imageModel}
+              onChange={(e) => setImageModel(e.target.value)}
+              onBlur={() => imageModel !== (s.imageModel ?? "") && app.patchSettings({ imageModel })}
+              placeholder="leave empty to use sensible defaults"
+              aria-label="Image model"
+              className={inputCls}
+            />
+          </div>
         </div>
       )}
 

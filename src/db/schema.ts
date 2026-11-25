@@ -42,6 +42,8 @@ export const userSettings = pgTable("user_settings", {
   aiProviderMode: text("ai_provider_mode").notNull().default("auto"),
   aiBaseUrl: text("ai_base_url"),
   defaultModel: text("default_model"),
+  /** Optional image model, when the provider serves images on a separate one. */
+  imageModel: text("image_model"),
   e2bKeyEnc: text("e2b_key_enc"),
   e2bKeyHint: text("e2b_key_hint"),
   followMouse: boolean("follow_mouse").notNull().default(true),

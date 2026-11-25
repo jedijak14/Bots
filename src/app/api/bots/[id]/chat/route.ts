@@ -171,6 +171,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         allowedConnectors,
         packTools,
         libraryQuery: content,
+        imageConfig: cfg ? { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, imageModel: cfg.imageModel } : undefined,
         turnId,
         botName: bot.name,
         // Helper progress is part of the turn's stream: the chat shows a lane

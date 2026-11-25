@@ -15,14 +15,20 @@ export async function getSettings(userId: string): Promise<SettingsRow> {
   return (await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1))[0];
 }
 
-export type AiConfig = { provider: ProviderId; apiKey: string; baseUrl: string; defaultModel: string | null };
+export type AiConfig = {
+  provider: ProviderId;
+  apiKey: string;
+  baseUrl: string;
+  defaultModel: string | null;
+  imageModel?: string | null;
+};
 
 export function aiConfigFrom(s: SettingsRow): AiConfig | null {
   const apiKey = decrypt(s.aiKeyEnc);
   if (!apiKey || !s.aiProvider) return null;
   const provider = s.aiProvider as ProviderId;
   if (!(provider in PROVIDERS)) return null;
-  return { provider, apiKey, baseUrl: resolveBase(provider, s.aiBaseUrl), defaultModel: s.defaultModel };
+  return { provider, apiKey, baseUrl: resolveBase(provider, s.aiBaseUrl), defaultModel: s.defaultModel, imageModel: s.imageModel };
 }
 
 export function e2bKeyFrom(s: SettingsRow): string | null {
@@ -38,6 +44,7 @@ export function publicSettings(s: SettingsRow) {
     aiProvider: provider,
     aiProviderLabel: provider ? PROVIDERS[provider].label : null,
     aiProviderMode: s.aiProviderMode,
+    imageModel: s.imageModel,
     aiBaseUrl: s.aiBaseUrl ?? "",
     defaultModel: s.defaultModel,
     hasE2bKey: !!s.e2bKeyEnc,

@@ -8,6 +8,7 @@ import { Icon, Spinner } from "../icons";
 import { cx } from "../ui";
 import { ArtifactCard, EmailDraftCard } from "./EmailDraftCard";
 import { LyricVideoCard } from "./LyricVideoCard";
+import { ImageCard, ModelCard } from "./ModelCard";
 
 export type LiveStep = {
   id: string;
@@ -383,6 +384,14 @@ export function AssistantBlock({
           a.kind === "lyric_video" ? (
             <div key={a.id} className="mt-3">
               <LyricVideoCard artifact={a} />
+            </div>
+          ) : a.kind === "model_3d" ? (
+            <div key={a.id} className="mt-3">
+              <ModelCard artifact={a} />
+            </div>
+          ) : a.kind === "image" ? (
+            <div key={a.id} className="mt-3">
+              <ImageCard artifact={a} />
             </div>
           ) : a.kind === "email_draft" || a.kind === "sent_email" || a.kind === "email_sending" ? (
             <div key={a.id} className="mt-3">

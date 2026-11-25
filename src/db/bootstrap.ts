@@ -168,6 +168,7 @@ const ALTER_COLUMNS: ColumnAlter[] = [
   { table: "user_settings", column: "ai_provider_mode", definition: "text default 'auto' not null" },
   { table: "user_settings", column: "ai_base_url", definition: "text" },
   { table: "user_settings", column: "default_model", definition: "text" },
+  { table: "user_settings", column: "image_model", definition: "text" },
   { table: "user_settings", column: "e2b_key_enc", definition: "text" },
   { table: "user_settings", column: "e2b_key_hint", definition: "text" },
   { table: "user_settings", column: "follow_mouse", definition: "boolean default true not null" },

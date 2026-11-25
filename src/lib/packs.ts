@@ -17,7 +17,7 @@ import type { Tool } from "./ai/llm";
  * new branch in the chat route.
  */
 
-export type PackId = "assets" | "game" | "motion" | "web" | "helpers";
+export type PackId = "assets" | "game" | "motion" | "web" | "models" | "helpers";
 
 export type Pack = {
   id: PackId;
@@ -80,6 +80,20 @@ const ASSET_TOOLS: Tool[] = [
         palette: { type: "array", items: { type: "string" }, description: "Hex colours to draw from, in order of importance." },
       },
       ["title", "kind", "count"],
+    ),
+  },
+  {
+    name: "generate_image",
+    description:
+      "Generate a real raster image with the account's own image model, and save it as an artifact the user can open. Use it for photographs, painted art, textures and anything that should not look like vector shapes. If no image model is configured the call says so and you should fall back to draw_asset, which needs no extra service.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "What the image is." },
+        prompt: { type: "string", description: "A full visual description: subject, framing, light, style, colours from the design brief." },
+        size: { type: "string", enum: ["1024x1024", "1536x1024", "1024x1536", "512x512"], description: "Defaults to square." },
+        negativePrompt: { type: "string", description: "What to avoid, if the provider supports it." },
+      },
+      ["title", "prompt"],
     ),
   },
   {
@@ -228,6 +242,27 @@ const WEB_TOOLS: Tool[] = [
   },
 ];
 
+/* ---------------------------------- models ---------------------------------- */
+
+const MODEL_TOOLS: Tool[] = [
+  {
+    name: "make_3d_model",
+    description:
+      "Build a real 3D model and save it as two artifacts: a Wavefront OBJ mesh you can open in any 3D editor, and a self-contained HTML viewer that orbits with the mouse. Works with no image or 3D service — the geometry is generated. Use it for props, terrain, simple characters and anything a game needs a mesh for.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "What the model is." },
+        kind: { type: "string", enum: ["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin"], description: "Which generator to use." },
+        detail: { type: "number", description: "1 (very low poly) to 5 (smoother). Defaults to 2." },
+        scale: { type: "number", description: "World size, 0.2-20. Defaults to 1." },
+        seed: { type: "number", description: "Any number; the same seed gives the same model." },
+        palette: { type: "array", items: { type: "string" }, description: "Body, structure, accent colours." },
+      },
+      ["title", "kind"],
+    ),
+  },
+];
+
 /* --------------------------------- helpers ---------------------------------- */
 
 const HELPER_TOOLS: Tool[] = [
@@ -264,7 +299,7 @@ export const PACKS: Pack[] = [
     title: "Assets",
     purpose: "Art direction, palettes, sprites, icons and SVG assets.",
     tools: ASSET_TOOLS,
-    signals: /\b(game|art|artwork|asset|sprite|tile|tileset|icon|logo|palette|colou?r|poster|character|pixel|illustration|illustrate|design|brand|mockup|thumbnail)\b/i,
+    signals: /\b(game|art|artwork|asset|sprite|tile|tileset|icon|logo|palette|colou?r|poster|character|pixel|illustration|illustrate|design|brand|mockup|thumbnail|image|images|picture|photo|photograph|render|drawing|painting|texture)\b/i,
   },
   {
     id: "game",
@@ -286,6 +321,13 @@ export const PACKS: Pack[] = [
     purpose: "Planning, building and auditing a self-contained website.",
     tools: WEB_TOOLS,
     signals: /\b(landing|website|web page|webpage|html|css|site|portfolio|storefront|dashboard|responsive)\b/i,
+  },
+  {
+    id: "models",
+    title: "3D models",
+    purpose: "Real meshes and viewers for props, terrain and simple characters.",
+    tools: MODEL_TOOLS,
+    signals: /\b(3d|model|mesh|obj|terrain|prop|sculpt|isometric|low[- ]poly|asset pack)\b/i,
   },
   {
     id: "helpers",

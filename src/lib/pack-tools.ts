@@ -26,6 +26,8 @@ export type PackToolContext = {
   spawn?: (input: { name: string; task: string; context?: string; artifactKind?: string }) => string;
   /** Check on Helpers, waiting at most `seconds`. */
   helperStatus?: (seconds: number) => Promise<Record<string, unknown>[]>;
+  /** The account's image provider, when one is configured. */
+  imageConfig?: { provider: import("./ai/providers").ProviderId; apiKey: string; baseUrl: string; imageModel?: string | null };
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…[truncated]` : s);
@@ -135,6 +137,37 @@ export async function runPackTool(name: string, a: Record<string, unknown>, ctx:
         output: saved
           ? `Asset sheet saved (artifact ${saved.id}). ${count} cells at ${tileSize}px.\n\n${JSON.stringify(sheet.cells.slice(0, 8), null, 1)}\n\nCall draw_asset once per cell you actually need.`
           : "The sheet could not be saved.",
+      };
+    }
+
+    case "generate_image": {
+      const title = String(a.title ?? "").trim();
+      const prompt = String(a.prompt ?? "").trim();
+      if (!title || !prompt) return { output: "An image needs a title and a prompt." };
+      if (!ctx.imageConfig) {
+        return {
+          output:
+            "No image model is configured for this account, so no picture was made. Use draw_asset instead — SVG needs no extra service — or tell the user an image model can be added in Settings.",
+        };
+      }
+      const { generateImage } = await import("@/lib/image-gen");
+      const result = await generateImage(
+        ctx.imageConfig,
+        {
+          prompt: prompt.slice(0, 4000),
+          size: (a.size as "1024x1024" | undefined) ?? "1024x1024",
+          negativePrompt: a.negativePrompt ? String(a.negativePrompt) : undefined,
+        },
+        ctx.signal,
+      );
+      if (!result.ok) return { output: `${result.reason}\n\nFall back to draw_asset for an SVG version.` };
+      const dataUrl = `data:${result.mime};base64,${result.data.toString("base64")}`;
+      const saved = await saveArtifact(ctx, title, "image", dataUrl);
+      return {
+        ...(saved ? { artifactId: saved.id } : {}),
+        output: saved
+          ? `Generated ${title} (artifact ${saved.id}) via ${result.via}, ${Math.round(result.data.length / 1024)} KB. It is a card in the chat now.`
+          : "The image was generated but could not be saved.",
       };
     }
 
@@ -328,6 +361,46 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
       if (parsed.overflowX) fixes.push("Remove the horizontal overflow at 390px.");
       return {
         output: `${JSON.stringify(parsed, null, 1)}\n\n${fixes.length ? `Fix these, then re-audit:\n- ${fixes.join("\n- ")}` : "No structural problems found. Check contrast by eye before calling it done."}`,
+      };
+    }
+
+    /* --------------------------------- models -------------------------------- */
+
+    case "make_3d_model": {
+      const { buildModel, viewerHtml } = await import("@/lib/model-gen");
+      const title = String(a.title ?? "Model").trim();
+      const kind = String(a.kind ?? "rock") as Parameters<typeof buildModel>[0]["kind"];
+      if (!["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin"].includes(kind)) {
+        return { output: "Pick a kind: tree, crystal, rock, pillar, spaceship, terrain, tower or coin." };
+      }
+      const palette = Array.isArray(a.palette) ? a.palette.map(String).slice(0, 3) : undefined;
+      const built = buildModel({
+        kind,
+        detail: Number(a.detail) || 2,
+        scale: Number(a.scale) || 1,
+        seed: Number(a.seed) || 1,
+      });
+      const obj = built.mesh.toObj(built.name);
+      const stats = built.mesh.stats();
+      const view = viewerHtml(title, obj, palette);
+      // Two artifacts, because they answer different questions: the OBJ is for
+      // whatever the user already uses, the viewer is for seeing it now.
+      const meshSaved = await saveArtifact(ctx, `${title} — mesh (.obj)`, "model_obj", obj);
+      const viewSaved = await saveArtifact(ctx, `${title} — 3D viewer`, "model_3d", view);
+      if (ctx.writeFile) {
+        await ctx.writeFile(`models/${slug(title)}.obj`, obj).catch(() => {});
+        await ctx.writeFile(`models/${slug(title)}.html`, view).catch(() => {});
+      }
+      return {
+        ...(viewSaved ? { artifactId: viewSaved.id } : {}),
+        output: [
+          `Built ${title}: ${stats.vertices} vertices, ${stats.faces} faces.`,
+          meshSaved ? `Mesh artifact: ${meshSaved.id}` : "",
+          viewSaved ? `Viewer artifact: ${viewSaved.id} — it opens as a card and orbits with the mouse.` : "",
+          ctx.writeFile ? `Also written to models/${slug(title)}.obj and .html on the computer.` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
       };
     }
 

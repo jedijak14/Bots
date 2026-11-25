@@ -225,6 +225,13 @@ export function buildToolset(opts: {
   packTools?: Tool[];
   /** The user message, used to pre-select a few library tools. */
   libraryQuery?: string;
+  /** The account's image provider, for generate_image. */
+  imageConfig?: {
+    provider: import("@/lib/ai/providers").ProviderId;
+    apiKey: string;
+    baseUrl: string;
+    imageModel?: string | null;
+  };
   turnId: string;
   /** Display name of the Bot, used when a Helper introduces itself. */
   botName?: string;
@@ -638,6 +645,7 @@ export function buildToolset(opts: {
           opts.onHelper?.(helper);
           return helper.id;
         },
+        imageConfig: opts.imageConfig,
         helperStatus: async (seconds) => {
           await waitForHelpers(opts.turnId, seconds, opts.signal);
           return helpersFor(opts.turnId).map((helper) => helperSummary(helper));
