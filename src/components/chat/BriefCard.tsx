@@ -32,6 +32,7 @@ export function BriefCard() {
   const [failed, setFailed] = useState(false);
   // Anchored once, when the data arrives, rather than read during render.
   const [now] = useState(() => Date.now());
+  const [done, setDone] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +56,23 @@ export function BriefCard() {
   const quiet = !brief.openGoals.length && !brief.working.length && !brief.recent.length;
   if (quiet && !brief.dueToday && !brief.overdue) return null;
 
+  async function finish(id: string) {
+    // Remove it from the list at once — the tick should feel instant — and put
+    // it back if the request did not take.
+    setDone((d) => [...d, id]);
+    try {
+      const res = await fetch(`/api/goals/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "done" }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      setDone((d) => d.filter((x) => x !== id));
+      app.toast("Could not update that goal.");
+    }
+  }
+
   const due = (iso: string | null) => {
     if (!iso) return null;
     const when = new Date(iso);
@@ -76,26 +94,43 @@ export function BriefCard() {
 
       {!!brief.openGoals.length && (
         <div className="mt-2.5 space-y-0.5">
-          {brief.openGoals.slice(0, 3).map((goal) => {
+          {brief.openGoals
+            .filter((g) => !done.includes(g.id))
+            .slice(0, 3)
+            .map((goal) => {
             const when = due(goal.dueAt);
             return (
-              <button
+              <div
                 key={goal.id}
-                onClick={() => app.openSettings("goals")}
-                className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[0.05]"
+                className="group flex items-center gap-2 rounded-lg pr-1 transition hover:bg-white/[0.05] focus-within:bg-white/[0.05]"
               >
-                <span
-                  aria-hidden
-                  className={cx(
-                    "size-1.5 shrink-0 rounded-full",
-                    when === "overdue" ? "bg-rose-400" : goal.status === "doing" ? "bg-[#7c9bff]" : "bg-neutral-600",
+                <button
+                  onClick={() => app.openSettings("goals")}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-1.5 text-left"
+                >
+                  <span
+                    aria-hidden
+                    className={cx(
+                      "size-1.5 shrink-0 rounded-full",
+                      when === "overdue" ? "bg-rose-400" : goal.status === "doing" ? "bg-[#7c9bff]" : "bg-neutral-600",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-neutral-300">{goal.title}</span>
+                  {when && (
+                    <span className={cx("shrink-0 text-[11px] group-focus-within:hidden group-hover:hidden", when === "overdue" ? "text-rose-300/90" : "text-neutral-600")}>{when}</span>
                   )}
-                />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-neutral-300">{goal.title}</span>
-                {when && (
-                  <span className={cx("shrink-0 text-[11px]", when === "overdue" ? "text-rose-300/90" : "text-neutral-600")}>{when}</span>
-                )}
-              </button>
+                </button>
+                {/* Closing a loop is the one action an assistant should be able
+                    to finish for you, and it belongs next to the thing. */}
+                <button
+                  aria-label={`Mark "${goal.title}" done`}
+                  title="Mark done"
+                  onClick={() => void finish(goal.id)}
+                  className="grid size-6 shrink-0 place-items-center rounded-full text-neutral-600 opacity-0 transition hover:bg-white/10 hover:text-emerald-300 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                >
+                  <Icon name="check" size={12} />
+                </button>
+              </div>
             );
           })}
         </div>
