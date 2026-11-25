@@ -10,7 +10,7 @@ import { getConnectionToken } from "@/lib/connectors";
 import { TOOL_CONNECTOR } from "@/lib/skill-permissions";
 import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } from "@/lib/sandbox";
 import { runLibraryTool, runPackTool } from "@/lib/pack-tools";
-import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary } from "@/lib/tool-library";
+import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary, WEAK_MATCH_SCORE } from "@/lib/tool-library";
 import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
 
 const obj = (properties: Record<string, unknown>, required: string[]) => ({
@@ -589,10 +589,17 @@ export function buildToolset(opts: {
       if (!hits.length) {
         return { output: "Nothing in the library matches that. Build it yourself with the tools you have." };
       }
+      // A weak hit is reported as weak. Without this the model ran the
+      // top-scoring tool regardless of score, which is how "summarize this
+      // document" ended up invoking a tool about elevation rules: the word
+      // "document" was shared, the job was not. Telling it plainly that the
+      // match is thin lets it decide to build the thing instead.
+      const weak = hits[0].score <= WEAK_MATCH_SCORE;
+      const list = hits.map((hit) => `${hit.name} — ${hit.summary} (call run_tool with this name)`).join("\n");
       return {
-        output: hits
-          .map((hit) => `${hit.name} — ${hit.summary} (call run_tool with this name)`)
-          .join("\n"),
+        output: weak
+          ? `These are only loose matches — the library may not have a tool for exactly "${query}", so check the summary before running one, and build it yourself if none fits:\n${list}`
+          : list,
       };
     }
     if (name === "run_tool") {

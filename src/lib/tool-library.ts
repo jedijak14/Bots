@@ -168,7 +168,7 @@ const DESIGN_TOPICS: Array<{ key: string; label: string; words: string[] }> = [
   { key: "motion", label: "motion rules", words: ["motion", "easing", "duration", "animation"] },
   { key: "contrast", label: "a contrast check", words: ["contrast", "accessibility", "wcag", "a11y"] },
   { key: "iconography", label: "an iconography rule", words: ["icon", "iconography", "stroke"] },
-  { key: "voice", label: "a voice and tone guide", words: ["voice", "tone", "copy", "writing"] },
+  { key: "voice", label: "a voice and tone guide", words: ["brand voice", "writing style", "copywriting"] },
 ];
 
 const DATA_JOBS: Array<{ key: string; label: string; words: string[] }> = [
@@ -295,7 +295,9 @@ const INTEGRATIONS: Array<{ key: string; label: string; words: string[] }> = [
   { key: "github", label: "GitHub", words: ["github", "repo", "pull request"] },
   { key: "vercel", label: "Vercel", words: ["vercel", "deploy", "preview"] },
   { key: "gmail", label: "Gmail", words: ["gmail", "inbox", "email"] },
-  { key: "notion", label: "Notion", words: ["notion", "page", "database"] },
+  // "page" alone belongs to landing pages and web pages far more often than to
+  // Notion. Notion's own name and "workspace" are unambiguous.
+  { key: "notion", label: "Notion", words: ["notion", "workspace", "notion doc"] },
   { key: "spotify", label: "Spotify", words: ["spotify", "track", "playlist"] },
   { key: "youtube", label: "YouTube", words: ["youtube", "video", "channel"] },
   { key: "slack", label: "Slack", words: ["slack", "message", "channel"] },
@@ -340,7 +342,10 @@ const AUDIENCES: Array<{ key: string; label: string; words: string[] }> = [
 
 const GAME_MODES: Array<{ key: string; label: string; words: string[] }> = [
   { key: "2d-topdown", label: "2D top-down", words: ["top down", "topdown", "2d"] },
-  { key: "2d-side", label: "2D side-on", words: ["side", "platformer", "sidescroll"] },
+  // "platformer" is a genre, not a camera. Keeping it in the mode words meant
+  // build_game_card_2d_side advertised itself as a platformer, so asking for a
+  // platformer was answered with a card game.
+  { key: "2d-side", label: "2D side-on", words: ["side", "sidescroll", "side on"] },
   { key: "3d", label: "3D", words: ["3d", "three", "perspective"] },
   { key: "isometric", label: "isometric", words: ["isometric", "iso", "tiles"] },
   { key: "first-person", label: "first person", words: ["first person", "fps", "pov"] },
@@ -360,7 +365,12 @@ function buildLibrary(): LibraryTool[] {
         makeTool(
           `${verb.key}_${subject.key.replace(/-/g, "_")}`,
           "project",
-          [...subject.words, ...verb.words],
+          // Only the subject goes in the searchable keywords. The verb is
+          // already encoded in the tool's action and its first name segment, so
+          // repeating "create", "make", "new", "build", "start" here made every
+          // one of the thirty subjects match the word "build" — which is how
+          // "build a svelte site" returned three unrelated *_site tools.
+          [...subject.words],
           `${verb.label} ${subject.label}.`,
           verb.action,
           { medium: subject.key, ...(verb.key === "check" ? {} : { verb: verb.key }) },
@@ -496,10 +506,14 @@ function buildLibrary(): LibraryTool[] {
         makeTool(
           `${verb.key}_${stack.key.replace(/-/g, "_")}`,
           "code",
-          [...stack.words, ...verb.words],
+          [...stack.words],
           `${verb.label} ${stack.label}.`,
           "code_task",
           { stack: stack.key, verb: verb.key },
+          // The stack name is what makes scaffold_svelte different from
+          // scaffold_react. Without it the four verbs of a stack were
+          // indistinguishable from every other code task.
+          stack.words,
         ),
       );
     }
@@ -574,10 +588,14 @@ function buildLibrary(): LibraryTool[] {
         makeTool(
           `build_game_${subject.key.replace(/-/g, "_")}_${mode.key.replace(/-/g, "_")}`,
           "project",
-          [...subject.words.slice(0, 2), ...mode.words],
+          // The subject is the subject. Only one of its words is taken, because
+          // a second word (often a near-synonym like "card"/"deck") made two
+          // different subjects tie for the same query.
+          [...subject.words.slice(0, 1), ...mode.words],
           `Build ${subject.label} as a ${mode.label} game.`,
           "create_project",
           { medium: subject.key, mode: mode.key, kind: "game" },
+          subject.words,
         ),
       );
     }
@@ -616,6 +634,109 @@ function buildLibrary(): LibraryTool[] {
     }
   }
 
+  // Language work: the reading-and-writing jobs people ask for by name, none of
+  // which the generated families covered. "transcribe" and "translate" used to
+  // search the whole library, match nothing, and fall through to accessibility
+  // checkers, which is worse than silence.
+  const LANGUAGE_JOBS: Array<{ key: string; label: string; words: string[] }> = [
+    { key: "transcribe", label: "an audio or video file into text", words: ["transcribe", "transcription", "caption", "subtitles", "srt", "speech to text"] },
+    { key: "translate", label: "text into another language", words: ["translate", "translation", "localise", "localize", "language"] },
+    { key: "proofread", label: "correct grammar and spelling", words: ["proofread", "grammar", "spelling", "typo", "copy edit"] },
+    { key: "tone", label: "rewrite in a different tone", words: ["tone", "rewrite", "friendly", "formal", "concise"] },
+    { key: "extract", label: "pull structured data out of text", words: ["extract", "parse", "entities", "key value", "structured"] },
+    { key: "ocr", label: "read text out of an image or PDF", words: ["ocr", "scan", "screenshot", "read text", "pdf text"] },
+  ];
+  for (const job of LANGUAGE_JOBS) {
+    out.push(
+      makeTool(
+        `${job.key}_text`,
+        "data",
+        job.words,
+        `${job.label[0].toUpperCase()}${job.label.slice(1)}.`,
+        "language_job",
+        { job: job.key },
+        [job.key],
+      ),
+    );
+  }
+
+  // Audio production. The library had music players and lyric videos, but
+  // nothing for the job people most often ask for by name — turning a script or
+  // a set of notes into a spoken piece. A podcast is not a music player.
+  const AUDIO_JOBS: Array<{ key: string; label: string; words: string[] }> = [
+    { key: "podcast", label: "a podcast episode", words: ["podcast", "episode", "show notes", "spoken"] },
+    { key: "voiceover", label: "a voiceover", words: ["voiceover", "voice over", "narration", "read aloud"] },
+    { key: "audiobook", label: "an audiobook chapter", words: ["audiobook", "chapter", "narrate"] },
+    { key: "sound-design", label: "a sound design plan", words: ["sound design", "sfx", "audio cues", "foley"] },
+  ];
+  for (const job of AUDIO_JOBS) {
+    for (const verb of [
+      { key: "write", label: "Write", words: ["write", "script"] },
+      { key: "produce", label: "Produce", words: ["produce", "make", "generate"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${job.key.replace(/-/g, "_")}`,
+          "media",
+          [...job.words, verb.words[1]],
+          `${verb.label} ${job.label}.`,
+          "audio_job",
+          { job: job.key, verb: verb.key },
+          job.words,
+        ),
+      );
+    }
+  }
+
+  // A game with no genre named. Every game tool in the library is a subject ×
+  // camera combination, so "make a game" had nothing to match and returned the
+  // first alphabetical combination — a card game, whatever the user wanted.
+  // These are the honest general entry points: pick a genre, or ask.
+  for (const verb of [
+    { key: "create", label: "Create", words: ["create", "make", "build", "new"] },
+    { key: "brief", label: "Plan", words: ["plan", "brief", "spec", "outline"] },
+  ]) {
+    out.push(
+      makeTool(
+        `${verb.key}_a_game`,
+        "project",
+        ["game", "gameplay", "arcade", "video game"],
+        `${verb.label} a game, choosing a genre that suits what the user asked for.`,
+        "create_project",
+        { medium: "game", kind: "game", choose: "genre" },
+        ["game", "gameplay", "arcade"],
+      ),
+    );
+  }
+
+  // Test writing as its own family. "unit test" previously matched a quiz
+  // because "test" is the only shared word and the code family is filed under
+  // languages the query never named.
+  const TEST_KINDS: Array<{ key: string; label: string; words: string[] }> = [
+    { key: "unit", label: "unit tests", words: ["unit test", "unit", "jest", "vitest", "pytest"] },
+    { key: "integration", label: "integration tests", words: ["integration", "end to end", "e2e"] },
+    { key: "snapshot", label: "snapshot tests", words: ["snapshot", "golden", "regression"] },
+    { key: "coverage", label: "the coverage report", words: ["coverage", "uncovered", "branch"] },
+  ];
+  for (const kind of TEST_KINDS) {
+    for (const verb of [
+      { key: "write", label: "Write", words: ["write"] },
+      { key: "run", label: "Run", words: ["run"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${kind.key}_tests`,
+          "code",
+          [...kind.words, verb.words[0]],
+          `${verb.label} ${kind.label}.`,
+          "code_task",
+          { task: "test", kind: kind.key, verb: verb.key },
+          kind.words,
+        ),
+      );
+    }
+  }
+
   return out;
 }
 
@@ -625,8 +746,13 @@ export const LIBRARY_SIZE = TOOL_LIBRARY.length;
 
 export type LibraryMatch = LibraryTool & { score: number };
 
+// "make", "build" and "create" used to sit in this list, which meant they were
+// stripped before anything could read them — the intent scorer never saw the
+// verb, and the ranking tiebreaker could not prefer a tool named for it. They
+// are stop words in prose, but here they are the whole request: "make a react
+// app" and "react app" are not the same question. Only genuine filler remains.
 const STOP = new Set(
-  "a an the and or but if then than that this these those i you we they it is are was were be been being do does did doing have has had having to of in on at for with about from as by into over under again more most some such only own same so too very can will just should now make build create please me my your our more lot really want need help".split(
+  "a an the and or but if then than that this these those i you we they it is are was were be been being do does did doing have has had having to of in on at for with about from as by into over under again more most some such only own same so too very can will just should now please me my your our more lot really want need help".split(
     /\s+/,
   ),
 );
@@ -676,11 +802,23 @@ export function searchToolLibrary(query: string, limit = 40): LibraryMatch[] {
   const wanted = new Set(words);
   const intents = intentActions(query);
   const scored: LibraryMatch[] = [];
+  // Collected separately so they can still be offered when nothing meaningful
+  // matched — a weak suggestion is better than "no such tool" when the library
+  // genuinely has one behind a shared verb.
+  const verbOnly: LibraryMatch[] = [];
   for (const tool of TOOL_LIBRARY) {
     let score = 0;
     // Subject overlap: what the thing is about.
+    //
+    // A multi-word keyword ("business card", "music player") is a phrase, and a
+    // phrase that appears in the request is far stronger evidence than the same
+    // words scattered: "make a card game" matched generate_business_card
+    // because both contain "card", and beat the actual card-game tool.
+    const q = ` ${tokens(query).join(" ")} `;
     for (const keyword of tool.keywords) {
-      for (const part of tokens(keyword)) {
+      const parts = tokens(keyword);
+      if (parts.length > 1 && q.includes(` ${parts.join(" ")} `)) score += 12;
+      for (const part of parts) {
         // A keyword the user did not write should not dominate the score.
         if (wanted.has(part)) score += 2;
       }
@@ -690,19 +828,158 @@ export function searchToolLibrary(query: string, limit = 40): LibraryMatch[] {
     // variants score identically and the order is alphabetical noise.
     for (const word of tool.specific) {
       for (const part of tokens(word)) {
-        if (wanted.has(part)) score += 8;
+        // 8 was too weak against a name match plus an intent boost: "svelte"
+        // is specific to scaffold_svelte, yet three *_site tools won on the
+        // strength of the word "site" alone.
+        if (wanted.has(part)) score += 14;
       }
     }
     for (const part of tokens(tool.name)) {
       if (wanted.has(part) && part.length > 3) score += 2;
     }
-    // Intent: what they want done with it.
+    // A match on the verb alone is not a match on the tool.
+    //
+    // Searching "database schema" used to return connect_notion / read_notion /
+    // write_notion: every integration shares the words "connect", "read" and
+    // "write", Notion's own keywords were absent from the query, and a shared
+    // verb was enough to rank. Offering Notion to someone who asked for a
+    // database is worse than offering nothing, because it reads as confident.
+    // So a tool that overlaps only on words every sibling also has is held back
+    // — offered only when nothing with a real subject matched at all.
+    if (score > 0 && !sharesSubject(tool, wanted)) {
+      verbOnly.push({ ...tool, score });
+      continue;
+    }
+    // Intent: what they want done with it. Capped so a generic verb cannot
+    // outweigh a subject: "create" boosts create_project, produce and code_task
+    // alike, and without a ceiling "build a svelte site" ranked three unrelated
+    // "create_*_site" tools above anything mentioning Svelte.
     const boost = intents.get(tool.action) ?? 0;
-    if (boost && score > 0) score += boost;
-    if (score > 0) scored.push({ ...tool, score });
+    if (boost && score > 0) score += Math.min(boost, 3);
+    if (score > 0) {
+      // Searching "podcast" scored nothing above zero and fell through to a
+      // verb match, answering with accessibility checkers. A library that
+      // cannot answer should say so; "no match" makes find_tools tell the model
+      // to build it instead, which is the truth.
+      scored.push({ ...tool, score });
+    }
   }
-  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  return scored.slice(0, limit);
+  // Ties were broken alphabetically, so asking to *create* a database schema
+  // ranked debug_supabase above scaffold_supabase — all four supabase tools
+  // share the subject words and scored identically, and "debug" sorts first.
+  // The verb the user chose is the tiebreaker: prefer the tool whose own name
+  // opens with the action they asked for.
+  const wantedVerbs = tokens(query).filter((w) => LEADING_VERBS.has(w));
+  // Stacks and integrations come in four fixed verbs; two of them are spelled
+  // differently in the tool name than in a request ("create" → scaffold,
+  // "create" → integrate). Without this map, "create a database schema" still
+  // ranked debug_supabase first because no tool is called create_supabase.
+  const SYNONYM: Record<string, string[]> = {
+    create: ["scaffold", "generate", "write", "produce", "integrate"],
+    start: ["scaffold", "produce"],
+    make: ["scaffold", "generate", "write", "produce"],
+    build: ["scaffold", "create", "produce", "generate"],
+    set: ["scaffold", "integrate"],
+    fix: ["debug", "optimise"],
+    improve: ["optimise"],
+    translate: ["translate"],
+    summarise: ["summarise"],
+  };
+  // Ranked rather than a set: when a request says "create", the tool that
+  // starts something (scaffold) is a better answer than one that connects an
+  // existing service (integrate), even though both are legal readings of the
+  // word. The index in the expanded list is the rank.
+  const headRank = new Map<string, number>();
+  for (const v of wantedVerbs) {
+    [v, ...(SYNONYM[v] ?? [])].forEach((h, i) => {
+      const prior = headRank.get(h);
+      if (prior === undefined || i < prior) headRank.set(h, i);
+    });
+  }
+  const verbRank = (tool: LibraryTool) => {
+    const head = tokens(tool.name)[0] ?? "";
+    return headRank.get(head) ?? 99;
+  };
+  // The verb decides only among tools that are already plausible.
+  //
+  // Applied to the whole list, it was actively harmful: "build a music player"
+  // put every build_game_* tool above create_music_player, because they open
+  // with the requested word "build" while the right answer opens with "create"
+  // — a perfect verb on the wrong subject beat a synonym on the right one, 7
+  // points to 36. So tools are bucketed by whether they *share the subject* of
+  // the strongest match, and the verb only orders inside a bucket.
+  const top = scored.length ? scored[0].score : 0;
+  const strong = (t: LibraryMatch) => (t.score >= top * 0.6 ? 0 : 1);
+  // A general tool (create_a_game) exists precisely for requests that name no
+  // genre — so it must be *demoted* the moment a genre is named, not merely
+  // out-scored. It ties with the genre combos (both match "game", both get the
+  // create boost) and then won on the verb tiebreak, answering "make a card
+  // game" with a tool that does not know it is a card game.
+  const generic = (t: LibraryMatch) => (/^(create|brief)_a_/.test(t.name) ? 1 : 0);
+  // Only the general tool wins when the query is a bare subject with no genre,
+  // camera or subject word attached — otherwise "make a card game" would be
+  // answered by the same generic tool it does not need.
+  const bareSubject = ![...GENRE_WORDS].some((w) => wanted.has(w));
+  scored.sort(
+    (a, b) =>
+      strong(a) - strong(b) ||
+      // Both ways round: a bare "game" belongs to the general tool, and a named
+      // genre ("card game") belongs to the genre tool. The general tool is
+      // never the right answer once a genre is named.
+      (bareSubject ? generic(b) - generic(a) : generic(a) - generic(b)) ||
+      verbRank(a) - verbRank(b) ||
+      b.score - a.score ||
+      a.name.localeCompare(b.name),
+  );
+  if (scored.length) return scored.slice(0, limit);
+  verbOnly.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return verbOnly.slice(0, limit);
+}
+
+/**
+ * Does this tool overlap the query on anything more than a shared verb?
+ *
+ * "Subject" here means: a word from the tool's own keywords that is not a
+ * generic action, or one of its `specific` words, or a word of its name. Those
+ * are what distinguish write_readme_for_developer from read_gmail; "write" does
+ * not. The vocabulary below is deliberately the same one the intent scorer
+ * boosts, so a word cannot count as an intent in one place and a subject in the
+ * other.
+ */
+const GENERIC_VERBS = new Set([
+  "write", "read", "create", "make", "draw", "plan", "generate", "brief", "check",
+  "search", "find", "summarise", "summarize", "compare", "define", "audit", "apply",
+  "document", "transform", "report", "analyse", "analyze", "connect", "send",
+  "fetch", "list", "build", "add", "review", "scaffold", "integrate", "debug",
+  "optimise", "optimize", "fix", "explain", "test", "set", "pick", "use", "record",
+  "choose", "adopt", "get", "link", "post", "publish", "load", "open", "convert",
+  "clean", "count", "inspect", "visit", "call", "close", "rename", "delete",
+]);
+
+/** Words that name a kind of game, so the generic game tool must stand down. */
+const GENRE_WORDS = new Set([
+  "card", "puzzle", "platformer", "shooter", "idle", "runner", "rpg", "racing",
+  "strategy", "tactics", "horror", "sim", "simulation", "sports", "trivia",
+  "card", "deck", "fighter", "pong", "snake", "memory", "word",
+]);
+
+/** Action words that may legitimately open a tool name, for tiebreaking. */
+const LEADING_VERBS = new Set([
+  "write", "read", "create", "make", "build", "scaffold", "generate", "draw",
+  "plan", "brief", "check", "audit", "review", "run", "add", "connect",
+  "integrate", "debug", "optimise", "fix", "explain", "test", "search",
+  "summarise", "compare", "define", "apply", "document", "transform", "report",
+  "analyse", "transcribe", "translate", "proofread", "extract", "ocr", "produce",
+]);
+
+function sharesSubject(tool: LibraryTool, wanted: Set<string>): boolean {
+  const subjectHit = (words: string[]) =>
+    words.some((w) => tokens(w).some((part) => wanted.has(part) && !GENERIC_VERBS.has(part)));
+  if (subjectHit(tool.keywords)) return true;
+  if (subjectHit(tool.specific)) return true;
+  // A distinctive part of the name counts, but only a long one: short fragments
+  // like "for" or "the" from `write_readme_for_developer` mean nothing.
+  return tokens(tool.name).some((part) => wanted.has(part) && part.length > 3 && !GENERIC_VERBS.has(part));
 }
 
 /** The meta-tools that make the library reachable without loading all of it. */
@@ -737,6 +1014,16 @@ export const LIBRARY_META_TOOLS: Tool[] = [
     },
   },
 ];
+
+/**
+ * The best score any tool can reach without a real subject overlap.
+ *
+ * `sharesSubject` already keeps verb-only matches out of the main list, so a
+ * score at or below this ceiling means the match is a keyword coincidence
+ * rather than a tool that does the job. `find_tools` uses it to warn the model
+ * instead of letting it run something plausible and wrong.
+ */
+export const WEAK_MATCH_SCORE = 5;
 
 export function libraryToolByName(name: string): LibraryTool | undefined {
   return TOOL_LIBRARY.find((tool) => tool.name === name);

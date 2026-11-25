@@ -759,9 +759,64 @@ export async function runLibraryTool(
   } else if (tool.action === "data_job") {
     brief.instructions.push(`Handle ${preset.job ?? "the data"}: ${preset.verb ?? "process"} it.`, "Work from real input the user provided. If there is none, ask for it rather than inventing rows.");
     brief.next = "run_command (for parsing) or save_artifact (for a report)";
+  } else if (tool.action === "audio_job") {
+    const job = preset.job ?? "podcast";
+    const verb = preset.verb ?? "produce";
+    // Audio is the one output that cannot be faked with text. Say exactly how
+    // to make a real file, and name the fallback when there is no computer:
+    // a script and a shot list are useful, a claim that audio "was generated"
+    // is not.
+    brief.instructions.push(
+      verb === "write"
+        ? `Write ${preset.job ? job.replace(/-/g, " ") : "the piece"} as a full script: speaker labels, pauses, and where music or effects sit.`
+        : `Produce a real audio file. On a computer: pip install gtts, then python3 -c "from gtts import gTTS; gTTS(open('script.txt').read()).save('out.mp3')". For anything with music or effects, use ffmpeg to mix.`,
+      verb === "write" ? "Then produce it with the same tool's produce action, or hand the script over." : "Save the finished file with save_artifact as kind \"audio\" — a path to a file on a computer is not an artifact.",
+      job === "podcast"
+        ? "A podcast needs: an episode title, the script, and show notes that summarise it with timestamps."
+        : job === "sound-design"
+          ? "List every cue with the moment it lands, the sound, and why it is there."
+          : "Keep the pacing natural: short sentences, no stage directions read aloud unless asked.",
+      "If you have no computer and no audio tool, say so and deliver the script. Do not describe audio you did not generate.",
+    );
+    brief.next = verb === "write" ? "run_tool with the produce action, or save_artifact the script" : "run_command to synthesise, then save_artifact the file";
   } else if (tool.action === "code_task") {
     brief.instructions.push(`Do ${preset.task ?? preset.verb ?? "the task"} in ${preset.language ?? preset.stack ?? "the code"}.`, "Write real, runnable code. No TODOs where the work is obvious.");
     brief.next = "write_file, then run it";
+  } else if (tool.action === "language_job") {
+    const job = preset.job ?? "translate";
+    // Each of these needs a concrete tool, not a philosophical description. The
+    // point of naming them is to stop a model from "translating" by rewriting
+    // the text in English and calling it done.
+    const HOW: Record<string, string[]> = {
+      transcribe: [
+        "Transcribe the real audio. On a computer run whisper: `pip install -q openai-whisper` then `whisper input.mp3 --output_format srt`.",
+        "Without a computer, say plainly that a computer is required for audio — do not guess at what was said.",
+        "Return the transcript with timestamps, and save the .srt with save_artifact.",
+      ],
+      translate: [
+        "Translate the actual text the user supplied, in full. Do not summarise it.",
+        "Preserve meaning, register and formatting; leave code, names and URLs untouched unless asked.",
+        "If the target language is unstated, ask which one rather than picking.",
+      ],
+      proofread: [
+        "Return the corrected text, then a short list of what changed and why.",
+        "Change only grammar, spelling and punctuation unless the user asked for editing.",
+      ],
+      tone: [
+        "Rewrite in the requested tone without adding or dropping facts.",
+        "Show the rewrite, not a description of the rewrite.",
+      ],
+      extract: [
+        "Extract into a real structure (JSON or a table) with named fields.",
+        "Never invent a value that is not in the source; use null and say which fields were absent.",
+      ],
+      ocr: [
+        "Read the text from the image or PDF. On a computer use `tesseract input.png stdout` (apt: tesseract-ocr).",
+        "Report unreadable regions honestly instead of filling them in.",
+      ],
+    };
+    brief.instructions.push(`Job: ${job}.`, ...(HOW[job] ?? []));
+    brief.next = job === "transcribe" || job === "ocr" ? "run_command, then save_artifact" : "save_artifact (the finished text)";
   } else if (tool.action === "integrate") {
     brief.instructions.push(`Integrate ${preset.service ?? "the service"}: ${preset.verb ?? "connect"}.`, "This deployment supports Google, GitHub, Notion, Vercel and Spotify connections. For anything else, build the integration to call its API directly and say what credentials it needs.");
     brief.next = "save_artifact or the connection tools";
