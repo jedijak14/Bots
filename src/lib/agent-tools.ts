@@ -192,6 +192,92 @@ const CALC_TOOL: Tool = {
 };
 
 /**
+ * Exact work, as tools.
+ *
+ * These are the questions a language model answers with a plausible guess:
+ * how many miles that is, what date 45 days from now lands on, how many words
+ * are in a draft, what a spreadsheet's column adds up to. Each one is a real
+ * calculation with no model in the loop, so the answer is the answer.
+ */
+const EXACT_TOOLS: Tool[] = [
+  {
+    name: "convert_units",
+    description:
+      "Convert between units exactly. Length, mass, volume, area, speed, data and time all convert, and temperature converts between c, f and k. Use it instead of estimating: 12 km is 7.456454 miles, not 'about 7.5'. Works with no computer.",
+    parameters: obj(
+      {
+        amount: { type: "number", description: "How much, e.g. 12." },
+        from: { type: "string", description: "Unit to convert from, e.g. km, lb, GiB, c, mph." },
+        to: { type: "string", description: "Unit to convert to, e.g. mi, kg, MB, f, km/h." },
+      },
+      ["amount", "from", "to"],
+    ),
+  },
+  {
+    name: "date_math",
+    description:
+      "Work out dates exactly: which weekday a date is, the span between two dates in days, weeks and business days, and what date N days, months or years later is. Month arithmetic clamps to the end of the month, so 31 January plus one month is 28 February. Works with no computer.",
+    parameters: obj(
+      {
+        date: { type: "string", description: "The starting date as YYYY-MM-DD." },
+        compare: { type: "string", description: "Optional second date, YYYY-MM-DD, to measure from the first." },
+        addDays: { type: "number", description: "Days to add; negative goes backwards." },
+        addMonths: { type: "number", description: "Months to add." },
+        addYears: { type: "number", description: "Years to add." },
+      },
+      ["date"],
+    ),
+  },
+  {
+    name: "analyze_text",
+    description:
+      "Measure a piece of writing: characters, words, sentences, paragraphs, reading time, the most-used words, and every email address, URL and number in it. Use it for word counts and when someone asks whether something fits a limit. Works with no computer.",
+    parameters: obj({ text: { type: "string", description: "The text to measure." } }, ["text"]),
+  },
+  {
+    name: "summarize_table",
+    description:
+      "Read a CSV table and report what is in it: the columns, how many rows, the min, max, sum and mean of every numeric column, how many cells are empty, and whether any rows are duplicates. Use it on exported data instead of reading the CSV by eye. Works with no computer.",
+    parameters: obj(
+      {
+        csv: { type: "string", description: "The CSV, with a header row." },
+        delimiter: { type: "string", description: "Column separator if it is not a comma, e.g. ; or \t." },
+      },
+      ["csv"],
+    ),
+  },
+  {
+    name: "json_query",
+    description:
+      "Read one value out of a JSON document by path, e.g. user.tags[1], or list the top-level keys so you can see what is there. Use it on API responses too long to read whole. Works with no computer.",
+    parameters: obj(
+      {
+        json: { type: "string", description: "The JSON text." },
+        path: { type: "string", description: "Dot path with optional [index], e.g. data.items[0].name. Leave empty with list true." },
+        list: { type: "boolean", description: "True to list the top-level keys instead of reading a path." },
+      },
+      ["json"],
+    ),
+  },
+  {
+    name: "transform_text",
+    description:
+      "Change text in one exact way: slug, kebab, snake, camel, title, upper, lower, sentence, trim, dedupe-lines, sort-lines, base64, unbase64, urlencode or urldecode. Use it instead of hand-editing strings, which is where quoting and case mistakes come from. Works with no computer.",
+    parameters: obj(
+      {
+        text: { type: "string", description: "The text to transform." },
+        op: {
+          type: "string",
+          enum: ["slug", "kebab", "snake", "camel", "title", "upper", "lower", "sentence", "trim", "dedupe-lines", "sort-lines", "base64", "unbase64", "urlencode", "urldecode"],
+          description: "Which transformation.",
+        },
+      },
+      ["text", "op"],
+    ),
+  },
+];
+
+/**
  * The studios, as tools.
  *
  * Both are pure data: the Bot edits a timeline and the browser draws or plays
@@ -839,15 +925,15 @@ export function buildToolset(opts: {
     // one shares a name with a real implementation, the stub wins by appearing
     // later in the schema, and the user gets "search_web is ready to run" for a
     // simple web search. A stub is never worth a name that is already taken.
-    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
+    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
   // With a desktop, `web_search` and `fetch_page` do this job inside the
   // sandbox. Without one these are the only way to read the web, so the two
   // sets are never both in the schema — a model choosing between `web_search`
   // and `search_web` would waste a step working out the difference.
   const webTools = e2bKey ? [] : WEB_TOOLS;
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -886,6 +972,18 @@ export function buildToolset(opts: {
         return `Calculated ${clip(s("expression"), 50)}`;
       case "check_code":
         return `Checked the ${clip(s("kind"), 10)}`;
+      case "convert_units":
+        return `Converted ${clip(s("amount"), 12)} ${clip(s("from"), 8)} to ${clip(s("to"), 8)}`;
+      case "date_math":
+        return s("compare") ? `Measured ${clip(s("date"), 12)} to ${clip(s("compare"), 12)}` : `Worked out dates from ${clip(s("date"), 12)}`;
+      case "analyze_text":
+        return `Measured ${clip(s("text"), 40)}`;
+      case "summarize_table":
+        return `Summarised a ${String(a.csv ?? "").split("\n").length}-line table`;
+      case "json_query":
+        return s("path") ? `Read ${clip(s("path"), 40)} from JSON` : "Looked at the shape of a JSON document";
+      case "transform_text":
+        return `Ran ${clip(s("op"), 16)} on text`;
       case "video_studio":
         return `Opened the video project “${clip(s("title"), 50)}”`;
       case "video_add":
@@ -1231,7 +1329,7 @@ export function buildToolset(opts: {
     // This runs before the handlers below, so a library stub called `look_up`
     // would swallow the real one. The filter above already keeps such names out
     // of the schema; this guards the ordering as well.
-    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS].some((t) => t.name === name);
+    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS].some((t) => t.name === name);
     if (!isRealTool && opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
       const tool = libraryToolByName(name);
       if (tool) {
@@ -1328,6 +1426,75 @@ export function buildToolset(opts: {
       } catch (e) {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
+    }
+    if (name === "convert_units") {
+      const { convertUnits, tidy } = await import("@/lib/utilities");
+      const result = convertUnits(Number(a.amount), String(a.from ?? ""), String(a.to ?? ""));
+      if ("error" in result) return { output: result.error };
+      return {
+        output: `${tidy(Number(a.amount))} ${result.from} = ${tidy(result.value)} ${result.to}${result.family === "temperature" ? " (temperature is affine, so this is not a simple ratio)" : ""}`,
+      };
+    }
+    if (name === "date_math") {
+      const { dateMath } = await import("@/lib/utilities");
+      const result = dateMath({
+        date: String(a.date ?? ""),
+        ...(a.compare ? { compare: String(a.compare) } : {}),
+        ...(a.addDays !== undefined && a.addDays !== "" ? { addDays: Number(a.addDays) } : {}),
+        ...(a.addMonths !== undefined && a.addMonths !== "" ? { addMonths: Number(a.addMonths) } : {}),
+        ...(a.addYears !== undefined && a.addYears !== "" ? { addYears: Number(a.addYears) } : {}),
+      });
+      if ("error" in result) return { output: result.error };
+      if (result.kind === "weekday") return { output: `${result.date} is a ${result.weekday}.` };
+      if (result.kind === "between") {
+        const direction = result.days < 0 ? "before" : "after";
+        return {
+          output: `${result.to} is ${Math.abs(result.days)} days ${direction} ${result.from} — ${Math.abs(result.weeks)} weeks, or ${Math.abs(result.businessDays)} business days.`,
+        };
+      }
+      return { output: `${result.from} plus the offset is ${result.to}, a ${result.weekday} (${result.days} days).` };
+    }
+    if (name === "analyze_text") {
+      const { analyseText } = await import("@/lib/utilities");
+      const text = String(a.text ?? "");
+      if (!text.trim()) return { output: "There is no text to measure." };
+      const s2 = analyseText(text);
+      return {
+        output: [
+          `${s2.words} words, ${s2.characters} characters (${s2.charactersNoSpaces} without spaces), ${s2.sentences} sentences, ${s2.paragraphs} paragraphs.`,
+          `About ${s2.readingMinutes} minutes to read aloud. Longest word: ${s2.longestWord}.`,
+          s2.topWords.length ? `Most used: ${s2.topWords.map((w) => `${w.word} (${w.count})`).join(", ")}.` : "",
+          s2.emails.length ? `Emails: ${s2.emails.slice(0, 10).join(", ")}.` : "",
+          s2.urls.length ? `Links: ${s2.urls.slice(0, 10).join(", ")}.` : "",
+          s2.numbers.length ? `Numbers: ${s2.numbers.slice(0, 20).join(", ")}.` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    }
+    if (name === "summarize_table") {
+      const { summarizeTable } = await import("@/lib/utilities");
+      const result = summarizeTable(String(a.csv ?? ""), { ...(a.delimiter ? { delimiter: String(a.delimiter) } : {}) });
+      if ("error" in result) return { output: result.error };
+      return {
+        output: [
+          `${result.rows} rows, ${result.columns.length} columns: ${result.columns.join(", ")}.`,
+          ...result.numeric.map((n) => `${n.column}: min ${n.min}, max ${n.max}, sum ${n.sum}, mean ${n.mean}.`),
+          result.numeric.length ? "" : "No column was numeric enough to summarise.",
+          `${result.empty} empty cells${result.duplicateRows ? `, and ${result.duplicateRows} duplicate row${result.duplicateRows === 1 ? "" : "s"}` : ", no duplicate rows"}.`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    }
+    if (name === "json_query") {
+      const { jsonQuery } = await import("@/lib/utilities");
+      return { output: jsonQuery(String(a.json ?? ""), String(a.path ?? ""), Boolean(a.list)) };
+    }
+    if (name === "transform_text") {
+      const { transformText } = await import("@/lib/utilities");
+      const op = String(a.op ?? "slug") as Parameters<typeof transformText>[1];
+      return { output: transformText(String(a.text ?? ""), op) };
     }
     if (name === "video_studio") return await openVideoStudio({ userId, botId: bot.id }, a);
     if (name === "video_add") return await addVideoClip({ userId, botId: bot.id }, a);
