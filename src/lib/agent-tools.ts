@@ -1288,7 +1288,17 @@ export function buildToolset(opts: {
       if (opts.signal.aborted) return { output: "The request was paused for Privacy Mode." };
       const msg = e instanceof Error ? e.message : "Tool failed";
       ev.onStepEnd({ id, name, label, ok: false, ms: Date.now() - startedAt, output: clip(msg, 800) });
-      return { output: `Error: ${msg}` };
+      // "Error: …" is a line of text a small model can read past, and then write
+      // "Done — the file is saved" over the top of it. The rest of the sentence
+      // is the part that matters: it says the thing did NOT happen and that
+      // claiming otherwise would be a lie, which is what the model needs in
+      // order to report the failure instead of inventing a result.
+      return {
+        output:
+          `Error: ${msg}\n\n` +
+          `That did not happen. Do not tell the user ${name} succeeded, and do not present a made-up result. ` +
+          `Either try a different approach or say plainly that it failed and what you need to fix it.`,
+      };
     }
   }
 
