@@ -173,6 +173,107 @@ const CALC_TOOL: Tool = {
 };
 
 /**
+ * Check written code and data before it is presented as finished.
+ *
+ * A small model's JSON is wrong about as often as it is right — a trailing
+ * comma, a single quote, a key it forgot to close — and it has no way to find
+ * out, because it cannot run anything. The same goes for a regex it never
+ * compiles and an HTML page with an unclosed tag. Nothing here executes what it
+ * is given: JSON is parsed with JSON.parse, a regex is compiled, and HTML is
+ * counted tag by tag.
+ */
+const CHECK_TOOL: Tool = {
+  name: "check_code",
+  description:
+    "Check something you wrote before you hand it over. Use it on JSON you generated (kind json), a regular expression (kind regex), HTML (kind html), or a JavaScript expression (kind js). Returns either 'It parses' or the exact line and problem. Nothing is executed. Works with no computer.",
+  parameters: obj(
+    {
+      kind: { type: "string", enum: ["json", "regex", "html", "js"], description: "What kind of text this is." },
+      text: { type: "string", description: "The exact text to check." },
+    },
+    ["kind", "text"],
+  ),
+};
+
+/** The line and column of an offset, so a model can fix the right place. */
+function where(text: string, index: number): string {
+  const before = text.slice(0, Math.max(0, index));
+  const line = before.split("\n").length;
+  const column = before.length - before.lastIndexOf("\n");
+  return `line ${line}, column ${column}`;
+}
+
+/** Count HTML tags, ignoring void elements and anything inside a comment. */
+function htmlProblem(html: string): string | null {
+  const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr", "!doctype"]);
+  const cleaned = html.replace(/<!--[\s\S]*?-->/g, "");
+  const stack: { tag: string; at: number }[] = [];
+  const re = /<(\/?)([a-zA-Z!][\w:-]*)([^>]*?)(\/?)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned))) {
+    const [, closing, rawName, rest, selfClose] = m;
+    const tag = rawName.toLowerCase();
+    if (tag === "!doctype" || VOID.has(tag) || selfClose || /\/$/.test(rest ?? "")) continue;
+    if (!closing) {
+      stack.push({ tag, at: m.index });
+    } else {
+      const open = stack.pop();
+      if (!open) return `</${tag}> closes a tag that was never opened (${where(html, m.index)}).`;
+      if (open.tag !== tag) return `</${tag}> closes <${open.tag}> that opened at ${where(html, open.at)} (${where(html, m.index)}).`;
+    }
+  }
+  if (stack.length) {
+    const last = stack[stack.length - 1];
+    return `<${last.tag}> opened at ${where(html, last.at)} is never closed.`;
+  }
+  return null;
+}
+
+function checkCode(kind: string, text: string): string {
+  const body = text.trim();
+  if (!body) return "There is nothing to check: the text was empty.";
+  if (kind === "json") {
+    try {
+      const value = JSON.parse(body) as unknown;
+      const shape = Array.isArray(value) ? `an array of ${value.length}` : value && typeof value === "object" ? `an object with ${Object.keys(value as object).length} key${Object.keys(value as object).length === 1 ? "" : "s"}` : `a ${typeof value}`;
+      return `It parses: ${shape}.`;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "invalid JSON";
+      // V8 reports "at position N"; turning that into a line and column is the
+      // difference between a hint and something a model can act on.
+      const pos = /position (\d+)/.exec(message);
+      const at = pos ? ` (${where(body, Number(pos[1]))})` : "";
+      const nearby = pos ? `\nNear: ${body.slice(Math.max(0, Number(pos[1]) - 40), Number(pos[1]) + 40).replace(/\n/g, " ")}` : "";
+      return `Invalid JSON${at}: ${message}.${nearby}`;
+    }
+  }
+  if (kind === "regex") {
+    const src = body.replace(/^\//, "").replace(/\/[a-z]*$/i, "");
+    try {
+      new RegExp(src);
+      return "It compiles.";
+    } catch (e) {
+      return `That regular expression does not compile: ${e instanceof Error ? e.message : "unknown problem"}.`;
+    }
+  }
+  if (kind === "html") {
+    const problem = htmlProblem(body);
+    return problem ?? "Every tag is opened and closed in order.";
+  }
+  if (kind === "js") {
+    // Parsed, never run: the whole program is wrapped in a function that is
+    // never called, so a syntax error surfaces and nothing else happens.
+    try {
+      new Function(body);
+      return "It parses as JavaScript.";
+    } catch (e) {
+      return `That is not valid JavaScript: ${e instanceof Error ? e.message : "unknown problem"}.`;
+    }
+  }
+  return `Unknown kind “${kind}”. Use json, regex, html or js.`;
+}
+
+/**
  * Reading the web without a computer.
  *
  * `web_search` and `fetch_page` run `curl` inside the desktop sandbox, so an
@@ -598,15 +699,15 @@ export function buildToolset(opts: {
     // one shares a name with a real implementation, the stub wins by appearing
     // later in the schema, and the user gets "search_web is ready to run" for a
     // simple web search. A stub is never worth a name that is already taken.
-    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
+    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
   // With a desktop, `web_search` and `fetch_page` do this job inside the
   // sandbox. Without one these are the only way to read the web, so the two
   // sets are never both in the schema — a model choosing between `web_search`
   // and `search_web` would waste a step working out the difference.
   const webTools = e2bKey ? [] : WEB_TOOLS;
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -643,6 +744,8 @@ export function buildToolset(opts: {
         return `Ran ${clip(s("command").replace(/\s+/g, " "), 70)}`;
       case "calculate":
         return `Calculated ${clip(s("expression"), 50)}`;
+      case "check_code":
+        return `Checked the ${clip(s("kind"), 10)}`;
       case "look_up":
         return `Searched “${clip(s("query"), 60)}”`;
       case "read_link":
@@ -954,7 +1057,7 @@ export function buildToolset(opts: {
     // This runs before the handlers below, so a library stub called `look_up`
     // would swallow the real one. The filter above already keeps such names out
     // of the schema; this guards the ordering as well.
-    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...WEB_TOOLS].some((t) => t.name === name);
+    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...WEB_TOOLS].some((t) => t.name === name);
     if (!isRealTool && opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
       const tool = libraryToolByName(name);
       if (tool) {
@@ -1051,6 +1154,9 @@ export function buildToolset(opts: {
       } catch (e) {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
+    }
+    if (name === "check_code") {
+      return { output: checkCode(String(a.kind ?? "").toLowerCase(), String(a.text ?? "")) };
     }
     if (name === "look_up") {
       const query = String(a.query ?? "").trim();
