@@ -265,7 +265,10 @@ export function Composer({
             }}
             placeholder={placeholder}
             aria-label="Message"
-            className="max-h-[168px] flex-1 resize-none bg-transparent py-2.5 text-[15.5px] leading-[22px] text-white outline-none placeholder:text-neutral-600"
+            // `panel-input` (globals.css) drops the global focus ring: the field
+            // already sits in a bordered panel, so the 2px brand-coloured
+            // outline on top of it drew a bright square inside a rounded card.
+            className="panel-input max-h-[168px] flex-1 resize-none bg-transparent py-2.5 text-[15.5px] leading-[22px] text-white outline-none placeholder:text-neutral-600"
           />
           {canDictate && (
             <button
@@ -283,12 +286,15 @@ export function Composer({
           <span className="mb-0.5">{action}</span>
         </div>
 
-        <div className="flex min-h-[38px] items-center gap-1 px-2 pb-2 pl-3">
-          {modes}
-          <div className="flex-1" />
+        {/* The hint must be allowed to shrink to nothing rather than push the
+            row wider than the card: `shrink-0` on the chips sat next to a
+            nowrap hint overflowed the composer's right edge, and the whole
+            second row — not just the hint — was what crossed the border. */}
+        <div className="flex min-h-[38px] min-w-0 items-center gap-1 px-2 pb-2 pl-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">{modes}</div>
           {/* Only where there is room: between md and lg this shared row has no
               space left and the hint turns into three stacked words. */}
-          <span className="hidden pr-2 text-[11px] whitespace-nowrap text-neutral-600 lg:block">{hint}</span>
+          <span className="hidden min-w-0 shrink truncate pr-2 text-[11px] whitespace-nowrap text-neutral-600 lg:block">{hint}</span>
         </div>
       </div>
     </div>

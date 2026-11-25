@@ -579,16 +579,16 @@ function PreferencesTab() {
                       column that keeps the same ratio as the real shell. */}
                   <span aria-hidden className="absolute inset-y-1.5 left-1.5 w-4 overflow-hidden rounded-[3px]">
                     {option.id === "system" ? (
-                      <span aria-hidden className="block size-full" style={{ background: "linear-gradient(90deg,#26262b 0 50%,#dcdce2 50% 100%)" }} />
+                      <span aria-hidden className="block size-full" style={{ background: "linear-gradient(90deg,#383841 0 50%,#dcdce2 50% 100%)" }} />
                     ) : (
-                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#dcdce2" : "#26262b" }} />
+                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#dcdce2" : "#383841" }} />
                     )}
                   </span>
                   <span aria-hidden className="absolute inset-y-1.5 left-6 right-1.5 overflow-hidden rounded-[3px]">
                     {option.id === "system" ? (
                       <span aria-hidden className="block size-full" style={{ background: "linear-gradient(90deg,#1a1a1f 0 50%,#e6e6eb 50% 100%)" }} />
                     ) : (
-                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#e6e6eb" : "#1a1a1f" }} />
+                      <span aria-hidden className="block size-full" style={{ background: option.id === "light" ? "#e6e6eb" : "#22222a" }} />
                     )}
                   </span>
                   {active && (
