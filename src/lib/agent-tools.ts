@@ -837,8 +837,26 @@ export function buildToolset(opts: {
     }
     if (name === "get_current_time") {
       const timezone = String(a.timezone ?? "UTC");
-      try { return { output: new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(new Date()) }; }
-      catch { return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` }; }
+      try {
+        const now = new Date();
+        const formatted = new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(now);
+        // "Next Tuesday" and "in three weeks" are where a small model guesses:
+        // it knows today, then does the calendar in its head and gets the
+        // weekday wrong. Naming the nearby days costs nothing and removes the
+        // guess entirely.
+        const nearby = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(now.getTime() + (i + 1) * 86_400_000);
+          // The weekday has to be read in the requested zone, not the server's.
+          const name = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: timezone }).format(d);
+          return `- ${name}${i === 0 ? " (tomorrow)" : ""}`;
+        });
+        const today = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(now);
+        return {
+          output: `${formatted}\nToday is ${today} there. The next seven days:\n${nearby.join("\n")}`,
+        };
+      } catch {
+        return { output: `Invalid timezone: ${timezone}. Use an IANA timezone such as UTC or America/New_York.` };
+      }
     }
     if (name === "goals") {
       const action = String(a.action ?? "list");
