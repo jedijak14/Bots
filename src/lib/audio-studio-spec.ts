@@ -38,6 +38,18 @@ export type SynthClip = {
   gain?: number;
   /** A simple lowpass cutoff in Hz; higher is brighter. */
   cutoff?: number;
+  /** Attack and release seconds. Long attack is a pad; short is a pluck. */
+  attack?: number;
+  release?: number;
+  /**
+   * Detune in cents. Two copies of the same part at +7 and -7 sound wide; the
+   * player creates the second voice, so a Bot writes one line, not two.
+   */
+  detune?: number;
+  /** A delayed copy of the part, as a fraction of its gain. */
+  echo?: { time: number; feedback: number; mix: number };
+  /** Vibrato, in Hz and cents either side. */
+  vibrato?: { rate: number; depth: number };
   label?: string;
 };
 
@@ -83,6 +95,14 @@ export const AUDIO_PRESETS = {
   cinematic: { bpm: 70, label: "cinematic" },
   chiptune: { bpm: 150, label: "chiptune" },
   ambient: { bpm: 60, label: "ambient" },
+  house: { bpm: 124, label: "house" },
+  trap: { bpm: 140, label: "trap" },
+  lofi: { bpm: 82, label: "lo-fi" },
+  rock: { bpm: 132, label: "rock" },
+  waltz: { bpm: 96, label: "waltz (3/4)" },
+  bossa: { bpm: 108, label: "bossa nova" },
+  synthwave: { bpm: 100, label: "synthwave" },
+  podcast: { bpm: 90, label: "spoken word" },
 } as const;
 
 export type AudioPresetName = keyof typeof AUDIO_PRESETS;

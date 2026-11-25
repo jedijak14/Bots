@@ -62,7 +62,25 @@ function scheduleSynth(ctx: AudioContext, dest: AudioNode, clip: SynthClip, bpm:
   const filter = ctx.createBiquadFilter();
   filter.type = "lowpass";
   filter.frequency.value = clip.cutoff ?? 4200;
-  gain.connect(filter).connect(dest);
+
+  // Echo is a send: the dry signal still reaches the output at full level, and
+  // a delay line feeds a little of each repeat back into itself. Wiring the
+  // whole part through the delay instead would make it sound distant, not wide.
+  if (clip.echo && clip.echo.mix > 0) {
+    const delay = ctx.createDelay(4);
+    delay.delayTime.value = Math.max(0.01, Math.min(3, clip.echo.time));
+    const feedback = ctx.createGain();
+    feedback.gain.value = Math.max(0, Math.min(0.9, clip.echo.feedback));
+    const wet = ctx.createGain();
+    wet.gain.value = Math.max(0, Math.min(1, clip.echo.mix));
+    filter.connect(delay);
+    delay.connect(feedback).connect(delay);
+    delay.connect(wet).connect(dest);
+    filter.connect(gain);
+    gain.connect(dest);
+  } else {
+    gain.connect(filter).connect(dest);
+  }
 
   let last = at;
   for (const note of clip.notes) {
@@ -77,20 +95,38 @@ function scheduleSynth(ctx: AudioContext, dest: AudioNode, clip: SynthClip, bpm:
     if (/^rest$/i.test(note.pitch)) continue;
     const hz = pitchOf(note.pitch);
     if (!hz) continue;
-    const osc = ctx.createOscillator();
-    osc.type = clip.wave;
-    osc.frequency.value = hz;
-    const env = ctx.createGain();
-    // A short attack and release: a bare gate on a square wave clicks.
-    const attack = Math.min(0.03, length / 4);
-    const release = Math.min(0.12, length / 2);
-    env.gain.setValueAtTime(0.0001, start);
-    env.gain.exponentialRampToValueAtTime(note.velocity ?? 0.8, start + attack);
-    env.gain.setValueAtTime(note.velocity ?? 0.8, start + Math.max(attack, length - release));
-    env.gain.exponentialRampToValueAtTime(0.0001, start + length);
-    osc.connect(env).connect(gain);
-    osc.start(start);
-    osc.stop(start + length + 0.02);
+    // Two oscillators when detuned: one at pitch, one a few cents off. The beat
+    // between them is the width, and it is why a pad sounds like several
+    // players rather than one.
+    const voices = clip.detune ? [0, clip.detune] : [0];
+    for (const cents of voices) {
+      const osc = ctx.createOscillator();
+      osc.type = clip.wave;
+      osc.frequency.value = hz;
+      if (cents) osc.detune.value = cents;
+      if (clip.vibrato && clip.vibrato.depth > 0) {
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = Math.max(0.1, clip.vibrato.rate);
+        const depth = ctx.createGain();
+        depth.gain.value = clip.vibrato.depth;
+        lfo.connect(depth).connect(osc.detune);
+        lfo.start(start);
+        lfo.stop(start + length + 0.05);
+      }
+      const env = ctx.createGain();
+      // A short attack and release: a bare gate on a square wave clicks. The
+      // clip can override both, which is how a pad becomes a pad.
+      const attack = Math.min(clip.attack ?? 0.03, length / 2);
+      const release = Math.min(clip.release ?? 0.12, length / 2);
+      const peak = (note.velocity ?? 0.8) / voices.length;
+      env.gain.setValueAtTime(0.0001, start);
+      env.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + Math.max(0.005, attack));
+      env.gain.setValueAtTime(Math.max(0.0002, peak), start + Math.max(attack, length - release));
+      env.gain.exponentialRampToValueAtTime(0.0001, start + length);
+      osc.connect(env).connect(gain);
+      osc.start(start);
+      osc.stop(start + length + 0.02);
+    }
   }
   return last;
 }

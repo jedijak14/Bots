@@ -23,7 +23,9 @@ import {
   type AudioPresetName,
   type AudioProjectSpec,
   type AudioClip,
+  type AudioTrack,
   type Note,
+  type SynthClip,
 } from "./audio-studio-spec";
 
 /**
@@ -121,6 +123,36 @@ export async function openVideoStudio(
   };
 }
 
+/** Read a grading object from tool arguments, ignoring anything unknown. */
+function parseGrade(value: unknown): VideoClip["grade"] {
+  if (!value || typeof value !== "object") return undefined;
+  const src = value as Record<string, unknown>;
+  const out: NonNullable<VideoClip["grade"]> = {};
+  const keys = ["brightness", "contrast", "saturate", "hue", "blur", "sepia", "gray"] as const;
+  for (const key of keys) {
+    const n = Number(src[key]);
+    // `Number(undefined)` is NaN and `Number(null)` is 0, which would silently
+    // grayscale or black out a clip the Bot only meant to warm up.
+    if (src[key] !== undefined && src[key] !== null && Number.isFinite(n)) out[key] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Read an entry transition from tool arguments. */
+function parseTransition(value: unknown): VideoClip["transition"] {
+  if (!value) return undefined;
+  if (typeof value === "string") {
+    const kind = value.toLowerCase();
+    if (["fade", "wipe", "flash", "slide", "iris"].includes(kind)) return { kind: kind as "fade" | "wipe" | "flash" | "slide" | "iris", duration: 0.4 };
+    return undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  const src = value as Record<string, unknown>;
+  const kind = String(src.kind ?? "").toLowerCase();
+  if (!["fade", "wipe", "flash", "slide", "iris"].includes(kind)) return undefined;
+  return { kind: kind as "fade" | "wipe" | "flash" | "slide" | "iris", duration: Math.max(0.05, Math.min(5, Number(src.duration) || 0.4)) };
+}
+
 export async function addVideoClip(
   ctx: { userId: string; botId: string },
   a: Record<string, unknown>,
@@ -177,6 +209,8 @@ export async function addVideoClip(
     ...(a.fadeIn ? { fadeIn: Math.max(0, Number(a.fadeIn)) } : {}),
     ...(a.fadeOut ? { fadeOut: Math.max(0, Number(a.fadeOut)) } : {}),
     ...(a.speak ? { speak: String(a.speak).slice(0, 2000) } : {}),
+    ...(parseGrade(a.grade) ? { grade: parseGrade(a.grade)! } : {}),
+    ...(parseTransition(a.transition) ? { transition: parseTransition(a.transition)! } : {}),
     ...(text ? { text } : {}),
     ...(a.label ? { label: String(a.label).slice(0, 80) } : {}),
   };
@@ -218,6 +252,34 @@ export async function editVideoClip(
   }
   if (a.opacity !== undefined) clip.opacity = Math.max(0, Math.min(1, Number(a.opacity)));
   if (a.speed !== undefined) clip.speed = Math.max(0.1, Math.min(8, Number(a.speed)));
+  if (a.in !== undefined) clip.in = Math.max(0, Number(a.in) || 0);
+  if (a.fadeIn !== undefined) clip.fadeIn = Math.max(0, Number(a.fadeIn) || 0);
+  if (a.fadeOut !== undefined) clip.fadeOut = Math.max(0, Number(a.fadeOut) || 0);
+  if (a.grade !== undefined) {
+    const grade = parseGrade(a.grade);
+    // An explicit empty object clears the grade rather than leaving the old one
+    // in place, which is the only way to undo a look the Bot tried.
+    if (grade) clip.grade = grade;
+    else delete clip.grade;
+  }
+  if (a.transition !== undefined) {
+    const transition = parseTransition(a.transition);
+    if (transition) clip.transition = transition;
+    else delete clip.transition;
+  }
+  if (a.text !== undefined && clip.kind === "text" && a.style && ["title", "subtitle", "caption"].includes(String(a.style))) {
+    clip.text = { ...(clip.text ?? { text: String(a.text), start: 0, end: 0 }), style: a.style as "title" | "subtitle" | "caption" };
+  }
+  // Moving a clip to another track is a common fix — a title that ended up on
+  // the visual track, say — and it is not expressible by any other field.
+  if (a.track !== undefined) {
+    const target = spec.tracks.find((t) => t.id === String(a.track));
+    const from = spec.tracks.find((t) => t.clips.includes(clip));
+    if (target && from && target !== from) {
+      from.clips = from.clips.filter((c) => c !== clip);
+      target.clips.push(clip);
+    }
+  }
   spec.duration = projectDuration(spec);
   await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
   return { output: `Updated ${describeClip(clip)}. The film is ${spec.duration.toFixed(1)}s long.`, artifactId: found.id };
@@ -241,6 +303,154 @@ export async function removeVideoClip(
   spec.duration = projectDuration(spec);
   await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
   return { output: `Removed the clip. The film is now ${spec.duration.toFixed(1)}s long.`, artifactId: found.id };
+}
+
+/**
+ * Cut a clip in two at a time on the timeline.
+ *
+ * A split is the one edit that cannot be expressed as an update to a single
+ * clip: it has to exist as a pair. The second half keeps the source in-point
+ * moved forward, so the two halves play continuously instead of restarting.
+ */
+export async function splitVideoClip(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<VideoProjectSpec>(ctx.userId, ctx.botId, "video_project", title);
+  if (!found) return { output: `There is no video project called “${title}”.` };
+  const spec = found.spec;
+  const track = spec.tracks.find((t) => t.clips.some((c) => c.id === String(a.id)));
+  const clip = track?.clips.find((c) => c.id === String(a.id));
+  if (!track || !clip) return { output: `No clip with id “${String(a.id ?? "")}” in “${title}”. Open the project to see the ids.` };
+
+  const cut = Number(a.at);
+  if (!Number.isFinite(cut)) return { output: "Give the split time in seconds, e.g. at 2.5." };
+  if (cut <= clip.start + 0.1 || cut >= clip.start + clip.duration - 0.1) {
+    return { output: `That split is outside the clip: it runs ${clip.start.toFixed(2)}s to ${(clip.start + clip.duration).toFixed(2)}s.` };
+  }
+
+  const speed = clip.speed ?? 1;
+  const second: VideoClip = {
+    ...clip,
+    id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
+    start: cut,
+    duration: clip.start + clip.duration - cut,
+    // The source in-point advances by the timeline amount, scaled by speed: at
+    // 2x speed, one second of timeline is two seconds of source.
+    in: (clip.in ?? 0) + (cut - clip.start) * speed,
+    // Fades belong to the outer edges only; the new join is a hard cut.
+    fadeIn: undefined,
+  };
+  delete second.fadeIn;
+  clip.duration = cut - clip.start;
+  delete clip.fadeOut;
+  track.clips.push(second);
+  spec.duration = projectDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
+  return {
+    output: `Split ${describeClip(clip)} at ${cut.toFixed(2)}s. The second half runs to ${(second.start + second.duration).toFixed(2)}s.`,
+    artifactId: found.id,
+  };
+}
+
+/** Copy a clip, landing the copy in the next free slot on the same track. */
+export async function duplicateVideoClip(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<VideoProjectSpec>(ctx.userId, ctx.botId, "video_project", title);
+  if (!found) return { output: `There is no video project called “${title}”.` };
+  const spec = found.spec;
+  const track = spec.tracks.find((t) => t.clips.some((c) => c.id === String(a.id)));
+  const clip = track?.clips.find((c) => c.id === String(a.id));
+  if (!track || !clip) return { output: `No clip with id “${String(a.id ?? "")}” in “${title}”.` };
+
+  const copy: VideoClip = {
+    ...clip,
+    id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
+    start: a.start === undefined ? nextFreeSlot(track) : Math.max(0, Number(a.start) || 0),
+  };
+  track.clips.push(copy);
+  spec.duration = projectDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
+  return { output: `Duplicated ${describeClip(copy)} on ${track.id} at ${copy.start.toFixed(2)}s.`, artifactId: found.id };
+}
+
+/** Close every gap on a track, so clips play back to back. */
+export async function tightenVideoTrack(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<VideoProjectSpec>(ctx.userId, ctx.botId, "video_project", title);
+  if (!found) return { output: `There is no video project called “${title}”.` };
+  const spec = found.spec;
+  const tracks = a.track ? spec.tracks.filter((t) => t.id === String(a.track)) : spec.tracks.filter((t) => t.kind !== "audio");
+  if (!tracks.length) return { output: `No track called “${String(a.track)}”. The tracks are ${spec.tracks.map((t) => t.id).join(", ")}.` };
+
+  let moved = 0;
+  let saved = 0;
+  for (const track of tracks) {
+    let at = 0;
+    for (const clip of [...track.clips].sort((x, y) => x.start - y.start)) {
+      if (Math.abs(clip.start - at) > 0.005) {
+        saved += clip.start - at;
+        clip.start = Math.round(at * 100) / 100;
+        moved++;
+      }
+      at = clip.start + clip.duration;
+    }
+  }
+  spec.duration = projectDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
+  return {
+    output: moved
+      ? `Closed the gaps on ${tracks.map((t) => t.id).join(", ")} — ${moved} clip${moved === 1 ? "" : "s"} moved, ${saved.toFixed(2)}s removed. The film is now ${spec.duration.toFixed(1)}s long.`
+      : `There were no gaps to close on ${tracks.map((t) => t.id).join(", ")}.`,
+    artifactId: found.id,
+  };
+}
+
+/**
+ * Read a video project as text.
+ *
+ * The Bot needs this to edit what it cannot see: without it, a follow-up like
+ * "shorten the second title" has no ids to work from and no idea what exists.
+ */
+export async function readVideoProject(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<VideoProjectSpec>(ctx.userId, ctx.botId, "video_project", title);
+  if (!found) return { output: `There is no video project called “${title}”.` };
+  const spec = found.spec;
+  const lines = [
+    `“${spec.title}” — ${spec.width}×${spec.height} at ${spec.fps}fps, ${projectDuration(spec).toFixed(2)}s long.${spec.brief ? ` ${spec.brief}` : ""}`,
+  ];
+  for (const track of spec.tracks) {
+    lines.push(`${track.id} (${track.kind}${track.muted ? ", muted" : ""}):`);
+    if (!track.clips.length) {
+      lines.push("  empty");
+      continue;
+    }
+    for (const clip of [...track.clips].sort((x, y) => x.start - y.start)) {
+      const bits = [
+        `  ${clip.id} ${clip.kind}`,
+        `${clip.start.toFixed(2)}–${(clip.start + clip.duration).toFixed(2)}s`,
+        `“${clip.kind === "text" ? (clip.text?.text ?? clip.source).slice(0, 40) : (clip.label ?? clip.source.slice(0, 24))}”`,
+      ];
+      if (clip.speed && clip.speed !== 1) bits.push(`${clip.speed}x`);
+      if (clip.opacity !== undefined && clip.opacity !== 1) bits.push(`opacity ${clip.opacity}`);
+      if (clip.fadeIn || clip.fadeOut) bits.push(`fade ${clip.fadeIn ?? 0}/${clip.fadeOut ?? 0}`);
+      if (clip.grade) bits.push(`grade ${Object.entries(clip.grade).map(([k, v]) => `${k} ${v}`).join(" ")}`);
+      if (clip.transition) bits.push(`${clip.transition.kind} ${clip.transition.duration}s`);
+      lines.push(bits.join(" · "));
+    }
+  }
+  return { output: lines.join("\n"), artifactId: found.id };
 }
 
 /* ---------------------------------- audio --------------------------------- */
@@ -417,6 +627,56 @@ export async function editAudioTrack(
     if (a.muted !== undefined) track.muted = !!a.muted;
     if (a.gain !== undefined) track.gain = Math.max(0, Math.min(1, Number(a.gain)));
     if (a.pan !== undefined) track.pan = Math.max(0, Math.min(1, Number(a.pan)));
+    if (a.name !== undefined) track.name = String(a.name).slice(0, 40);
+  }
+
+  // A part's sound, as opposed to its notes: wave, envelope, cutoff, detune,
+  // echo and vibrato all live on the clip. `parts` says which, and `clip` picks
+  // one; without an id every clip on the named track is changed.
+  const clip = findAudioClip(spec, a.clip ?? a.id, a.track);
+  const clips = clip ? [clip.clip] : String(a.track ?? "") ? spec.tracks.filter((t) => t.id === String(a.track)).flatMap((t) => t.clips) : [];
+  const touched = new Set<string>();
+  for (const c of clips) {
+    if (c.kind !== "synth") continue;
+    if (a.wave !== undefined && ["sine", "square", "sawtooth", "triangle"].includes(String(a.wave))) {
+      c.wave = a.wave as SynthClip["wave"];
+      touched.add("wave");
+    }
+    if (a.cutoff !== undefined) {
+      c.cutoff = Math.max(80, Math.min(18_000, Number(a.cutoff) || 4200));
+      touched.add("cutoff");
+    }
+    if (a.attack !== undefined) {
+      c.attack = Math.max(0, Math.min(4, Number(a.attack) || 0));
+      touched.add("attack");
+    }
+    if (a.release !== undefined) {
+      c.release = Math.max(0, Math.min(8, Number(a.release) || 0));
+      touched.add("release");
+    }
+    if (a.detune !== undefined) {
+      c.detune = Math.max(0, Math.min(50, Number(a.detune) || 0));
+      touched.add("detune");
+    }
+    if (a.gain !== undefined && clip) {
+      c.gain = Math.max(0, Math.min(1, Number(a.gain)));
+      touched.add("gain");
+    }
+    if (a.echo !== undefined) {
+      const echo = a.echo as Record<string, unknown>;
+      const time = Math.max(0.05, Math.min(3, Number(echo.time ?? 0.33) || 0.33));
+      const mix = Math.max(0, Math.min(1, Number(echo.mix ?? 0.3)));
+      if (mix === 0) delete c.echo;
+      else c.echo = { time, feedback: Math.max(0, Math.min(0.9, Number(echo.feedback ?? 0.3))), mix };
+      touched.add("echo");
+    }
+    if (a.vibrato !== undefined) {
+      const vib = a.vibrato as Record<string, unknown>;
+      const depth = Math.max(0, Math.min(100, Number(vib.depth ?? 12)));
+      if (depth === 0) delete c.vibrato;
+      else c.vibrato = { rate: Math.max(0.1, Math.min(14, Number(vib.rate ?? 5))), depth };
+      touched.add("vibrato");
+    }
   }
 
   spec.duration = audioDuration(spec);
@@ -424,9 +684,110 @@ export async function editAudioTrack(
   const bits = [
     a.bpm !== undefined ? `tempo is now ${spec.bpm} BPM` : "",
     track && a.muted !== undefined ? `${track.id} is ${track.muted ? "muted" : "unmuted"}` : "",
-    track && a.gain !== undefined ? `${track.id} gain ${track.gain}` : "",
+    track && a.gain !== undefined && !clip ? `${track.id} gain ${track.gain}` : "",
+    touched.size ? `${[...touched].join(", ")} changed on ${clip ? "that part" : `every part on ${String(a.track ?? "the piece")}`}` : "",
   ].filter(Boolean);
   return { output: `${bits.length ? bits.join(", ") + ". " : ""}The piece is ${spec.duration.toFixed(1)}s long.`, artifactId: found.id };
+}
+
+/** Locate a clip by id, optionally restricted to a track. */
+function findAudioClip(
+  spec: AudioProjectSpec,
+  id: unknown,
+  trackId?: unknown,
+): { track: AudioTrack; clip: AudioClip } | null {
+  if (id === undefined || id === null || id === "") return null;
+  const tracks = trackId ? spec.tracks.filter((t) => t.id === String(trackId)) : spec.tracks;
+  for (const track of tracks) {
+    const clip = track.clips.find((c) => c.id === String(id));
+    if (clip) return { track, clip };
+  }
+  return null;
+}
+
+/** Add a track to a project, so a Bot can write a counter-melody or a vocal. */
+export async function addAudioTrack(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<AudioProjectSpec>(ctx.userId, ctx.botId, "audio_project", title);
+  if (!found) return { output: `There is no audio project called “${title}”.` };
+  const spec = found.spec;
+  const name = String(a.name ?? a.track ?? "").trim() || `Part ${spec.tracks.length + 1}`;
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `t${spec.tracks.length + 1}`;
+  if (spec.tracks.some((t) => t.id === id)) return { output: `There is already a track called “${id}”. The tracks are ${spec.tracks.map((t) => t.id).join(", ")}.` };
+  spec.tracks.push({
+    id,
+    name,
+    clips: [],
+    gain: Math.max(0, Math.min(1, Number(a.gain ?? 0.18))),
+    ...(a.pan !== undefined ? { pan: Math.max(0, Math.min(1, Number(a.pan))) } : {}),
+    ...(a.muted ? { muted: true } : {}),
+  });
+  await saveProject(ctx.userId, ctx.botId, "audio_project", title, spec, found.id);
+  return { output: `Added a track “${id}” (${name}). Write into it with audio_add track ${id}.`, artifactId: found.id };
+}
+
+/** Remove a track, or one part from it. */
+export async function removeAudioPart(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<AudioProjectSpec>(ctx.userId, ctx.botId, "audio_project", title);
+  if (!found) return { output: `There is no audio project called “${title}”.` };
+  const spec = found.spec;
+
+  if (a.track && !a.id && !a.clip) {
+    const before = spec.tracks.length;
+    spec.tracks = spec.tracks.filter((t) => t.id !== String(a.track));
+    if (spec.tracks.length === before) return { output: `No track called “${String(a.track)}”. The tracks are ${spec.tracks.map((t) => t.id).join(", ")}.` };
+    spec.duration = audioDuration(spec);
+    await saveProject(ctx.userId, ctx.botId, "audio_project", title, spec, found.id);
+    return { output: `Removed the track “${String(a.track)}”. ${spec.tracks.length} left.`, artifactId: found.id };
+  }
+
+  const hit = findAudioClip(spec, a.id ?? a.clip, a.track);
+  if (!hit) {
+    const ids = spec.tracks.flatMap((t) => t.clips.map((c) => c.id));
+    return { output: ids.length ? `No part with that id. The parts are ${ids.join(", ")}.` : "There are no parts to remove yet." };
+  }
+  hit.track.clips = hit.track.clips.filter((c) => c !== hit.clip);
+  spec.duration = audioDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "audio_project", title, spec, found.id);
+  return { output: `Removed ${hit.clip.id} from ${hit.track.id}. The piece is ${spec.duration.toFixed(1)}s long.`, artifactId: found.id };
+}
+
+/** Move a part along its track, or onto another one. */
+export async function moveAudioPart(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<AudioProjectSpec>(ctx.userId, ctx.botId, "audio_project", title);
+  if (!found) return { output: `There is no audio project called “${title}”.` };
+  const spec = found.spec;
+  const hit = findAudioClip(spec, a.id ?? a.clip, a.track);
+  if (!hit) {
+    const ids = spec.tracks.flatMap((t) => t.clips.map((c) => c.id));
+    return { output: ids.length ? `No part with that id. The parts are ${ids.join(", ")}.` : "There are no parts to move yet." };
+  }
+  let moved = "";
+  if (a.start !== undefined) {
+    hit.clip.start = Math.max(0, Number(a.start) || 0);
+    moved = `to ${hit.clip.start.toFixed(2)}s`;
+  }
+  if (a.to && String(a.to) !== hit.track.id) {
+    const dest = spec.tracks.find((t) => t.id === String(a.to));
+    if (!dest) return { output: `No track called “${String(a.to)}”. The tracks are ${spec.tracks.map((t) => t.id).join(", ")}.` };
+    hit.track.clips = hit.track.clips.filter((c) => c !== hit.clip);
+    dest.clips.push(hit.clip);
+    moved = [moved, `onto ${dest.id}`].filter(Boolean).join(" ");
+  }
+  spec.duration = audioDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "audio_project", title, spec, found.id);
+  return { output: `Moved ${hit.clip.id} ${moved || "(nothing changed)"}.`, artifactId: found.id };
 }
 
 /** A short summary of a project, for a tool that needs to describe it. */
@@ -435,10 +796,23 @@ export function describeAudio(project: AudioProjectSpec): string {
   return [
     `${project.title}: ${project.bpm} BPM (${spb.toFixed(2)}s per beat), ${audioDuration(project).toFixed(1)}s.`,
     ...project.tracks.map((t) => {
-      const parts = t.clips.map((c) =>
-        c.kind === "synth" ? `${c.notes.length} notes ${c.wave} @${c.start.toFixed(1)}s` : `sample @${c.start.toFixed(1)}s`,
-      );
-      return `- ${t.id}${t.muted ? " (muted)" : ""}: ${parts.join(", ") || "empty"}`;
+      // The id comes first: audio_move and audio_remove address a part by id, so
+      // a summary without one left the Bot able to read a project and unable to
+      // change it.
+      const parts = t.clips.map((c) => {
+        const sound =
+          c.kind === "synth"
+            ? `${c.notes.length} notes ${c.wave}`
+            : `sample ${c.label ?? c.source.slice(0, 12)}`;
+        const extras = [
+          `${c.start.toFixed(1)}s+${c.duration.toFixed(1)}s`,
+          c.kind === "synth" && c.detune ? `detune ${c.detune}` : "",
+          c.kind === "synth" && c.echo ? "echo" : "",
+          c.kind === "synth" && c.cutoff ? `cutoff ${c.cutoff}` : "",
+        ].filter(Boolean);
+        return `${c.id} ${sound} (${extras.join(", ")})`;
+      });
+      return `- ${t.id}${t.muted ? " (muted)" : ""}, gain ${t.gain ?? 0.2}${t.pan !== undefined ? `, pan ${t.pan}` : ""}: ${parts.join("; ") || "empty"}`;
     }),
   ].join("\n");
 }

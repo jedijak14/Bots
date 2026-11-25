@@ -12,13 +12,20 @@ import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } 
 import { runLibraryTool, runPackTool } from "@/lib/pack-tools";
 import {
   addAudioPart,
+  addAudioTrack,
   addVideoClip,
+  duplicateVideoClip,
   editAudioTrack,
   editVideoClip,
+  moveAudioPart,
   openAudioStudio,
   openVideoStudio,
   readAudioProject,
+  readVideoProject,
+  removeAudioPart,
   removeVideoClip,
+  splitVideoClip,
+  tightenVideoTrack,
 } from "@/lib/studios";
 import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary, WEAK_MATCH_SCORE } from "@/lib/tool-library";
 import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
@@ -316,6 +323,16 @@ const STUDIO_TOOLS: Tool[] = [
         fadeIn: { type: "number", description: "Fade-in seconds." },
         fadeOut: { type: "number", description: "Fade-out seconds." },
         speak: { type: "string", description: "For an audio clip the studio should voice: the line to say." },
+        grade: {
+          type: "object",
+          description:
+            "Colour grading. brightness, contrast and saturate default to 1 (unchanged); hue is degrees; blur is px; sepia and gray are 0-1. e.g. {saturate: 1.3, contrast: 1.1} for punch, {gray: 1} for black and white, {brightness: 1.2, hue: -10} for warm.",
+        },
+        transition: {
+          type: "string",
+          enum: ["fade", "wipe", "flash", "slide", "iris"],
+          description: "How the clip enters: fade from black, wipe from the left, a white flash on the cut, slide in, or iris.",
+        },
         label: { type: "string", description: "A short name shown on the clip." },
       },
       ["title", "kind"],
@@ -323,16 +340,24 @@ const STUDIO_TOOLS: Tool[] = [
   },
   {
     name: "video_edit",
-    description: "Change one clip in a video project. Only the fields you pass change.",
+    description:
+      "Change one clip in a video project. Only the fields you pass change, so a missing field never resets a value. Can also move the clip to another track and clear a grade or transition by passing an empty object.",
     parameters: obj(
       {
         title: { type: "string" },
-        id: { type: "string", description: "Clip id from video_studio." },
+        id: { type: "string", description: "Clip id from video_studio or video_read." },
         start: { type: "number" },
         duration: { type: "number" },
-        text: { type: "string" },
+        text: { type: "string", description: "New words, for a text clip." },
+        style: { type: "string", enum: ["title", "subtitle", "caption"], description: "New text size." },
         opacity: { type: "number" },
         speed: { type: "number" },
+        in: { type: "number", description: "Seconds into the source where the clip starts." },
+        fadeIn: { type: "number" },
+        fadeOut: { type: "number" },
+        track: { type: "string", description: "Move the clip to this track: v1, o1, t1 or a1." },
+        grade: { type: "object", description: "Colour grading, e.g. {saturate: 1.3}. An empty object clears it." },
+        transition: { type: "string", enum: ["fade", "wipe", "flash", "slide", "iris"], description: "Entry effect. An empty string clears it." },
       },
       ["title", "id"],
     ),
@@ -343,13 +368,57 @@ const STUDIO_TOOLS: Tool[] = [
     parameters: obj({ title: { type: "string" }, id: { type: "string" } }, ["title", "id"]),
   },
   {
+    name: "video_split",
+    description:
+      "Cut a clip in two at a time on the timeline. Both halves keep playing continuously — the second one's source in-point moves forward. Use it to cut away mid-shot, put a title over the middle of a clip, or trim one section. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string", description: "The clip to split." },
+        at: { type: "number", description: "Timeline seconds where the cut happens." },
+      },
+      ["title", "id", "at"],
+    ),
+  },
+  {
+    name: "video_duplicate",
+    description:
+      "Copy a clip. Without a start time the copy lands in the next free slot on the same track, so it never covers the original. Use it to repeat a shot or a title. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string" },
+        start: { type: "number", description: "Where the copy goes, in seconds." },
+      },
+      ["title", "id"],
+    ),
+  },
+  {
+    name: "video_tighten",
+    description:
+      "Close every gap on the visual, overlay and text tracks so clips play back to back. Audio is left alone, because a music bed usually starts before the picture. Pass a track id to tighten only that track. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        track: { type: "string", description: "v1, o1 or t1. Omit for all non-audio tracks." },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "video_read",
+    description:
+      "Read a video project back as text: every track, every clip id, its times, fades, grading, transitions and speed. Call this before editing a project you did not just build, so you have the ids. Works with no computer.",
+    parameters: obj({ title: { type: "string" } }, ["title"]),
+  },
+  {
     name: "audio_studio",
     description:
       "Open or create an audio project and see its tracks. Returns what is on each. Use audio_add to build parts. Works with no computer.",
     parameters: obj(
       {
         title: { type: "string", description: "Project title. Opening an existing one uses the same title." },
-        preset: { type: "string", enum: ["beat", "pop", "cinematic", "chiptune", "ambient"], description: "Tempo and feel, when creating." },
+        preset: { type: "string", enum: ["beat", "pop", "cinematic", "chiptune", "ambient", "house", "trap", "lofi", "rock", "waltz", "bossa", "synthwave", "podcast"], description: "Tempo and feel, when creating." },
         brief: { type: "string", description: "One line on what it is for." },
       },
       ["title"],
@@ -378,17 +447,70 @@ const STUDIO_TOOLS: Tool[] = [
   },
   {
     name: "audio_mix",
-    description: "Change tempo, mute a track, or set its level and pan in an audio project.",
+    description:
+      "Change an audio project: tempo, a track's level, pan, mute or name, and the sound of a composed part — its wave, brightness, envelope, detune, echo and vibrato. Give a clip id to change one part, or just a track to change everything on it. Works with no computer.",
     parameters: obj(
       {
         title: { type: "string" },
         bpm: { type: "number", description: "New tempo. Composed parts re-time to it." },
-        track: { type: "string", description: "Which track to change." },
+        track: { type: "string", description: "Which track to change, e.g. lead." },
+        name: { type: "string", description: "Rename the track." },
         muted: { type: "boolean" },
         gain: { type: "number", description: "0-1." },
         pan: { type: "number", description: "0-1, 0.5 is centre." },
+        clip: { type: "string", description: "One part's id, to change only that part. Omit to change every part on the track." },
+        wave: { type: "string", enum: ["sine", "square", "sawtooth", "triangle"], description: "Tone of a composed part." },
+        cutoff: { type: "number", description: "Lowpass cutoff in Hz. 800 is muffled and warm, 8000 is bright." },
+        attack: { type: "number", description: "Seconds to reach full volume. 0.4 is a pad; 0.005 is a pluck." },
+        release: { type: "number", description: "Seconds to fade after the note." },
+        detune: { type: "number", description: "Cents between two voices, 6-20 for width. 0 is one voice." },
+        echo: { type: "object", description: "A delayed copy: {time: 0.33, feedback: 0.3, mix: 0.25}. mix 0 removes it." },
+        vibrato: { type: "object", description: "Pitch wobble: {rate: 5, depth: 12} in Hz and cents. depth 0 removes it." },
       },
       ["title"],
+    ),
+  },
+  {
+    name: "audio_track",
+    description:
+      "Add a new track to an audio project, for a part the four standard tracks do not cover — a counter-melody, a vocal line, a second drum bus. Returns the new track id for audio_add. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        name: { type: "string", description: "The track's name, e.g. 'Counter-melody'. Its id is derived from this." },
+        gain: { type: "number", description: "0-1, defaults to 0.18." },
+        pan: { type: "number", description: "0-1, 0.5 is centre." },
+        muted: { type: "boolean", description: "Start muted." },
+      },
+      ["title", "name"],
+    ),
+  },
+  {
+    name: "audio_remove",
+    description:
+      "Remove a part by id, or a whole track when no id is given. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string", description: "The part to remove. Omit to remove the whole track." },
+        track: { type: "string", description: "Which track the part is on, or the track to remove." },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "audio_move",
+    description:
+      "Move a part to a new time on its track, or onto a different track. Use it to shift a section earlier, line a bass note up with a drum hit, or move a part to a track with a different level. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string", description: "The part to move." },
+        track: { type: "string", description: "Where it is now." },
+        to: { type: "string", description: "The track to move it to." },
+        start: { type: "number", description: "Its new start, in seconds." },
+      },
+      ["title", "id"],
     ),
   },
   {
@@ -1000,6 +1122,20 @@ export function buildToolset(opts: {
         return `Mixed “${clip(s("title"), 50)}”`;
       case "audio_read":
         return `Read “${clip(s("title"), 50)}”`;
+      case "video_split":
+        return `Split a clip in “${clip(s("title"), 40)}” at ${clip(s("at"), 8)}s`;
+      case "video_duplicate":
+        return `Duplicated a clip in “${clip(s("title"), 40)}”`;
+      case "video_tighten":
+        return `Closed gaps in “${clip(s("title"), 40)}”`;
+      case "video_read":
+        return `Read the video project “${clip(s("title"), 40)}”`;
+      case "audio_track":
+        return `Added the track “${clip(s("name"), 30)}”`;
+      case "audio_remove":
+        return s("id") ? `Removed a part from “${clip(s("title"), 40)}”` : `Removed a track from “${clip(s("title"), 40)}”`;
+      case "audio_move":
+        return `Moved a part in “${clip(s("title"), 40)}”`;
       case "look_up":
         return `Searched “${clip(s("query"), 60)}”`;
       case "read_link":
@@ -1496,6 +1632,13 @@ export function buildToolset(opts: {
       const op = String(a.op ?? "slug") as Parameters<typeof transformText>[1];
       return { output: transformText(String(a.text ?? ""), op) };
     }
+    if (name === "video_split") return await splitVideoClip({ userId, botId: bot.id }, a);
+    if (name === "video_duplicate") return await duplicateVideoClip({ userId, botId: bot.id }, a);
+    if (name === "video_tighten") return await tightenVideoTrack({ userId, botId: bot.id }, a);
+    if (name === "video_read") return await readVideoProject({ userId, botId: bot.id }, a);
+    if (name === "audio_track") return await addAudioTrack({ userId, botId: bot.id }, a);
+    if (name === "audio_remove") return await removeAudioPart({ userId, botId: bot.id }, a);
+    if (name === "audio_move") return await moveAudioPart({ userId, botId: bot.id }, a);
     if (name === "video_studio") return await openVideoStudio({ userId, botId: bot.id }, a);
     if (name === "video_add") return await addVideoClip({ userId, botId: bot.id }, a);
     if (name === "video_edit") return await editVideoClip({ userId, botId: bot.id }, a);

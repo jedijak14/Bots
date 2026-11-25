@@ -38,7 +38,62 @@ export type VideoClip = {
   /** A spoken line to synthesise for an audio clip the Bot builds itself. */
   speak?: string;
   label?: string;
+  /**
+   * Colour grading, the way a look is applied to a whole clip.
+   *
+   * Values are the CSS filter amounts: 1 leaves the channel alone, 0 removes
+   * it, 2 doubles it. Stored as plain numbers so a Bot can reason about them —
+   * "warm it up" is not a CSS string it has to guess at.
+   */
+  grade?: { brightness?: number; contrast?: number; saturate?: number; hue?: number; blur?: number; sepia?: number; gray?: number };
+  /** An entry this many seconds long, from black or from white. */
+  transition?: { kind: "fade" | "wipe" | "flash" | "slide" | "iris"; duration: number };
 };
+
+/** The CSS filter a clip's grade produces, or undefined when it has none. */
+export function gradeFilter(grade: VideoClip["grade"]): string | undefined {
+  if (!grade) return undefined;
+  const parts: string[] = [];
+  const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+  if (grade.brightness !== undefined) parts.push(`brightness(${clamp(grade.brightness, 0, 3)})`);
+  if (grade.contrast !== undefined) parts.push(`contrast(${clamp(grade.contrast, 0, 3)})`);
+  if (grade.saturate !== undefined) parts.push(`saturate(${clamp(grade.saturate, 0, 4)})`);
+  if (grade.hue !== undefined) parts.push(`hue-rotate(${Math.round(grade.hue)}deg)`);
+  if (grade.blur !== undefined) parts.push(`blur(${clamp(grade.blur, 0, 40)}px)`);
+  if (grade.sepia !== undefined) parts.push(`sepia(${clamp(grade.sepia, 0, 1)})`);
+  if (grade.gray !== undefined) parts.push(`grayscale(${clamp(grade.gray, 0, 1)})`);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+/**
+ * A time that shows the project rather than its first frame.
+ *
+ * Cards rest here instead of at 0. Frame 0 is by definition the moment a clip
+ * with an entry effect has not arrived yet: a film whose first shot slides in
+ * looked, at rest, like an empty grey rectangle. Half a second in, or a quarter
+ * of the way through a short clip, is past every transition and still shows the
+ * opening shot.
+ */
+export function previewTime(project: VideoProjectSpec): number {
+  const total = projectDuration(project);
+  if (!total) return 0;
+  for (const track of project.tracks) {
+    if (track.muted) continue;
+    for (const clip of track.clips) {
+      if (clip.kind === "audio" || clip.start > 0.001) continue;
+      // The clip at the head of the film: rest past its entry, inside it.
+      return Math.round(Math.min(clip.start + Math.max(0.5, clip.duration * 0.25), total - 0.01) * 100) / 100;
+    }
+  }
+  return Math.round(Math.min(0.5, total - 0.01) * 100) / 100;
+}
+
+/** How far through its entry a clip is, 0 at the first frame, 1 when done. */
+export function transitionProgress(clip: VideoClip, t: number): number {
+  const d = clip.transition?.duration ?? 0;
+  if (!d) return 1;
+  return Math.max(0, Math.min(1, (t - clip.start) / d));
+}
 
 /** A horizontal lane. Order in the array is stacking order, first on top. */
 export type VideoTrack = {

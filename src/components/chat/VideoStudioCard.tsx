@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { VideoClip, VideoProjectSpec } from "@/lib/video-studio-spec";
-import { projectDuration } from "@/lib/video-studio-spec";
+import { gradeFilter, previewTime, projectDuration, transitionProgress } from "@/lib/video-studio-spec";
 import { Icon } from "../icons";
 
 /**
@@ -143,7 +143,34 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
         let alpha = clip.opacity ?? 1;
         if (clip.fadeIn) alpha *= Math.min(1, (t - clip.start) / Math.max(0.01, clip.fadeIn));
         if (clip.fadeOut) alpha *= Math.min(1, (clip.start + clip.duration - t) / Math.max(0.01, clip.fadeOut));
+        // An entry effect multiplies the same alpha the fades use, so a clip
+        // can fade up and wipe in without one cancelling the other.
+        const entry = transitionProgress(clip, t);
+        if (entry < 1 && clip.transition?.kind === "flash") alpha *= 1;
+        if (entry < 1 && (clip.transition?.kind === "fade" || clip.transition?.kind === "iris")) alpha *= entry;
         ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+        // Grading is a canvas filter, which applies to every draw until reset.
+        const filter = gradeFilter(clip.grade);
+        if (filter) ctx.filter = filter;
+
+        // Non-fade entries move or mask the clip as it arrives.
+        const kind = clip.transition?.kind;
+        let restore: (() => void) | null = null;
+        if (entry < 1 && kind && kind !== "fade" && kind !== "flash" && kind !== "iris") {
+          ctx.save();
+          const ease = 1 - Math.pow(1 - entry, 3);
+          if (kind === "slide") {
+            ctx.translate((1 - ease) * canvas.width, 0);
+          } else if (kind === "wipe") {
+            // A wipe reveals from the left by clipping to a growing rect.
+            const w = canvas.width * ease;
+            ctx.beginPath();
+            ctx.rect(0, 0, w, canvas.height);
+            ctx.clip();
+          }
+          restore = () => ctx.restore();
+        }
 
         if (clip.kind === "text") {
           const text = clip.text?.text ?? clip.source;
@@ -180,7 +207,29 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
             ctx.fillText(`${clip.kind} unavailable`, canvas.width / 2, canvas.height / 2);
           }
         }
+        if (filter) ctx.filter = "none";
+        restore?.();
         ctx.globalAlpha = 1;
+      }
+    }
+
+    // A flash is a pulse at the cut, not a curtain over the clip.
+    //
+    // Drawn as a separate pass over the whole frame, it whitened everything for
+    // the length of the entry window — and because every card rests on frame 0,
+    // the first thing the user saw of a project whose first clip flashes was a
+    // blank grey rectangle. It now peaks in the first 120ms and is gone.
+    for (const track of spec.tracks) {
+      if (track.muted) continue;
+      for (const clip of track.clips) {
+        if (clip.transition?.kind !== "flash") continue;
+        const since = t - clip.start;
+        if (since < 0 || since > 0.12) continue;
+        ctx.save();
+        ctx.globalAlpha = (1 - since / 0.12) * 0.9;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
       }
     }
   };
@@ -209,32 +258,39 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, duration]);
 
-  // Keep any audio clips in sync with the same clock.
+  // Follow the clips with `time`, not with a boolean.
+  //
+  // This used to depend on `time > 0 && playing`, which is false at the very
+  // first frame of playback: a sound that starts at 0.0s never began, and the
+  // effect did not re-run until the play state itself changed. Depending on the
+  // clock means a clip that starts mid-film begins on the frame it is reached.
   useEffect(() => {
     if (!spec) return;
-    if (!playing) {
-      for (const a of audioRefs.current) a.pause();
-      return;
-    }
     for (const track of spec.tracks) {
       if (track.muted) continue;
       for (const clip of track.clips) {
         if (clip.kind !== "audio") continue;
         const el = sources.loaded.get(clip.source) as HTMLAudioElement | undefined;
         if (!el) continue;
-        const shouldPlay = time >= clip.start && time < clip.start + clip.duration;
+        const len = clip.duration / (clip.speed ?? 1);
+        const shouldPlay = playing && time >= clip.start && time < clip.start + len;
         if (shouldPlay && el.paused) {
-          el.currentTime = Math.max(0, (clip.in ?? 0) + (time - clip.start));
+          el.currentTime = Math.max(0, (clip.in ?? 0) + (time - clip.start) * (clip.speed ?? 1));
+          el.playbackRate = Math.max(0.25, Math.min(4, clip.speed ?? 1));
           void el.play().catch(() => {});
         } else if (!shouldPlay && !el.paused) {
           el.pause();
         }
       }
     }
-  }, [time > 0 && playing, spec]);
+  }, [time, playing, spec]);
 
   useEffect(() => {
-    if (ready) draw(0);
+    if (!ready || !spec) return;
+    // Rest past any entry effect, so the card opens on a real frame.
+    const rest = previewTime(spec);
+    setTime(rest);
+    draw(rest);
   }, [ready]);
 
   if (!spec) {

@@ -17,7 +17,7 @@ import type { Tool } from "./ai/llm";
  * ("create_project_starter_game" rather than "do something with a game").
  */
 
-export type LibraryCategory = "project" | "code" | "media" | "research" | "design" | "data";
+export type LibraryCategory = "project" | "code" | "media" | "research" | "design" | "data" | "business" | "learning" | "writing" | "life";
 
 export type LibraryTool = {
   name: string;
@@ -180,6 +180,91 @@ const DATA_JOBS: Array<{ key: string; label: string; words: string[] }> = [
   { key: "convert", label: "converting", words: ["convert", "format", "transform"] },
 ];
 
+/**
+ * Business documents people actually have to produce.
+ *
+ * Each entry is a real deliverable with a known shape — a scope of work has
+ * sections a contract has and a blog post does not. That shape is what the
+ * library is for: it turns "write an SOW" into a brief with the right headings
+ * instead of a generic document.
+ */
+const BUSINESS_DOCS: Array<{ key: string; label: string; words: string[]; sections: string }> = [
+  { key: "sow", label: "a statement of work", words: ["sow", "statement of work", "scope of work", "contract"] , sections: "scope, deliverables, timeline, assumptions, out of scope, acceptance, fees" },
+  { key: "proposal", label: "a project proposal", words: ["proposal", "pitch deck", "bid", "quote"], sections: "problem, approach, deliverables, timeline, team, pricing, why us" },
+  { key: "invoice", label: "an invoice", words: ["invoice", "bill", "receipt", "payment"], sections: "from, to, items with quantities and rates, subtotal, tax, total, terms, payment details" },
+  { key: "estimate", label: "an estimate", words: ["estimate", "quote", "cost breakdown"], sections: "items, hours, rate, contingency, total, validity, exclusions" },
+  { key: "meeting-notes", label: "meeting notes", words: ["meeting", "notes", "minutes", "standup"], sections: "attendees, decisions, actions with owners and dates, open questions" },
+  { key: "status-report", label: "a status report", words: ["status", "update", "progress report"], sections: "summary, done, in progress, blocked, next, risks" },
+  { key: "one-pager", label: "a one-pager", words: ["one pager", "brief", "summary sheet"], sections: "the problem, the offer, the evidence, the ask" },
+  { key: "job-post", label: "a job posting", words: ["job posting", "hiring", "job description", "role"], sections: "role, responsibilities, must-haves, nice-to-haves, salary, process" },
+  { key: "press-release", label: "a press release", words: ["press release", "pr", "announcement"], sections: "headline, dateline, lede, quote, detail, boilerplate, contact" },
+  { key: "case-study", label: "a case study", words: ["case study", "success story", "testimonial"], sections: "client, problem, what we did, results with numbers, quote" },
+  { key: "policy", label: "a policy document", words: ["policy", "handbook", "rules", "guidelines"], sections: "purpose, scope, who it applies to, the rules, exceptions, review date" },
+  { key: "runbook", label: "a runbook", words: ["runbook", "playbook", "procedure", "sop"], sections: "trigger, prerequisites, steps, verification, rollback, who to call" },
+  { key: "contract-review", label: "a contract review memo", words: ["contract review", "legal review", "redline"], sections: "parties, term, obligations, risk clauses, missing protections, recommendation" },
+  { key: "budget", label: "a budget", words: ["budget", "spending plan", "forecast"], sections: "categories, monthly figures, annual total, assumptions, contingencies" },
+  { key: "pitch-email", label: "a pitch email", words: ["cold email", "outreach", "pitch email"], sections: "subject, why you, one specific proof, one clear ask, short signature" },
+  { key: "swot", label: "a SWOT analysis", words: ["swot", "strengths", "analysis"], sections: "strengths, weaknesses, opportunities, threats, so what" },
+  { key: "okrs", label: "OKRs", words: ["okr", "objectives", "key results"], sections: "three objectives, two to four measurable key results each, owner, check-in cadence" },
+  { key: "faq", label: "an FAQ", words: ["faq", "questions", "help page"], sections: "the ten questions people actually ask, answered plainly" },
+];
+
+/**
+ * Things people learn, at the level a tutor would pitch them.
+ *
+ * A lesson plan has a shape too: what the learner can already do, what this
+ * adds, one worked example, one thing to try alone. Naming it turns "teach me
+ * recursion" into a plan rather than a paragraph.
+ */
+const LEARNING_TOPICS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "lesson-plan", label: "a lesson plan", words: ["lesson", "teach", "taught", "teaching", "class", "curriculum", "learn", "recursion"] },
+  { key: "study-guide", label: "a study guide", words: ["study", "revise", "exam", "test prep"] },
+  { key: "flashcards", label: "flashcards", words: ["flashcard", "flashcards", "memorise", "memorize", "cards", "spaced repetition", "vocab", "vocabulary", "verbs"] },
+  { key: "practice-set", label: "a practice set", words: ["practice", "exercises", "problems", "drill"] },
+  { key: "explainer", label: "an explainer", words: ["explain", "how does", "what is", "eli5"] },
+  { key: "worked-example", label: "a worked example", words: ["example", "walkthrough", "step by step"] },
+  { key: "syllabus", label: "a syllabus", words: ["syllabus", "course", "module"] },
+  { key: "quiz", label: "a quiz", words: ["quiz", "questions", "assessment"] },
+  { key: "cheat-sheet", label: "a cheat sheet", words: ["cheat sheet", "reference card", "quick reference"] },
+  { key: "learning-path", label: "a learning path", words: ["learning path", "roadmap", "from scratch", "become"] },
+];
+
+/**
+ * Writing that is not a document: things with a voice and a length.
+ */
+const WRITING_JOBS: Array<{ key: string; label: string; words: string[]; shape: string }> = [
+  { key: "blog-post", label: "a blog post", words: ["blog", "article", "post"], shape: "a hook, a promise, three or four sections, a close that earns its ending" },
+  { key: "newsletter", label: "a newsletter", words: ["newsletter", "email blast", "digest"], shape: "subject line, one idea, one link list, a sign-off" },
+  { key: "landing-copy", label: "landing page copy", words: ["landing page", "hero copy", "headline"], shape: "headline, subhead, three benefits with proof, objection handling, single call to action" },
+  { key: "product-description", label: "product descriptions", words: ["product description", "shop listing", "ecommerce"], shape: "one sentence of what it is, three of why it is different, specs, sizes" },
+  { key: "social-post", label: "social posts", words: ["social post", "tweet", "thread", "linkedin post"], shape: "a line that stops the scroll, the substance, one ask, no hashtag soup" },
+  { key: "video-script", label: "a video script", words: ["script", "video", "youtube"], shape: "hook in the first five seconds, setup, payoff, call to action, timings marked" },
+  { key: "speech", label: "a speech", words: ["speech", "talk", "toast", "keynote"], shape: "opening that names the room, one throughline, three beats, a close that lands" },
+  { key: "bio", label: "a bio", words: ["bio", "about me", "biography", "speaker profile"], shape: "first person, third person and one-line versions" },
+  { key: "cover-letter", label: "a cover letter", words: ["cover letter", "application", "applying"], shape: "why this role, one piece of evidence, what you would do first, brief close" },
+  { key: "resume", label: "a resume", words: ["resume", "cv", "curriculum vitae"], shape: "summary, roles with outcomes not duties, skills, education" },
+  { key: "apology", label: "an apology or correction", words: ["apology", "sorry", "correction", "retraction"], shape: "what happened, what it affected, what changes, no hedging" },
+  { key: "negotiation-email", label: "a negotiation email", words: ["negotiate", "counter offer", "raise", "salary"], shape: "the ask with a number, the case for it, what you will do, room to respond" },
+];
+
+/**
+ * Everyday jobs with a real structure, not small talk.
+ */
+const LIFE_JOBS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "meal-plan", label: "a meal plan", words: ["meal plan", "meals", "meal", "menu", "food", "diet", "weekly meals", "cook", "dinner"] },
+  { key: "shopping-list", label: "a shopping list", words: ["shopping list", "groceries", "grocery", "buy", "shop"] },
+  { key: "workout-plan", label: "a workout plan", words: ["workout", "exercise", "gym", "training"] },
+  { key: "travel-itinerary", label: "a travel itinerary", words: ["itinerary", "trip", "travel", "holiday"] },
+  { key: "moving-checklist", label: "a moving checklist", words: ["move", "moving", "relocation"] },
+  { key: "event-plan", label: "an event plan", words: ["event", "party", "wedding", "conference"] },
+  { key: "packing-list", label: "a packing list", words: ["pack", "packing", "luggage"] },
+  { key: "cleaning-schedule", label: "a cleaning schedule", words: ["clean", "chores", "housework"] },
+  { key: "budget-plan", label: "a personal budget", words: ["budget", "money", "savings", "expenses"] },
+  { key: "care-plan", label: "a care plan", words: ["care", "plant", "pet", "garden"] },
+  { key: "gift-list", label: "a gift list", words: ["gift", "present", "birthday"] },
+  { key: "home-project", label: "a home project plan", words: ["renovate", "diy", "build", "repair"] },
+];
+
 const CODE_TASKS: Array<{ key: string; label: string; words: string[] }> = [
   { key: "scaffold", label: "scaffold a file", words: ["scaffold", "boilerplate", "template", "starter"] },
   { key: "explain", label: "explain code", words: ["explain", "understand", "how does"] },
@@ -315,7 +400,7 @@ const DOCUMENTS: Array<{ key: string; label: string; words: string[]; kind: stri
   { key: "product-spec", label: "a product spec", words: ["spec", "requirements", "scope"], kind: "spec" },
   { key: "prd", label: "a PRD", words: ["prd", "product doc"], kind: "prd" },
   { key: "release-notes", label: "release notes", words: ["release", "changelog", "notes"], kind: "release_notes" },
-  { key: "onboarding-email", label: "an onboarding email", words: ["email", "welcome", "sequence"], kind: "email" },
+  { key: "onboarding-email", label: "an onboarding email", words: ["onboarding", "welcome", "sequence", "nurture", "drip"], kind: "email" },
   { key: "pitch-deck", label: "a pitch deck", words: ["pitch", "deck", "investor"], kind: "pitch" },
   { key: "case-study", label: "a case study", words: ["case study", "results", "client"], kind: "case_study" },
   { key: "faq-copy", label: "FAQ copy", words: ["faq", "questions", "answers"], kind: "faq" },
@@ -333,11 +418,13 @@ const DOCUMENTS: Array<{ key: string; label: string; words: string[]; kind: stri
 ];
 
 const AUDIENCES: Array<{ key: string; label: string; words: string[] }> = [
-  { key: "developer", label: "a developer", words: ["developer", "engineer", "technical"] },
-  { key: "executive", label: "an executive", words: ["executive", "leadership", "brief"] },
-  { key: "customer", label: "a customer", words: ["customer", "user", "buyer"] },
-  { key: "investor", label: "an investor", words: ["investor", "funding", "raise"] },
-  { key: "beginner", label: "a beginner", words: ["beginner", "simple", "plain english"] },
+  // Plurals are listed: "release notes for developers" named the audience in a
+  // form the singular word did not match, so all five variants tied.
+  { key: "developer", label: "a developer", words: ["developer", "developers", "engineer", "engineers", "technical", "dev"] },
+  { key: "executive", label: "an executive", words: ["executive", "executives", "leadership", "brief", "board"] },
+  { key: "customer", label: "a customer", words: ["customer", "customers", "user", "users", "buyer", "buyers", "client"] },
+  { key: "investor", label: "an investor", words: ["investor", "investors", "funding", "raise", "vc"] },
+  { key: "beginner", label: "a beginner", words: ["beginner", "beginners", "simple", "plain english", "non-technical"] },
 ];
 
 const GAME_MODES: Array<{ key: string; label: string; words: string[] }> = [
@@ -575,7 +662,12 @@ function buildLibrary(): LibraryTool[] {
           `Write ${doc.label} for ${audience.label}.`,
           "write_document",
           { kind: doc.kind, audience: audience.key },
-          audience.words,
+          // The document's own subject is what makes it specific. Passing the
+          // audience here instead meant the only "specific" words were
+          // "beginner"/"developer"/"investor": someone asking for release notes
+          // named none of those, so all five variants fell into the verb-only
+          // bucket and write_meeting_notes won on the word "notes" alone.
+          [...doc.words, ...audience.words],
         ),
       );
     }
@@ -735,6 +827,110 @@ function buildLibrary(): LibraryTool[] {
         ),
       );
     }
+  }
+
+  // business documents (18 kinds x write / review)
+  for (const doc of BUSINESS_DOCS) {
+    out.push(
+      makeTool(
+        `write_${doc.key.replace(/-/g, "_")}`,
+        "business",
+        [...doc.words],
+        `Write ${doc.label}. A good one has: ${doc.sections}.`,
+        "write_document",
+        { kind: doc.key, sections: doc.sections },
+        doc.words,
+      ),
+    );
+    out.push(
+      makeTool(
+        `review_${doc.key.replace(/-/g, "_")}`,
+        "business",
+        [...doc.words, "review", "check"],
+        `Review ${doc.label} for what is missing, vague or risky. Compare it against: ${doc.sections}.`,
+        "write_document",
+        { kind: `${doc.key} review`, sections: doc.sections },
+        doc.words,
+      ),
+    );
+  }
+
+  // learning (10 topics x plan / practice)
+  for (const topic of LEARNING_TOPICS) {
+    out.push(
+      makeTool(
+        `${topic.key === "explainer" ? "explain" : "plan"}_${topic.key.replace(/-/g, "_")}`,
+        "learning",
+        [...topic.words],
+        `Build ${topic.label} for one specific learner: what they already know, what this adds, one worked example, one thing to try alone.`,
+        "write_document",
+        { kind: topic.key },
+        topic.words,
+      ),
+    );
+    out.push(
+      makeTool(
+        `practise_${topic.key.replace(/-/g, "_")}`,
+        "learning",
+        [...topic.words, "test", "quiz", "exercise"],
+        `Write practice material for ${topic.label}: real questions with answers, graded from easy to hard, each with the reasoning shown.`,
+        "write_document",
+        { kind: `${topic.key} practice` },
+        topic.words,
+      ),
+    );
+  }
+
+  // writing (13 jobs x draft / edit)
+  for (const job of WRITING_JOBS) {
+    out.push(
+      makeTool(
+        `draft_${job.key.replace(/-/g, "_")}`,
+        "writing",
+        [...job.words],
+        `Draft ${job.label}. Its shape: ${job.shape}.`,
+        "write_document",
+        { kind: job.key, shape: job.shape },
+        job.words,
+      ),
+    );
+    out.push(
+      makeTool(
+        `edit_${job.key.replace(/-/g, "_")}`,
+        "writing",
+        [...job.words, "edit", "tighten", "rewrite"],
+        `Edit ${job.label}: cut what does not earn its place, keep the voice, make the first line work. Expect the shape to be ${job.shape}.`,
+        "write_document",
+        { kind: `${job.key} edit`, shape: job.shape },
+        job.words,
+      ),
+    );
+  }
+
+  // everyday (12 jobs x plan / checklist, all of which are documents)
+  for (const job of LIFE_JOBS) {
+    out.push(
+      makeTool(
+        `plan_${job.key.replace(/-/g, "_")}`,
+        "life",
+        [...job.words],
+        `Plan ${job.label} for a specific person and situation, with dates, quantities and costs where they apply.`,
+        "write_document",
+        { kind: job.key },
+        job.words,
+      ),
+    );
+    out.push(
+      makeTool(
+        `checklist_${job.key.replace(/-/g, "_")}`,
+        "life",
+        [...job.words, "checklist", "list", "steps"],
+        `Write a checklist for ${job.label}: ordered, tickable, and complete enough that nothing gets missed.`,
+        "write_document",
+        { kind: `${job.key} checklist` },
+        job.words,
+      ),
+    );
   }
 
   return out;
@@ -908,7 +1104,13 @@ export function searchToolLibrary(query: string, limit = 40): LibraryMatch[] {
   // — a perfect verb on the wrong subject beat a synonym on the right one, 7
   // points to 36. So tools are bucketed by whether they *share the subject* of
   // the strongest match, and the verb only orders inside a bucket.
-  const top = scored.length ? scored[0].score : 0;
+  // The threshold has to be the *best* score, not the first one collected.
+  // `scored` is in library order until the sort at the end, and the project
+  // tools are built first — so `scored[0]` was whatever project tool happened
+  // to match at all, and a 21-point `write_faq` became the bar that the
+  // 49-point `draft_landing_copy` had to clear. It cleared it, but the verb
+  // tiebreak then ran across both anyway and put the wiki page first.
+  const top = scored.reduce((best, t) => Math.max(best, t.score), 0);
   const strong = (t: LibraryMatch) => (t.score >= top * 0.6 ? 0 : 1);
   // A general tool (create_a_game) exists precisely for requests that name no
   // genre — so it must be *demoted* the moment a genre is named, not merely
