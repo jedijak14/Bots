@@ -617,6 +617,19 @@ export function buildToolset(opts: {
               await sb.files.write(safePath(path), content);
             }
           : undefined,
+        readFile: e2bKey
+          ? async (path) => {
+              const sb = await getDesktop();
+              return sb.files.read(safePath(path)).catch(() => null);
+            }
+          : undefined,
+        readFileBase64: e2bKey
+          ? async (path) => {
+              const sb = await getDesktop();
+              const bytes = await sb.files.read(safePath(path), { format: "bytes" }).catch(() => null);
+              return bytes ? Buffer.from(bytes).toString("base64") : null;
+            }
+          : undefined,
         runCommand: e2bKey
           ? async (command, timeoutMs) => {
               const sb = await getDesktop();

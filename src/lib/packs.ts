@@ -246,6 +246,65 @@ const WEB_TOOLS: Tool[] = [
 
 const MODEL_TOOLS: Tool[] = [
   {
+    name: "api_call",
+    description:
+      "Get live information from a real website by calling it directly — flights, prices, listings, scores, search results, anything a site shows as data. Uses API Anything, which learns how a site fetches its own data, so this is one cheap request instead of driving a browser. Call it with the site and what you want; if no operation is known for the site it will say so and you should use the browser instead.",
+    parameters: obj(
+      {
+        site: { type: "string", description: "The site, as a name or host: 'hacker-news', 'united.com'." },
+        operation: { type: "string", description: "What to do there, e.g. search, list, get." },
+        query: { type: "object", description: "Arguments the operation takes, as key/value pairs.", additionalProperties: true },
+        question: { type: "string", description: "The question in plain words, when you do not know the site or operation." },
+      },
+      [],
+    ),
+  },
+  {
+    name: "choose_route",
+    description:
+      "Decide whether a request should go through a site's API or through a real browser, and say why. Call this before fetching something live when you are unsure: an API call is milliseconds and a browser is seconds, so the wrong choice is expensive. Returns the route and the fallback if the first attempt fails.",
+    parameters: obj(
+      {
+        request: { type: "string", description: "What you are trying to find out, in plain words." },
+      },
+      ["request"],
+    ),
+  },
+  {
+    name: "kinetix",
+    description:
+      "Render a real 3D scene with Kinetix, the Bot's Blender install: physically based path tracing, real materials, real lighting, and exports in glTF, OBJ and STL. Use it when the model should look like a photograph of an object rather than a flat-shaded drawing — product shots, hero art, anything going into a game engine. It is slower than make_3d_model and needs Kinetix installed; if it reports that it is unavailable, use make_3d_model instead and say why.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "What the render is." },
+        objects: {
+          type: "array",
+          description: "What to put in the scene. Each needs a kind.",
+          items: obj(
+            {
+              kind: { type: "string", enum: ["tree", "rock", "crystal", "tower", "pillar", "spaceship", "terrain", "coin"], description: "The builder to use." },
+              scale: { type: "number", description: "Size multiplier for this object, 0.1-8." },
+            },
+            ["kind"],
+          ),
+        },
+        palette: {
+          type: "array",
+          items: { type: "string" },
+          description: "Three hex colours: body, structure, accent. Pick from the design brief.",
+        },
+        lighting: { type: "string", enum: ["studio", "daylight", "dusk", "night", "sunrise"], description: "The light in the scene." },
+        atmosphere: { type: "string", enum: ["none", "light", "haze", "heavy"], description: "Fog for depth. Light is usually right." },
+        detail: { type: "number", description: "1 rough to 5 fine. Defaults to 3." },
+        quality: { type: "string", enum: ["draft", "standard", "fine"], description: "draft is fast; fine is slow. Defaults to draft." },
+        seed: { type: "number", description: "Same seed, same scene." },
+        azimuth: { type: "number", description: "Camera angle around the subject, degrees." },
+        elevation: { type: "number", description: "Camera height above the horizon, degrees." },
+      },
+      ["title", "objects"],
+    ),
+  },
+  {
     name: "make_3d_model",
     description:
       "Build a real 3D model and save it as two artifacts: a Wavefront OBJ mesh you can open in any 3D editor, and a self-contained HTML viewer that orbits with the mouse. Works with no image or 3D service — the geometry is generated. Use it for props, terrain, simple characters and anything a game needs a mesh for.",

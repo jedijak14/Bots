@@ -20,6 +20,10 @@ export type PackToolContext = {
   signal: AbortSignal;
   /** Write a file on the Bot's computer. Absent when there is no computer. */
   writeFile?: (path: string, content: string) => Promise<void>;
+  /** Read a text file back. Absent when there is no computer. */
+  readFile?: (path: string) => Promise<string | null>;
+  /** Read a binary file back as base64. Absent when there is no computer. */
+  readFileBase64?: (path: string) => Promise<string | null>;
   /** Run a command on the Bot's computer. Absent when there is no computer. */
   runCommand?: (command: string, timeoutMs?: number) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
   /** Start a Helper Bot. Wired by the chat route so helpers share the loop. */
@@ -31,6 +35,44 @@ export type PackToolContext = {
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…[truncated]` : s);
+
+/** Pull Kinetix's one JSON line out of Blender's render chatter. */
+function parseKinetix(stdout: string): {
+  ok: boolean;
+  reason: string;
+  raw: string;
+  stats?: { faces?: number; vertices?: number; blender?: string };
+} {
+  const lines = stdout.trim().split("\n").reverse();
+  for (const line of lines) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line) as {
+        ok?: boolean;
+        error?: string;
+        stage?: string;
+        stats?: { faces?: number; vertices?: number; blender?: string };
+      };
+      return {
+        ok: !!parsed.ok,
+        reason: parsed.error ? `${parsed.stage ?? "render"}: ${parsed.error.slice(-400)}` : "no result",
+        raw: line,
+        stats: parsed.stats,
+      };
+    } catch {
+      /* Blender also prints JSON-looking log lines; keep looking. */
+    }
+  }
+  return { ok: false, reason: "Kinetix produced no result line", raw: "" };
+}
+
+async function readBack(ctx: PackToolContext, path: string): Promise<string | null> {
+  return ctx.readFileBase64 ? ctx.readFileBase64(path).catch(() => null) : null;
+}
+
+async function readBackText(ctx: PackToolContext, path: string): Promise<string | null> {
+  return ctx.readFile ? ctx.readFile(path).catch(() => null) : null;
+}
 
 async function saveArtifact(
   ctx: PackToolContext,
@@ -365,6 +407,161 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
     }
 
     /* --------------------------------- models -------------------------------- */
+
+    case "choose_route": {
+      const { decideRoute } = await import("@/lib/api-route");
+      const decision = decideRoute(String(a.request ?? ""), !!ctx.runCommand);
+      return {
+        output: [
+          `Route: ${decision.route === "api" ? "the site's own API" : "a real browser"}.`,
+          `Why: ${decision.why}.`,
+          decision.fallback ? `If that fails: ${decision.fallback.route === "api" ? "the API" : "a browser"} — ${decision.fallback.why}.` : "",
+          decision.route === "api"
+            ? "Next: call api_call with the site and what you want."
+            : ctx.runCommand
+              ? "Next: drive the browser on the computer, or use computer_* tools."
+              : "There is no computer here, so a browser is not possible.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    }
+
+    case "api_call": {
+      // API Anything runs as a CLI on the computer, so this needs one. It needs
+      // no account and no key: it learns a site's own front end.
+      if (!ctx.runCommand) {
+        return {
+          output:
+            "Calling a site directly needs API Anything running on a computer, and this Bot has none. Use web_search or web_fetch instead.",
+        };
+      }
+      const site = String(a.site ?? "").trim();
+      const operation = String(a.operation ?? "search").trim();
+      const query = (a.query ?? {}) as Record<string, unknown>;
+      const args = Object.entries(query)
+        .map(([k, v]) => `${k}=${String(v).replace(/\s+/g, "-")}`)
+        .join(" ");
+      const question = String(a.question ?? "").trim();
+
+      // Finding the site and operation is the hard part; ask API Anything rather
+      // than guessing at names it will not recognise.
+      if (!site) {
+        const found = await ctx.runCommand(
+          `npx -y api-anything find ${JSON.stringify(question || operation)} 2>&1 | head -c 3000`,
+          180_000,
+        );
+        return {
+          output: [
+            found.stdout.trim() ? `Sites API Anything knows for that: ${found.stdout.trim().slice(0, 1200)}` : "No matching site was found.",
+            "Call api_call again with a site and operation from that list.",
+          ].join("\n"),
+        };
+      }
+
+      const result = await ctx.runCommand(
+        `npx -y api-anything call ${JSON.stringify(site)} ${JSON.stringify(operation)} ${args} 2>&1 | head -c 12000`,
+        240_000,
+      );
+      const { nextFromAnswer, decideRoute } = await import("@/lib/api-route");
+      const next = nextFromAnswer(result.stdout);
+      if (next.action === "done") return { output: result.stdout.slice(0, 8000) };
+      // We are already past the "is there a computer" guard at the top of this
+      // case, so a browser fallback is genuinely available here.
+      const fallback = decideRoute(question || operation, true).fallback;
+      return {
+        output: [
+          `That call did not work: ${next.reason}`,
+          next.action === "retry"
+            ? "API Anything says to retry once."
+            : `Fallback: ${fallback?.why ?? "open the page in a browser on the computer"}.`,
+        ].join("\n"),
+      };
+    }
+
+    case "kinetix": {
+      // Kinetix is real Blender driven through the Bot's computer, so the whole
+      // path is: write a spec, run the renderer, bring the files back. Without
+      // a computer there is no Blender, and saying so beats pretending.
+      if (!ctx.runCommand) {
+        return {
+          output:
+            "Kinetix needs a computer to run Blender on, and this Bot has none. Use make_3d_model instead — it builds a real OBJ and a viewer with no extra service — or turn on a computer for this Bot to get path-traced renders.",
+        };
+      }
+      const title = String(a.title ?? "Kinetix scene").trim();
+      const objects = Array.isArray(a.objects) ? a.objects : [{ kind: "rock" }];
+      const work = `kinetix-work/${slug(title)}-${Date.now().toString(36)}`;
+      const spec = {
+        name: slug(title) || "scene",
+        objects: objects.slice(0, 12),
+        palette: Array.isArray(a.palette) ? a.palette.map(String).slice(0, 3) : undefined,
+        lighting: a.lighting ?? "studio",
+        atmosphere: a.atmosphere ?? "light",
+        detail: Number(a.detail) || 3,
+        quality: a.quality ?? "draft",
+        seed: Number(a.seed) || 1,
+        azimuth: a.azimuth,
+        elevation: a.elevation,
+        resolution: { width: 900, height: 640 },
+      };
+      await ctx.runCommand(`mkdir -p ${work}`, 20_000);
+      if (ctx.writeFile) await ctx.writeFile(`${work}/scene.json`, JSON.stringify(spec, null, 2));
+
+      // First use installs Blender on the computer. It is a ~900 MB one-time
+      // download, so this checks before paying for it, and the check is a real
+      // render rather than an import (an import can succeed with Cycles broken).
+      const ready = await ctx.runCommand(
+        `KINETIX_HOME="$HOME/.kinetix" python3 "$HOME/kinetix/blender.py" --check 2>/dev/null | head -c 200`,
+        30_000,
+      );
+      if (!ready.stdout.includes('"ok":true')) {
+        const install = await ctx.runCommand(
+          `test -d "$HOME/kinetix" || git clone --depth 1 https://github.com/${process.env.KINETIX_REPO ?? "jedijak14/Bots"}.git "$HOME/kinetix" 2>&1 | tail -2; cd "$HOME/kinetix/kinetix" 2>/dev/null || cd "$HOME/kinetix"; KINETIX_HOME="$HOME/.kinetix" bash install.sh 2>&1 | tail -6`,
+          1_500_000,
+        );
+        if (install.exitCode !== 0) {
+          return {
+            output: `Kinetix is not installed on this computer and could not install itself.\n${(install.stderr || install.stdout).slice(-400)}\n\nUse make_3d_model instead: it needs no renderer.`,
+          };
+        }
+      }
+
+      const run = await ctx.runCommand(
+        `cd ${work} && KINETIX_HOME="$HOME/.kinetix" python3 "$HOME/kinetix/kinetix/blender.py" scene.json --out . --timeout 600`,
+        660_000,
+      );
+      const parsed = parseKinetix(run.stdout);
+      if (!parsed.ok) {
+        return {
+          output:
+            run.exitCode === 0 && !parsed.raw
+              ? "Kinetix did not report a result."
+              : `Kinetix could not finish. ${parsed.reason}\n\nUse make_3d_model for a model that needs no renderer.`,
+        };
+      }
+      const saved: string[] = [];
+      const image = await readBack(ctx, `${work}/${spec.name}.png`);
+      if (image) {
+        const ok = await saveArtifact(ctx, title, "image", `data:image/png;base64,${image}`);
+        if (ok) saved.push(`render: ${ok.id}`);
+      }
+      for (const ext of ["glb", "obj"]) {
+        const file = await readBackText(ctx, `${work}/${spec.name}.${ext}`);
+        if (file) {
+          const ok = await saveArtifact(ctx, `${title} (${ext.toUpperCase()})`, ext === "glb" ? "model_glb" : "model_obj", file);
+          if (ok) saved.push(`${ext}: ${ok.id}`);
+        }
+      }
+      return {
+        ...(saved.length ? {} : {}),
+        output: [
+          `Kinetix rendered ${title} with Blender ${parsed.stats?.blender ?? ""} — ${parsed.stats?.faces ?? 0} faces, ${parsed.stats?.vertices ?? 0} vertices, Cycles on the CPU.`,
+          saved.length ? `Artifacts: ${saved.join(", ")}.` : "The files were rendered but could not be saved.",
+          `Files are on the computer under ${work}/.`,
+        ].join("\n"),
+      };
+    }
 
     case "make_3d_model": {
       const { buildModel, viewerHtml } = await import("@/lib/model-gen");
