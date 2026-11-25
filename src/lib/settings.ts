@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { userSettings } from "@/db/schema";
 import { decrypt } from "@/lib/crypto";
-import { PROVIDERS, resolveBase, type ProviderId } from "@/lib/ai/providers";
+import { isLocalBaseUrl, PROVIDERS, resolveBase, type ProviderId } from "@/lib/ai/providers";
 
 export type SettingsRow = typeof userSettings.$inferSelect;
 
@@ -23,8 +23,17 @@ export type AiConfig = {
   imageModel?: string | null;
 };
 
+
+// Re-exported so callers of settings do not need a second import; defined in
+// providers.ts because the settings dialog (a client component) needs it too
+// and this module is server-only.
+export { isLocalBaseUrl };
+
 export function aiConfigFrom(s: SettingsRow): AiConfig | null {
-  const apiKey = decrypt(s.aiKeyEnc);
+  // A local server is usable with no key at all, so the key is not the thing
+  // that decides whether this account is configured — the provider and a
+  // reachable base URL are.
+  const apiKey = decrypt(s.aiKeyEnc) ?? (isLocalBaseUrl(s.aiBaseUrl) ? "sk-local" : null);
   if (!apiKey || !s.aiProvider) return null;
   const provider = s.aiProvider as ProviderId;
   if (!(provider in PROVIDERS)) return null;
@@ -39,7 +48,9 @@ export function e2bKeyFrom(s: SettingsRow): string | null {
 export function publicSettings(s: SettingsRow) {
   const provider = (s.aiProvider as ProviderId | null) ?? null;
   return {
-    hasAiKey: !!s.aiKeyEnc,
+    // Reported as true for a local server, because the question this answers is
+    // "can my bots reply", and a keyless Ollama can.
+    hasAiKey: !!s.aiKeyEnc || (!!s.aiProvider && isLocalBaseUrl(s.aiBaseUrl)),
     aiKeyHint: s.aiKeyHint,
     aiProvider: provider,
     aiProviderLabel: provider ? PROVIDERS[provider].label : null,

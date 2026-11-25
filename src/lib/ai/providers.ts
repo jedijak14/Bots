@@ -89,6 +89,18 @@ export function guessByPrefix(key: string): ProviderId | null {
  * itself. Plain `sk-` is shared by OpenAI, DeepSeek, Moonshot and several
  * gateways, so it is the one shape that genuinely needs a network probe.
  */
+/**
+ * Is this an OpenAI-compatible server on the machine running the app?
+ *
+ * Ollama, LM Studio, llama.cpp and vLLM all answer without a key. One predicate
+ * is exported rather than re-typed in the route, the settings row and the
+ * dialog, because all three must agree: if the dialog enables a save the route
+ * rejects, the user sees a button that does nothing.
+ */
+export function isLocalBaseUrl(baseUrl: string | null | undefined): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?(\/|$)/i.test((baseUrl ?? "").trim());
+}
+
 export function candidatesForKey(key: string): ProviderId[] {
   const k = key.trim();
   if (k.startsWith("nvapi-")) return ["nvidia"];

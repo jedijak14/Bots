@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
+import { isLocalBaseUrl, PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
 import { signOutAction } from "@/lib/auth-actions";
 import { useApp, type SettingsTab } from "./AppProvider";
 import { Icon, Spinner, type IconName } from "./icons";
@@ -213,6 +213,14 @@ function AiTab() {
   const [mode, setMode] = useState<string>(s.aiProviderMode || "auto");
   const [reasoning, setReasoning] = useState<"off" | "low" | "medium" | "high">(s.reasoning ?? "off");
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
+  /**
+   * A base URL pointing at this machine. Ollama and LM Studio ship with no key,
+   * so the save button must not sit disabled waiting for one that will never be
+   * typed. Matches the check the API route makes, deliberately: the two must
+   * agree or the button enables a save the server rejects.
+   */
+  // Same predicate the server and the settings row use; see `isLocalBaseUrl`.
+  const localBase = isLocalBaseUrl(baseUrl);
   const [model, setModel] = useState(s.defaultModel ?? "");
   const [imageModel, setImageModel] = useState(s.imageModel ?? "");
   const [models, setModels] = useState<string[]>([]);
@@ -318,6 +326,7 @@ function AiTab() {
             />
             <p className="mt-1.5 text-[12px] text-neutral-500">
               For any OpenAI-compatible server (Ollama, LM Studio, vLLM, LiteLLM, Azure…). Requests go to <code>{"{base}/chat/completions"}</code>.
+              {localBase ? " A server on this machine needs no API key — leave the key field empty." : ""}
             </p>
           </div>
         )}
@@ -409,7 +418,7 @@ function AiTab() {
       {msg && <p className={cx("text-[13px]", msg.ok ? "text-emerald-400" : "text-[#ff6b7a]")}>{msg.text}</p>}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <button onClick={save} disabled={busy || (!key.trim() && !s.hasAiKey)} className={btnWhite}>
+        <button onClick={save} disabled={busy || (!key.trim() && !s.hasAiKey && !localBase)} className={btnWhite}>
           {busy ? <Spinner size={14} /> : null}
           {s.hasAiKey && !key.trim() ? "Re-verify & save" : "Verify & save"}
         </button>

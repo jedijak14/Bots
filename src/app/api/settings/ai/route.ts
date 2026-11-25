@@ -12,7 +12,7 @@ import {
   PROVIDERS,
   type ProviderId,
 } from "@/lib/ai/providers";
-import { getSettings, publicSettings } from "@/lib/settings";
+import { getSettings, isLocalBaseUrl, publicSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,12 @@ export async function POST(req: Request) {
       model?: string;
     };
     const typed = String(b.apiKey ?? "").trim();
-    const apiKey = typed || decrypt(current.aiKeyEnc) || "";
+    // A server on the same machine — Ollama, LM Studio, llama.cpp, vLLM — has
+    // no key to give. Requiring one shut out the cheapest way to run this app,
+    // and the "sk-no-key" placeholder was a lie in the settings panel. A key is
+    // required for anything that is not loopback, because those APIs do.
+    const localServer = isLocalBaseUrl(String(b.baseUrl ?? ""));
+    const apiKey = typed || decrypt(current.aiKeyEnc) || (localServer ? "sk-local" : "");
     if (!apiKey) throw new HttpError(400, "Paste your API key first.");
     const mode = b.mode && (b.mode === "auto" || isProvider(b.mode)) ? b.mode : "auto";
     let baseUrl = String(b.baseUrl ?? "").trim();
@@ -55,6 +60,10 @@ export async function POST(req: Request) {
 
     let model = String(b.model ?? "").trim() || current.defaultModel || "";
     if (models.length && !models.includes(model)) model = pickDefaultModel(provider, models) ?? "";
+    // A local server that lists nothing (some builds disable /models) still
+    // needs a model name, and an empty one makes every later turn fail with
+    // "pick a model". Keep whatever they typed rather than blanking it.
+    if (!model && mode === "custom") model = String(b.model ?? "").trim();
 
     await db
       .update(userSettings)
