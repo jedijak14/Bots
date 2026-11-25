@@ -10,6 +10,16 @@ import { getConnectionToken } from "@/lib/connectors";
 import { TOOL_CONNECTOR } from "@/lib/skill-permissions";
 import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } from "@/lib/sandbox";
 import { runLibraryTool, runPackTool } from "@/lib/pack-tools";
+import {
+  addAudioPart,
+  addVideoClip,
+  editAudioTrack,
+  editVideoClip,
+  openAudioStudio,
+  openVideoStudio,
+  readAudioProject,
+  removeVideoClip,
+} from "@/lib/studios";
 import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary, WEAK_MATCH_SCORE } from "@/lib/tool-library";
 import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
 
@@ -180,6 +190,127 @@ const CALC_TOOL: Tool = {
     "Do exact arithmetic. Use it for any sum you would otherwise estimate: percentages, division, unit conversion, compound growth. Accepts numbers, + - * / % ** and parentheses, plus sqrt, abs, round, floor, ceil, min, max and pi. Works with no computer.",
   parameters: obj({ expression: { type: "string", description: "e.g. (1250 * 0.08) / 3 or sqrt(2) * 100" } }, ["expression"]),
 };
+
+/**
+ * The studios, as tools.
+ *
+ * Both are pure data: the Bot edits a timeline and the browser draws or plays
+ * it. Nothing is rendered on the server, so both work with no computer, and a
+ * Bot can build a film or a track while a person watches the project fill up.
+ */
+const STUDIO_TOOLS: Tool[] = [
+  {
+    name: "video_studio",
+    description:
+      "Open or create a video project and see its timeline. Returns the clip ids on each track. Use video_add / video_edit / video_remove to build the film. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "Project title. Opening an existing one uses the same title." },
+        preset: { type: "string", enum: ["landscape", "portrait", "square", "wide"], description: "Frame size when creating a new project." },
+        brief: { type: "string", description: "One line on what the video is for." },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "video_add",
+    description:
+      "Add a clip to a video project. kind text adds a title or caption; image and video take an artifact id or https URL; audio takes an artifact id. Without start, the clip lands in the next free slot on its track so it never covers existing footage.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "Project title." },
+        kind: { type: "string", enum: ["text", "image", "video", "audio"], description: "What the clip is." },
+        source: { type: "string", description: "Artifact id or URL, for image/video/audio. Leave empty for text." },
+        text: { type: "string", description: "The words, for a text clip." },
+        style: { type: "string", enum: ["title", "subtitle", "caption"], description: "Text size, for a text clip." },
+        start: { type: "number", description: "Seconds from the beginning. Defaults to the next free slot." },
+        duration: { type: "number", description: "How long it shows, in seconds." },
+        speed: { type: "number", description: "Playback rate, e.g. 0.5 for slow motion." },
+        opacity: { type: "number", description: "0-1, for overlays." },
+        fadeIn: { type: "number", description: "Fade-in seconds." },
+        fadeOut: { type: "number", description: "Fade-out seconds." },
+        speak: { type: "string", description: "For an audio clip the studio should voice: the line to say." },
+        label: { type: "string", description: "A short name shown on the clip." },
+      },
+      ["title", "kind"],
+    ),
+  },
+  {
+    name: "video_edit",
+    description: "Change one clip in a video project. Only the fields you pass change.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string", description: "Clip id from video_studio." },
+        start: { type: "number" },
+        duration: { type: "number" },
+        text: { type: "string" },
+        opacity: { type: "number" },
+        speed: { type: "number" },
+      },
+      ["title", "id"],
+    ),
+  },
+  {
+    name: "video_remove",
+    description: "Remove one clip from a video project, by id.",
+    parameters: obj({ title: { type: "string" }, id: { type: "string" } }, ["title", "id"]),
+  },
+  {
+    name: "audio_studio",
+    description:
+      "Open or create an audio project and see its tracks. Returns what is on each. Use audio_add to build parts. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "Project title. Opening an existing one uses the same title." },
+        preset: { type: "string", enum: ["beat", "pop", "cinematic", "chiptune", "ambient"], description: "Tempo and feel, when creating." },
+        brief: { type: "string", description: "One line on what it is for." },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "audio_add",
+    description:
+      "Add a part to an audio project. A composed part is notes as “C4:0:1 E4:1:1 G4:2:2” (pitch:beat:length) or a noteList. kind drums writes a beat pattern in bars. kind sample places an audio artifact.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "Project title." },
+        track: { type: "string", description: "lead, bass, drums or pad." },
+        kind: { type: "string", enum: ["notes", "drums", "sample"], description: "What to add." },
+        notes: { type: "string", description: "For kind notes: “C4:0:1 E4:1:1 G4:2:2”." },
+        noteList: { type: "array", description: "Alternative to notes: [{pitch, at, beats}].", items: obj({ pitch: { type: "string" }, at: { type: "number" }, beats: { type: "number" } }, ["pitch", "at", "beats"]) },
+        bars: { type: "number", description: "For kind drums: how many bars." },
+        wave: { type: "string", enum: ["sine", "square", "sawtooth", "triangle"], description: "Tone. sine is soft, square is chiptune, sawtooth is strings, triangle is a bell." },
+        source: { type: "string", description: "For kind sample: the audio artifact id." },
+        start: { type: "number", description: "Seconds from the start. Defaults to after what is already on the track." },
+        gain: { type: "number", description: "0-1 loudness." },
+        label: { type: "string" },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "audio_mix",
+    description: "Change tempo, mute a track, or set its level and pan in an audio project.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        bpm: { type: "number", description: "New tempo. Composed parts re-time to it." },
+        track: { type: "string", description: "Which track to change." },
+        muted: { type: "boolean" },
+        gain: { type: "number", description: "0-1." },
+        pan: { type: "number", description: "0-1, 0.5 is centre." },
+      },
+      ["title"],
+    ),
+  },
+  {
+    name: "audio_read",
+    description: "Read an audio project back: tempo, length, and what is on each track.",
+    parameters: obj({ title: { type: "string" } }, ["title"]),
+  },
+];
 
 /**
  * Check written code and data before it is presented as finished.
@@ -708,15 +839,15 @@ export function buildToolset(opts: {
     // one shares a name with a real implementation, the stub wins by appearing
     // later in the schema, and the user gets "search_web is ready to run" for a
     // simple web search. A stub is never worth a name that is already taken.
-    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
+    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
   // With a desktop, `web_search` and `fetch_page` do this job inside the
   // sandbox. Without one these are the only way to read the web, so the two
   // sets are never both in the schema — a model choosing between `web_search`
   // and `search_web` would waste a step working out the difference.
   const webTools = e2bKey ? [] : WEB_TOOLS;
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -755,6 +886,22 @@ export function buildToolset(opts: {
         return `Calculated ${clip(s("expression"), 50)}`;
       case "check_code":
         return `Checked the ${clip(s("kind"), 10)}`;
+      case "video_studio":
+        return `Opened the video project “${clip(s("title"), 50)}”`;
+      case "video_add":
+        return `Added ${clip(s("kind"), 10)} to “${clip(s("title"), 40)}”`;
+      case "video_edit":
+        return `Edited a clip in “${clip(s("title"), 40)}”`;
+      case "video_remove":
+        return `Removed a clip from “${clip(s("title"), 40)}”`;
+      case "audio_studio":
+        return `Opened the audio project “${clip(s("title"), 50)}”`;
+      case "audio_add":
+        return `Added ${clip(s("kind") || "notes", 10)} to “${clip(s("title"), 40)}”`;
+      case "audio_mix":
+        return `Mixed “${clip(s("title"), 50)}”`;
+      case "audio_read":
+        return `Read “${clip(s("title"), 50)}”`;
       case "look_up":
         return `Searched “${clip(s("query"), 60)}”`;
       case "read_link":
@@ -1084,7 +1231,7 @@ export function buildToolset(opts: {
     // This runs before the handlers below, so a library stub called `look_up`
     // would swallow the real one. The filter above already keeps such names out
     // of the schema; this guards the ordering as well.
-    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...WEB_TOOLS].some((t) => t.name === name);
+    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS].some((t) => t.name === name);
     if (!isRealTool && opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
       const tool = libraryToolByName(name);
       if (tool) {
@@ -1182,6 +1329,15 @@ export function buildToolset(opts: {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
     }
+    if (name === "video_studio") return await openVideoStudio({ userId, botId: bot.id }, a);
+    if (name === "video_add") return await addVideoClip({ userId, botId: bot.id }, a);
+    if (name === "video_edit") return await editVideoClip({ userId, botId: bot.id }, a);
+    if (name === "video_remove") return await removeVideoClip({ userId, botId: bot.id }, a);
+    if (name === "audio_studio") return await openAudioStudio({ userId, botId: bot.id }, a);
+    if (name === "audio_add") return await addAudioPart({ userId, botId: bot.id }, a);
+    if (name === "audio_mix") return await editAudioTrack({ userId, botId: bot.id }, a);
+    if (name === "audio_read") return await readAudioProject({ userId, botId: bot.id }, String(a.title ?? "").trim());
+
     if (name === "check_code") {
       return { output: checkCode(String(a.kind ?? "").toLowerCase(), String(a.text ?? "")) };
     }

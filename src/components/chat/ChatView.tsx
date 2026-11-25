@@ -166,8 +166,26 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
     };
   }, [wantedKey]);
 
-  const artifactRefs = (steps: Array<{ artifactId?: string }> | null | undefined): ArtifactRef[] =>
-    (steps ?? []).map((s) => (s.artifactId ? artifacts[s.artifactId] : undefined)).filter((a): a is ArtifactRef => !!a);
+  /**
+   * The artifacts a message produced, one of each.
+   *
+   * Every step that touched a project carries its id — opening it, adding a
+   * clip, editing it — so these were rendered once per step. A six-step music
+   * build showed the same card six times, each a live player. The first
+   * appearance is the one that stays, so the card sits where the work began.
+   */
+  const artifactRefs = (steps: Array<{ artifactId?: string }> | null | undefined): ArtifactRef[] => {
+    const seen = new Set<string>();
+    const out: ArtifactRef[] = [];
+    for (const step of steps ?? []) {
+      if (!step.artifactId || seen.has(step.artifactId)) continue;
+      const artifact = artifacts[step.artifactId];
+      if (!artifact) continue;
+      seen.add(step.artifactId);
+      out.push(artifact);
+    }
+    return out;
+  };
 
   useEffect(() => {
     if (privacyActive) abortRef.current?.abort();
