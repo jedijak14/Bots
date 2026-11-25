@@ -286,6 +286,15 @@ async function openaiLoop(o: AgentOptions) {
     }
     if (stop) return;
   }
+
+  // The loop ran out of steps with work still in flight. It used to return in
+  // silence, so a Bot that was half-way through a build simply stopped talking
+  // and the user was left looking at a spinner that had ended. Say what
+  // happened, and what to do about it, in the turn itself.
+  o.onText(
+    `\n\nI stopped after ${max} steps with work still left — I did not want to keep going without saying so. ` +
+      `Everything I made so far is above. Tell me to continue and I will pick up from there, or narrow the job down and I will do it in one pass.`,
+  );
 }
 
 /* ---------------------------------- Anthropic ---------------------------------- */
@@ -398,4 +407,9 @@ async function anthropicLoop(o: AgentOptions) {
     msgs.push({ role: "user", content: results });
     if (stop) return;
   }
+
+  o.onText(
+    `\n\nI stopped after ${max} steps with work still left — I did not want to keep going without saying so. ` +
+      `Everything I made so far is above. Tell me to continue and I will pick up from there, or narrow the job down and I will do it in one pass.`,
+  );
 }
