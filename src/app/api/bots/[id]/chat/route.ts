@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getBot } from "@/lib/bots";
 import { runAgent, type Hist } from "@/lib/ai/llm";
 import { fitHistory } from "@/lib/ai/history";
+import { splitRequests, unansweredParts } from "@/lib/ai/requests";
 import { buildToolset } from "@/lib/agent-tools";
 import { packsFor, packsPrompt, toolsForPacks } from "@/lib/packs";
 import { clearHelpers, helpersFor } from "@/lib/helpers";
@@ -36,6 +37,22 @@ function describeModelError(e: unknown): string {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+/**
+ * The list of separate requests in the user's message, for the system prompt.
+ *
+ * Empty for an ordinary message, so the Bot is never primed to hunt for parts
+ * that are not there. Numbering matters: a small model that can see "2 of 3"
+ * finishes the list in a way it does not when the same jobs arrive in prose.
+ */
+function requestsBrief(requests: string[]): string {
+  if (requests.length < 2) return "";
+  return [
+    `This message asks for ${requests.length} separate things. Do every one of them before you stop:`,
+    ...requests.map((part, i) => `${i + 1}. ${part}`),
+    `If one is impossible, say which one and why instead of skipping it silently. If the whole message turns out to be one request described in several ways, just do that.`,
+  ].join("\n");
+}
 
 function systemPrompt(name: string, instructions: string, hasComputer: boolean, savedSkills: string, archivedContext: string, sharedGoals = "", packBrief = ""): string {
   const now = new Date().toUTCString();
@@ -130,6 +147,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Load only the capability packs this request needs. The choice is visible in
   // the stream so the chat can show which one is active.
+  // A message that asks for several things needs to be counted, not just read.
+  // The system prompt carries the list so the model has it in front of it from
+  // the first token; the reply is checked against it at the end.
+  const requests = splitRequests(content);
+  const multiRequest = requests.length > 1;
+
   const packs = packsFor(content, { hasComputer: !!e2bKey });
   const packTools = toolsForPacks(packs);
   const turnId = crypto.randomUUID();
@@ -230,7 +253,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           apiKey: cfg.apiKey,
           baseUrl: cfg.baseUrl,
           model,
-          system: systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList), packsPrompt(packs)),
+          system: [systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList), packsPrompt(packs)), requestsBrief(requests)]
+            .filter(Boolean)
+            .join("\n\n"),
           history,
           tools: toolset.tools,
           signal: ac.signal,
@@ -252,6 +277,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         stopPrivacyPoll?.();
         try { controller.close(); } catch {}
         return;
+      }
+
+      // Did the reply actually cover everything that was asked? A small model
+      // will finish the first job and stop, and the reply looks complete
+      // because it ends. Nothing here can do the missing work — that would be a
+      // second paid turn — but the user can be told plainly what is still open,
+      // which is the difference between "it forgot" and "it forgot and nobody
+      // noticed".
+      if (multiRequest && text.trim()) {
+        const missed = unansweredParts(requests, text, { steps: steps.map((s) => s.label).join(" ") });
+        if (missed.length) {
+          const note = [
+            "",
+            "",
+            `**Not covered yet:** ${missed.map((part) => `“${part}”`).join(", ")}.`,
+            "Say “continue” and I will pick those up.",
+          ].join("\n");
+          text += note;
+          send({ t: "text", d: note });
+        }
       }
 
       try {
