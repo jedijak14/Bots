@@ -19,6 +19,7 @@ import type { ComputerPhase } from "./useComputer";
 import { Menu, placeMenu, type MenuItem, type MenuPosition } from "../Menu";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
+type LiveHelper = { id: string; name: string; state: "working" | "done" | "failed" };
 
 /** Total time of a finished assistant turn, from the stored per-tool timings. */
 const stepsElapsed = (steps: Array<{ ms?: number }>) => steps.reduce((sum, s) => sum + (s.ms ?? 0), 0);
@@ -28,6 +29,8 @@ type StreamEvent =
   | { t: "step"; id: string; name: string; label: string }
   | { t: "step_done"; id: string; ok: boolean; output?: string; ms?: number; artifactId?: string }
   | { t: "shot"; data: string }
+  | { t: "packs"; packs: Array<{ id: string; title: string }> }
+  | { t: "helper"; helper: LiveHelper }
   | { t: "choices"; question: string; options: string[] }
   | { t: "error"; message: string }
   | { t: "done"; message: { id: string; createdAt: string } | null };
@@ -103,6 +106,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
 
   const [messages, setMessages] = useState<MessageDTO[]>(initialMessages);
   const [live, setLive] = useState<Live | null>(null);
+  const [liveHelpers, setLiveHelpers] = useState<LiveHelper[]>([]);
+  /** Packs the server loaded for this turn — shown so the choice is visible. */
+  const [livePacks, setLivePacks] = useState<Array<{ id: string; title: string }>>([]);
   /** Set when this run starts, so the reasoning line can count up. */
   const [liveStart, setLiveStart] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -236,6 +242,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       setMessages((m) => [...m, { id: tmpId, role: "user", content, steps: null, choices: null, createdAt: new Date().toISOString() }]);
       app.setPreview(botId, raw.trim() || content.slice(0, 80));
       acc.current = { text: "", steps: [], choices: null };
+      setLiveHelpers([]);
+      setLivePacks([]);
       setLive({ text: "", steps: [], choices: null });
       setLiveStart(Date.now());
       setBusy(true);
@@ -308,6 +316,15 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             flush();
             break;
           }
+          case "packs":
+            setLivePacks(ev.packs);
+            break;
+          case "helper":
+            setLiveHelpers((list) => {
+              const next = list.filter((h) => h.id !== ev.helper.id);
+              return [...next, ev.helper];
+            });
+            break;
           case "shot":
             setShot({ n: Date.now(), data: ev.data });
             setComputerOn(true);
@@ -568,6 +585,34 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     </div>
                   );
                 })}
+
+                {liveHelpers.length > 0 && (
+                  <div className="mb-3 ml-0 flex max-w-[min(740px,100%)] flex-wrap gap-1.5">
+                    {livePacks.map((pack) => (
+                      <span
+                        key={pack.id}
+                        className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-neutral-400"
+                      >
+                        {pack.title}
+                      </span>
+                    ))}
+                    {liveHelpers.map((helper) => (
+                      <span
+                        key={helper.id}
+                        className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] text-neutral-400"
+                      >
+                        <span
+                          aria-hidden
+                          className={cx(
+                            "size-1.5 rounded-full",
+                            helper.state === "done" ? "bg-emerald-400" : helper.state === "failed" ? "bg-rose-400" : "animate-pulse bg-[#7c9bff]",
+                          )}
+                        />
+                        Helper · {helper.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {live && (live.text || live.steps.length || live.choices) && (
                   <AssistantBlock

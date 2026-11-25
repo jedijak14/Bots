@@ -9,6 +9,8 @@ import { artifacts, privacySessions, type ChoicesRecord, type StepRecord } from 
 import { getConnectionToken } from "@/lib/connectors";
 import { TOOL_CONNECTOR } from "@/lib/skill-permissions";
 import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } from "@/lib/sandbox";
+import { runPackTool } from "@/lib/pack-tools";
+import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
 
 const obj = (properties: Record<string, unknown>, required: string[]) => ({
   type: "object",
@@ -215,6 +217,15 @@ export function buildToolset(opts: {
    * relevant, e.g. tests).
    */
   connected?: Set<string>;
+  /**
+   * Tools from the capability packs the request matched, with a turn id that
+   * scopes any Helper Bots it starts.
+   */
+  packTools?: Tool[];
+  turnId: string;
+  /** Display name of the Bot, used when a Helper introduces itself. */
+  botName?: string;
+  onHelper?: (helper: Helper) => void;
 }) {
   const { userId, bot, e2bKey, ev } = opts;
   let stripScriptReady = false;
@@ -230,7 +241,9 @@ export function buildToolset(opts: {
   const connectorAllowlist = opts.allowedConnectors === undefined ? null : new Set(opts.allowedConnectors);
   let desktop: Sandbox | null = null;
 
-  const allTools = e2bKey ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS] : [ASK, ...CORE_TOOLS];
+  const allTools = e2bKey
+    ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? [])]
+    : [ASK, ...CORE_TOOLS, ...(opts.packTools ?? [])];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -298,6 +311,32 @@ export function buildToolset(opts: {
         return "Listed Vercel projects";
       case "list_saved_spotify_tracks":
         return "Listed saved Spotify tracks";
+      case "design_brief":
+        return `Wrote the design brief for “${clip(s("title"), 50)}”`;
+      case "make_asset_sheet":
+        return `Planned ${s("count")} ${s("kind") || "assets"}`;
+      case "draw_asset":
+        return `Drew “${clip(s("title"), 50)}”`;
+      case "game_design":
+        return `Designed “${clip(s("title"), 50)}”`;
+      case "scaffold_game":
+        return `Built the game “${clip(s("title"), 50)}”`;
+      case "scaffold_site":
+        return `Built the page “${clip(s("title"), 50)}”`;
+      case "scaffold_motion":
+        return `Built the animation “${clip(s("title"), 50)}”`;
+      case "playtest_game":
+        return "Playtested the game";
+      case "motion_storyboard":
+        return `Storyboarded “${clip(s("title"), 50)}”`;
+      case "site_plan":
+        return `Planned the site “${clip(s("title"), 50)}”`;
+      case "audit_page":
+        return "Audited the page";
+      case "spawn_helper":
+        return `Started a helper: ${clip(s("name"), 40)}`;
+      case "helper_status":
+        return "Checked the helpers";
       default:
         return name;
     }
@@ -493,6 +532,63 @@ export function buildToolset(opts: {
         return { output: JSON.stringify((data.projects ?? []).map((project: { name: string; id: string; link?: { repo?: string } }) => ({ name: project.name, id: project.id, repository: project.link?.repo }))) };
       } catch { return { output: `Could not access ${provider}. Check the connection and requested permissions in Settings > Connections.` }; }
     }
+    // Capability-pack tools are executed here so they can borrow the desktop
+    // and the helper registry without the chat route having to know about them.
+    if (opts.packTools?.some((tool) => tool.name === name)) {
+      return runPackTool(name, a, {
+        userId,
+        botId: bot.id,
+        turnId: opts.turnId,
+        signal: opts.signal,
+        writeFile: e2bKey
+          ? async (path, content) => {
+              const sb = await getDesktop();
+              await sb.files.write(safePath(path), content);
+            }
+          : undefined,
+        runCommand: e2bKey
+          ? async (command, timeoutMs) => {
+              const sb = await getDesktop();
+              const r = await sb.commands.run(command, { cwd: HOME_DIR, timeoutMs: timeoutMs ?? 120_000 }).catch((e: { exitCode?: number; stdout?: string; stderr?: string; message?: string }) => ({
+                exitCode: e.exitCode ?? 1,
+                stdout: e.stdout ?? "",
+                stderr: e.stderr ?? e.message ?? "",
+              }));
+              return { exitCode: r.exitCode ?? 0, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+            }
+          : undefined,
+        spawn: (input) => {
+          const helper = spawnHelper({
+            turnId: opts.turnId,
+            userId,
+            botId: bot.id,
+            botName: opts.botName ?? "the main Bot",
+            name: input.name,
+            task: input.task,
+            context: input.context,
+            artifactKind: input.artifactKind,
+            tools,
+            runTool: run,
+            signal: opts.signal,
+          });
+          opts.onHelper?.(helper);
+          return helper.id;
+        },
+        helperStatus: async (seconds) => {
+          await waitForHelpers(opts.turnId, seconds, opts.signal);
+          return helpersFor(opts.turnId).map((helper) => helperSummary(helper));
+        },
+      });
+    }
+
+    // Anything that reaches here should be a known tool. Falling through to the
+    // desktop for an unknown name produced "No E2B key configured", which told
+    // the user nothing about the actual mistake.
+    const known = new Set([...allTools.map((tool) => tool.name), "run_command", "web_search", "fetch_page", "open_url", "write_file", "read_file", "click", "type_text", "press_key"]);
+    if (!known.has(name)) {
+      return { output: `The tool "${name}" is not available on this turn. Use the tools you were given, or say what you cannot do.` };
+    }
+
     const sb = await getDesktop();
     switch (name) {
       case "run_command": {

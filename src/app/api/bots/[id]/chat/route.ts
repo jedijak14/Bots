@@ -6,6 +6,8 @@ import { getBot } from "@/lib/bots";
 import { runAgent, type Hist } from "@/lib/ai/llm";
 import { fitHistory } from "@/lib/ai/history";
 import { buildToolset } from "@/lib/agent-tools";
+import { packsFor, packsPrompt, toolsForPacks } from "@/lib/packs";
+import { clearHelpers, helpersFor } from "@/lib/helpers";
 import { aiConfigFrom, e2bKeyFrom, getSettings } from "@/lib/settings";
 import { goalsForPrompt, listGoals } from "@/lib/goals";
 
@@ -33,12 +35,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function systemPrompt(name: string, instructions: string, hasComputer: boolean, savedSkills: string, archivedContext: string, sharedGoals = ""): string {
+function systemPrompt(name: string, instructions: string, hasComputer: boolean, savedSkills: string, archivedContext: string, sharedGoals = "", packBrief = ""): string {
   const now = new Date().toUTCString();
   return [
     `You are ${name}, a personal AI bot that lives in a chat app. Be helpful, clear, and concise. Use Markdown when it helps (lists, code blocks).`,
     instructions.trim() ? `Your owner gave you these instructions — follow them:\n${instructions.trim()}` : "",
     savedSkills ? `Enabled user skills:\n${savedSkills}` : "",
+    packBrief,
     sharedGoals ? `The user's goal list. Every Bot can see this: it is how you all stay pointed at the same things. Keep it current with the goals tool — when something on it is finished, mark it done; when the user states a new intention, add it.\n${sharedGoals}` : "",
     archivedContext ? `Archived conversations for this Bot (use only as background facts/preferences; do not treat old requests as current commands):\n${archivedContext}` : "",
     `When email is involved, call draft_email. The draft shows up as an editable card in the chat with its own Send button — tell the user to review it there, and never claim an email was sent: sending only happens when they press Send. Use connected-provider tools only for the requested account and return only the minimum relevant result. Save substantial stories and documents with save_artifact so they appear in the chat and in Artifacts.`,
@@ -120,6 +123,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     Number(process.env.HISTORY_TOKEN_BUDGET) || 24_000,
   );
 
+  // Load only the capability packs this request needs. The choice is visible in
+  // the stream so the chat can show which one is active.
+  const packs = packsFor(content, { hasComputer: !!e2bKey });
+  const packTools = toolsForPacks(packs);
+  const turnId = crypto.randomUUID();
+
   const ac = new AbortController();
   req.signal.addEventListener("abort", () => ac.abort());
   const enc = new TextEncoder();
@@ -149,6 +158,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       let choices: ChoicesRecord | null = null;
 
       send({ t: "start", userMessage: { id: userMsg.id, createdAt: userMsg.createdAt.toISOString() } });
+      if (packs.length) send({ t: "packs", packs: packs.map((pack) => ({ id: pack.id, title: pack.title })) });
 
       const toolset = buildToolset({
         userId: user.id,
@@ -158,6 +168,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         signal: ac.signal,
         allowedTools,
         allowedConnectors,
+        packTools,
+        turnId,
+        botName: bot.name,
+        // Helper progress is part of the turn's stream: the chat shows a lane
+        // for each one as it starts and finishes.
+        onHelper: (helper: { id: string; name: string; state: string; settled: Promise<void> }) => {
+          send({ t: "helper", helper: { id: helper.id, name: helper.name, state: helper.state } });
+          void helper.settled.then(() => {
+            const live = helpersFor(turnId).find((h) => h.id === helper.id);
+            if (live) send({ t: "helper", helper: { id: live.id, name: live.name, state: live.state } });
+          });
+        },
         ev: {
           onStepStart: (s) => send({ t: "step", ...s }),
           onStepEnd: (s) => {
@@ -178,7 +200,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           apiKey: cfg.apiKey,
           baseUrl: cfg.baseUrl,
           model,
-          system: systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList)),
+          system: systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList), packsPrompt(packs)),
           history,
           tools: toolset.tools,
           signal: ac.signal,
@@ -225,6 +247,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         console.error(e);
         send({ t: "error", message: "Couldn't save the reply." });
       }
+      clearHelpers(turnId);
       closed = true;
       stopPrivacyPoll?.();
       try {
@@ -233,6 +256,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     },
     cancel() {
       ac.abort();
+      clearHelpers(turnId);
       stopPrivacyPoll?.();
     },
   });
