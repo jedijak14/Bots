@@ -263,7 +263,12 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const label = cx("min-w-0 flex-1 truncate transition-opacity duration-200 motion-reduce:transition-none", collapsed && "md:opacity-0");
   const row = (active: boolean) =>
     cx(
-      "flex h-11 items-center gap-2.5 overflow-hidden rounded-xl pl-2 pr-2 outline-offset-[-2px] transition-colors",
+      "flex items-center gap-2.5 overflow-hidden outline-offset-[-2px] transition-colors",
+      // Collapsed, the row is just a 28px face, so a full-height padded row drew
+      // a 47x50 hover bubble around a 28px avatar — bigger than the bot it was
+      // labelling. The rail row becomes a square just large enough to sit the
+      // face on, so the highlight reads as a halo around the Bot.
+      collapsed ? "mx-auto size-9 justify-center rounded-[10px] px-0" : "h-11 rounded-xl pl-2 pr-2",
       active ? "bg-white/[0.08] text-white" : "text-neutral-300 hover:bg-white/[0.045] hover:text-white",
     );
 
@@ -390,7 +395,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           href="/bots"
           aria-current={pathname === "/bots" ? "page" : undefined}
           aria-label="All bots"
-          className={cx(row(pathname === "/bots"), collapsed && "md:justify-center md:pl-0")}
+          className={cx(row(pathname === "/bots"))}
           {...railTip("All bots")}
         >
           <span className={cx("grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-neutral-300")}>
@@ -410,7 +415,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                 aria-current={active ? "page" : undefined}
                 aria-label={b.name}
                 onContextMenu={(e) => openMenuAtPointer(b, e)}
-                className={cx(row(active || menuOpen), "h-[50px]", collapsed && "md:justify-center md:pl-0", app.celebrateId === b.id && "pop-in")}
+                // Bot rows carry two lines of text when the rail is open, so they
+                // are taller than the one-line rows — but not collapsed, where
+                // the row is a halo around the face alone.
+                className={cx(row(active || menuOpen), !collapsed && "h-[50px]", app.celebrateId === b.id && "pop-in")}
                 {...railTip(working ? `${b.name} · ${app.working?.label}` : b.name)}
               >
                 <BotAvatar shape={b.shape} color={b.color} size={28} working={working} celebrate={app.celebrateId === b.id} />
