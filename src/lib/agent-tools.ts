@@ -150,10 +150,19 @@ const WORKSPACE_TOOLS: Tool[] = [
   {
     name: "workspace_read",
     description:
-      "Read back a file saved with workspace_write, by path. Also lists the workspace when called with no path.",
-    parameters: obj({ path: { type: "string", description: "Path to read. Leave empty to list what is stored." } }, []),
+      "Read back a file saved with workspace_write, by path. Also lists the workspace when called with no path. A file too long for one reply comes back a slice at a time: the reply says which slice, how many there are, and the offsets to ask for the next one.",
+    parameters: obj(
+      {
+        path: { type: "string", description: "Path to read. Leave empty to list what is stored." },
+        offset: { type: "number", description: "Character offset to start from, for a long file. Leave empty for the start." },
+      },
+      [],
+    ),
   },
 ];
+
+/** How much of a long file one workspace_read returns. */
+const PART_CHARS = 20_000;
 
 /**
  * Arithmetic the model cannot do in its head.
@@ -1212,7 +1221,24 @@ export function buildToolset(opts: {
         .from(artifacts)
         .where(and(mine, eq(artifacts.title, `workspace:${path.slice(0, 200)}`)))
         .limit(1);
-      return { output: row ? clip(row.content, 20000) : `No file at ${path} in the workspace. Call workspace_read with no path to list what is there.` };
+      if (!row) return { output: `No file at ${path} in the workspace. Call workspace_read with no path to list what is there.` };
+      // A long file used to arrive as its first 20,000 characters and stop. For
+      // a model that cannot run anything, that is a document it can never
+      // finish: it summarises a third of the file and never learns the rest
+      // exists. The slices are numbered so it can ask for the next one.
+      const total = Math.max(1, Math.ceil(row.content.length / PART_CHARS));
+      if (total === 1) return { output: row.content };
+      const start = Math.min(Math.max(0, Math.floor(Number(a.offset ?? 0)) || 0), row.content.length - 1);
+      const which = Math.floor(start / PART_CHARS) + 1;
+      const slice = row.content.slice(start, start + PART_CHARS);
+      const next = start + PART_CHARS;
+      return {
+        output:
+          `Part ${which} of ${total} of ${path} (${row.content.length} characters in total):\n\n${slice}` +
+          (next < row.content.length
+            ? `\n\n[End of part ${which}. Read the next with workspace_read path "${path}" offset ${next}.]`
+            : ""),
+      };
     }
 
     // Anything that reaches here should be a known tool. Falling through to the
