@@ -155,6 +155,133 @@ const WORKSPACE_TOOLS: Tool[] = [
   },
 ];
 
+/**
+ * Arithmetic the model cannot do in its head.
+ *
+ * A small model gets long division, percentages and date maths wrong often
+ * enough to matter, and without a computer there was nothing to check it
+ * against — `run_command` needs a desktop. This evaluates a single expression
+ * with no names, no calls and no state, so it cannot reach anything: the input
+ * is checked against an allowlist of characters and the parser only ever sees
+ * numbers and operators.
+ */
+const CALC_TOOL: Tool = {
+  name: "calculate",
+  description:
+    "Do exact arithmetic. Use it for any sum you would otherwise estimate: percentages, division, unit conversion, compound growth. Accepts numbers, + - * / % ** and parentheses, plus sqrt, abs, round, floor, ceil, min, max and pi. Works with no computer.",
+  parameters: obj({ expression: { type: "string", description: "e.g. (1250 * 0.08) / 3 or sqrt(2) * 100" } }, ["expression"]),
+};
+
+/**
+ * Evaluate an arithmetic expression.
+ *
+ * Not `eval`: the expression is parsed here, so `process.exit()` is a syntax
+ * error rather than a call. Numbers and the functions below are the whole
+ * language.
+ */
+function evaluate(expression: string): number {
+  // `Math.sqrt(…)` and `Math.PI` are what models write out of habit; the prefix
+  // carries no meaning here and removing it early keeps the parser small.
+  const src = expression.replace(/\s+/g, "").replace(/Math\./g, "");
+  if (!src) throw new Error("Empty expression.");
+  if (src.length > 300) throw new Error("That expression is too long.");
+  if (!/^[0-9+\-*/%^().,a-z]+$/i.test(src)) throw new Error("Only numbers, operators, parentheses and the listed functions are allowed.");
+  let i = 0;
+  const peek = () => src[i];
+  const number = (): number => {
+    if (peek() === "(") {
+      i++;
+      const v = sum();
+      if (peek() !== ")") throw new Error("Missing a closing parenthesis.");
+      i++;
+      return v;
+    }
+    if (peek() === "-") {
+      i++;
+      return -number();
+    }
+    if (peek() === "+") {
+      i++;
+      return number();
+    }
+    // `Math.` is stripped up front rather than handled here, but a model also
+    // writes `Math.sqrt(…)` mid-expression, so drop the prefix wherever it
+    // appears before parsing.
+    const call = /^(sqrt|abs|round|floor|ceil|min|max|pi)/i.exec(src.slice(i));
+    if (call) {
+      const name = call[1].toLowerCase();
+      i += call[1].length;
+      if (name === "pi") {
+        if (peek() === "(") i += 2;
+        return Math.PI;
+      }
+      let args: number[] = [];
+      if (peek() === "(") {
+        i++;
+        args = [sum()];
+        while (peek() === ",") {
+          i++;
+          args.push(sum());
+        }
+        if (peek() !== ")") throw new Error(`Missing a closing parenthesis after ${name}(.`);
+        i++;
+      } else {
+        throw new Error(`${name} needs parentheses, e.g. ${name}(9).`);
+      }
+      const fns: Record<string, (...xs: number[]) => number> = {
+        sqrt: Math.sqrt, abs: Math.abs, round: Math.round, floor: Math.floor,
+        ceil: Math.ceil, min: Math.min, max: Math.max,
+      };
+      return fns[name](...args);
+    }
+    const m = /^\d+(\.\d+)?([eE][-+]?\d+)?/.exec(src.slice(i));
+    if (!m) {
+      const bad = src.slice(i, i + 14);
+      throw new Error(
+        /[a-z]/i.exec(bad) && !/^(sqrt|abs|round|floor|ceil|min|max|pi)/i.test(bad)
+          ? `"${bad}" is not a number or one of the allowed functions. Only arithmetic is supported — there is no code to run.`
+          : `Expected a number at position ${i + 1}.`,
+      );
+    }
+    i += m[0].length;
+    return Number(m[0]);
+  };
+  const power = (): number => {
+    const base = number();
+    if (peek() === "^") {
+      i++;
+      return Math.pow(base, power());
+    }
+    if (src.startsWith("**", i)) {
+      i += 2;
+      return Math.pow(base, power());
+    }
+    return base;
+  };
+  const product = (): number => {
+    let v = power();
+    while (peek() === "*" || peek() === "/" || peek() === "%") {
+      const op = src[i++];
+      const r = power();
+      v = op === "*" ? v * r : op === "/" ? v / r : v % r;
+    }
+    return v;
+  };
+  const sum = (): number => {
+    let v = product();
+    while (peek() === "+" || peek() === "-") {
+      const op = src[i++];
+      const r = product();
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  };
+  const result = sum();
+  if (i !== src.length) throw new Error(`Unexpected "${src.slice(i, i + 12)}" at position ${i + 1}.`);
+  if (!Number.isFinite(result)) throw new Error("That does not have a finite answer.");
+  return result;
+}
+
 const COMPUTER_TOOLS: Tool[] = [
   {
     name: "run_command",
@@ -175,6 +302,7 @@ const COMPUTER_TOOLS: Tool[] = [
       ["kind"],
     ),
   },
+  CALC_TOOL,
   {
     name: "web_search",
     description: "Search the web and get back the text of the results page. Also shows the results in the browser on your computer.",
@@ -321,8 +449,8 @@ export function buildToolset(opts: {
   const libraryMatches = opts.libraryQuery ? searchToolLibrary(opts.libraryQuery, 8) : [];
   const matchedLibraryTools = libraryMatches.map((match) => match.tool);
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -357,6 +485,8 @@ export function buildToolset(opts: {
     switch (name) {
       case "run_command":
         return `Ran ${clip(s("command").replace(/\s+/g, " "), 70)}`;
+      case "calculate":
+        return `Calculated ${clip(s("expression"), 50)}`;
       case "workspace_write":
         return `Saved ${clip(s("path"), 60)} to the workspace`;
       case "workspace_read":
@@ -746,6 +876,18 @@ export function buildToolset(opts: {
     // ever requested. These two cases used to fall through to `getDesktop()`,
     // which throws "No E2B key configured" on exactly the accounts that need
     // them most.
+    if (name === "calculate") {
+      const expression = String(a.expression ?? "").trim();
+      try {
+        const value = evaluate(expression);
+        // Both forms: `0.30000000000000004` is technically right and useless in
+        // a sentence, so a rounded value is offered alongside the exact one.
+        const rounded = Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(12)));
+        return { output: `${expression} = ${rounded}${rounded !== String(value) ? ` (exactly ${value})` : ""}` };
+      } catch (e) {
+        return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
+      }
+    }
     if (name === "workspace_write") {
       const path = String(a.path ?? "").trim().slice(0, 200);
       const content = String(a.content ?? "");
