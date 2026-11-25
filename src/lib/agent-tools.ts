@@ -284,6 +284,49 @@ const EXACT_TOOLS: Tool[] = [
   },
 ];
 
+/** Colour and money: exact answers a design or a till needs. */
+const DESIGN_TOOLS: Tool[] = [
+  {
+    name: "check_contrast",
+    description:
+      "Measure the WCAG contrast between two colours and say whether the text passes. Returns the ratio and the AA, AA-large and AAA verdicts. Use it whenever you pick a text and background colour — mid grey on white is 4.48:1, which fails AA body text, and a guess will not tell you that. Works with no computer.",
+    parameters: obj(
+      {
+        foreground: { type: "string", description: "Text colour: #rrggbb, rgb(...) or a name like white." },
+        background: { type: "string", description: "Background colour." },
+      },
+      ["foreground", "background"],
+    ),
+  },
+  {
+    name: "color_palette",
+    description:
+      "Derive a usable palette from one colour: the base, a lighter and darker version, a near-white tint, a deep shade, and the complement. Use it to build a design system from a brand colour instead of inventing hex values that do not sit together. Works with no computer.",
+    parameters: obj({ color: { type: "string", description: "The seed colour, e.g. #ff6600." } }, ["color"]),
+  },
+  {
+    name: "money_math",
+    description:
+      "Exact money arithmetic. kind sum adds a list without floating-point drift, kind tax applies a percentage and rounds to cents, kind split divides an amount into equal parts with the remainder on the first ones. Use it for invoices, splits and totals: 0.1 + 0.2 is 0.30000000000000004 in a language model's head. Works with no computer.",
+    parameters: obj(
+      {
+        kind: { type: "string", enum: ["sum", "tax", "split"], description: "Which calculation." },
+        amounts: { type: "array", items: { type: "number" }, description: "For sum: the amounts." },
+        amount: { type: "number", description: "For tax and split: the single amount." },
+        rate: { type: "number", description: "For tax: the percentage, e.g. 8.25." },
+        parts: { type: "number", description: "For split: how many ways." },
+      },
+      ["kind"],
+    ),
+  },
+  {
+    name: "spell_number",
+    description:
+      "Write a number in words, correctly, up to billions. Use it for cheques, legal amounts and anywhere a number has to appear as text. Works with no computer.",
+    parameters: obj({ value: { type: "number", description: "The number." } }, ["value"]),
+  },
+];
+
 /**
  * The studios, as tools.
  *
@@ -1047,15 +1090,15 @@ export function buildToolset(opts: {
     // one shares a name with a real implementation, the stub wins by appearing
     // later in the schema, and the user gets "search_web is ready to run" for a
     // simple web search. A stub is never worth a name that is already taken.
-    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
+    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, ...DESIGN_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
   // With a desktop, `web_search` and `fetch_page` do this job inside the
   // sandbox. Without one these are the only way to read the web, so the two
   // sets are never both in the schema — a model choosing between `web_search`
   // and `search_web` would waste a step working out the difference.
   const webTools = e2bKey ? [] : WEB_TOOLS;
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, ...DESIGN_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, ...DESIGN_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -1094,6 +1137,14 @@ export function buildToolset(opts: {
         return `Calculated ${clip(s("expression"), 50)}`;
       case "check_code":
         return `Checked the ${clip(s("kind"), 10)}`;
+      case "check_contrast":
+        return `Checked ${clip(s("foreground"), 10)} on ${clip(s("background"), 10)}`;
+      case "color_palette":
+        return `Built a palette from ${clip(s("color"), 12)}`;
+      case "money_math":
+        return `Did the ${clip(s("kind") || "sum", 6)} in money`;
+      case "spell_number":
+        return `Spelled out ${clip(s("value"), 16)}`;
       case "convert_units":
         return `Converted ${clip(s("amount"), 12)} ${clip(s("from"), 8)} to ${clip(s("to"), 8)}`;
       case "date_math":
@@ -1465,7 +1516,7 @@ export function buildToolset(opts: {
     // This runs before the handlers below, so a library stub called `look_up`
     // would swallow the real one. The filter above already keeps such names out
     // of the schema; this guards the ordering as well.
-    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS].some((t) => t.name === name);
+    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...EXACT_TOOLS, ...DESIGN_TOOLS, CHECK_TOOL, ...STUDIO_TOOLS, ...WEB_TOOLS].some((t) => t.name === name);
     if (!isRealTool && opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
       const tool = libraryToolByName(name);
       if (tool) {
@@ -1562,6 +1613,49 @@ export function buildToolset(opts: {
       } catch (e) {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
+    }
+    if (name === "check_contrast") {
+      const { contrastRatio } = await import("@/lib/utilities");
+      const result = contrastRatio(String(a.foreground ?? ""), String(a.background ?? ""));
+      if ("error" in result) return { output: result.error };
+      return {
+        output: `${String(a.foreground)} on ${String(a.background)} is ${result.ratio}:1 — AA body text ${result.aa ? "passes" : "fails"} (needs 4.5), large text and UI ${result.aaLarge ? "passes" : "fails"} (needs 3), AAA ${result.aaa ? "passes" : "fails"} (needs 7).`,
+      };
+    }
+    if (name === "color_palette") {
+      const { paletteFrom } = await import("@/lib/utilities");
+      const result = paletteFrom(String(a.color ?? ""));
+      if ("error" in result) return { output: result.error };
+      return {
+        output: [
+          `From ${result.base}:`,
+          `  light ${result.light} · dark ${result.dark}`,
+          `  tint ${result.tint} · shade ${result.shade}`,
+          `  complement ${result.complement}`,
+        ].join("\n"),
+      };
+    }
+    if (name === "money_math") {
+      const { moneySum, moneyTax, moneySplit, tidy } = await import("@/lib/utilities");
+      const kind = String(a.kind ?? "sum");
+      if (kind === "tax") {
+        const result = moneyTax(Number(a.amount) || 0, Number(a.rate) || 0);
+        return { output: `${tidy(result.amount)} plus ${tidy(Number(a.rate) || 0)}% tax is ${tidy(result.total)} — tax ${tidy(result.tax)}.` };
+      }
+      if (kind === "split") {
+        const parts = moneySplit(Number(a.amount) || 0, Number(a.parts) || 1);
+        return { output: `${tidy(Number(a.amount) || 0)} split ${parts.length} ways: ${parts.map(tidy).join(", ")} (total ${tidy(moneySum(parts).total)}).` };
+      }
+      const amounts = Array.isArray(a.amounts) ? a.amounts.map(Number).filter((n) => Number.isFinite(n)) : [];
+      if (!amounts.length) return { output: "Give a list of amounts to add." };
+      const result = moneySum(amounts);
+      return { output: `${amounts.map(tidy).join(" + ")} = ${tidy(result.total)}` };
+    }
+    if (name === "spell_number") {
+      const { numberToWords } = await import("@/lib/utilities");
+      const value = Number(a.value);
+      if (!Number.isFinite(value)) return { output: "Give a number." };
+      return { output: `${value} is ${numberToWords(value)}.` };
     }
     if (name === "convert_units") {
       const { convertUnits, tidy } = await import("@/lib/utilities");

@@ -398,3 +398,178 @@ export function transformText(
       }
   }
 }
+
+
+/* --------------------------------- colour ---------------------------------- */
+
+export type Rgb = { r: number; g: number; b: number };
+
+/** Parse #rgb, #rrggbb, rgb(...) and the common colour names. */
+export function parseColor(input: string): Rgb | null {
+  const text = input.trim().toLowerCase();
+  const named: Record<string, string> = {
+    black: "#000000", white: "#ffffff", red: "#ff0000", green: "#008000",
+    blue: "#0000ff", grey: "#808080", gray: "#808080", orange: "#ffa500",
+    purple: "#800080", yellow: "#ffff00", pink: "#ffc0cb", teal: "#008080",
+    navy: "#000080", maroon: "#800000", olive: "#808000", lime: "#00ff00",
+    aqua: "#00ffff", cyan: "#00ffff", magenta: "#ff00ff", fuchsia: "#ff00ff",
+    silver: "#c0c0c0", transparent: "#000000",
+  };
+  const hex = named[text] ?? text;
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/.exec(hex);
+  if (m) {
+    const h = m[1];
+    if (h.length === 3) {
+      return { r: parseInt(h[0] + h[0], 16), g: parseInt(h[1] + h[1], 16), b: parseInt(h[2] + h[2], 16) };
+    }
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+  }
+  const rgb = /^rgb\(\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)\s*\)$/.exec(text);
+  if (rgb) return { r: Math.min(255, Number(rgb[1])), g: Math.min(255, Number(rgb[2])), b: Math.min(255, Number(rgb[3])) };
+  return null;
+}
+
+/** Relative luminance, per WCAG. */
+function luminance({ r, g, b }: Rgb): number {
+  const channel = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+/**
+ * WCAG contrast between two colours.
+ *
+ * This is the check a model cannot do in its head and gets confidently wrong:
+ * it will call mid grey on white "fine" at 2.8:1. 4.5 is the AA body-text bar,
+ * 3.0 the bar for large text and UI edges.
+ */
+export function contrastRatio(a: string, b: string): { ratio: number; aa: boolean; aaLarge: boolean; aaa: boolean } | { error: string } {
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  if (!ca || !cb) return { error: `Could not read ${!ca ? `“${a}”` : `“${b}”`}. Use #rrggbb, rgb(...) or a colour name.` };
+  const la = luminance(ca);
+  const lb = luminance(cb);
+  const ratio = (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  return {
+    ratio: Math.round(ratio * 100) / 100,
+    aa: ratio >= 4.5,
+    aaLarge: ratio >= 3,
+    aaa: ratio >= 7,
+  };
+}
+
+/** Mix two colours, as a designer means by "70% of the way". */
+export function mixColors(a: string, b: string, amount = 0.5): string | { error: string } {
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  if (!ca || !cb) return { error: "Give both colours as #rrggbb." };
+  const t = Math.max(0, Math.min(1, amount));
+  const hex = (n: number) => Math.round(n).toString(16).padStart(2, "0");
+  return `#${hex(ca.r + (cb.r - ca.r) * t)}${hex(ca.g + (cb.g - ca.g) * t)}${hex(ca.b + (cb.b - ca.b) * t)}`;
+}
+
+/** Lighten or darken by mixing with white or black. */
+export function shadeColor(color: string, amount: number): string | { error: string } {
+  return amount >= 0 ? mixColors(color, "#ffffff", amount) : mixColors(color, "#000000", -amount);
+}
+
+/** A full palette from one seed colour, as a design system would derive it. */
+export function paletteFrom(seed: string): { base: string; light: string; dark: string; tint: string; shade: string; complement: string } | { error: string } {
+  const c = parseColor(seed);
+  if (!c) return { error: `Could not read “${seed}”. Use #rrggbb.` };
+  const light = mixColors(seed, "#ffffff", 0.4);
+  const dark = mixColors(seed, "#000000", 0.4);
+  const tint = mixColors(seed, "#ffffff", 0.85);
+  const shade = mixColors(seed, "#000000", 0.7);
+  // Rotate the hue 180 degrees in HSL for the complement. Inverting the RGB
+  // channels gives a different, dingier colour than the one the eye reads as
+  // opposite — on a warm orange, inversion lands on a muddy blue.
+  const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, sat = 0;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h /= 6;
+  }
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const h2 = (h + 0.5) % 1;
+  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+  const p2 = 2 * l - q;
+  const rgb = [hue2rgb(p2, q, h2 + 1 / 3), hue2rgb(p2, q, h2), hue2rgb(p2, q, h2 - 1 / 3)];
+  const complement2 = `#${rgb.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
+  return {
+    base: `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`,
+    light: String(light),
+    dark: String(dark),
+    tint: String(tint),
+    shade: String(shade),
+    complement: complement2,
+  };
+}
+
+/* ---------------------------------- money ---------------------------------- */
+
+/**
+ * Money arithmetic that does not drift.
+ *
+ * 0.1 + 0.2 is 0.30000000000000004 in binary floating point, and an invoice
+ * that says that is wrong. Values are handled in integer cents here.
+ */
+export function moneySum(values: number[]): { total: number; asCents: number } {
+  const cents = values.map((v) => Math.round(v * 100));
+  const total = cents.reduce((a, b) => a + b, 0);
+  return { total: total / 100, asCents: total };
+}
+
+/** Apply a percentage, rounded to cents the way a till does. */
+export function moneyTax(amount: number, ratePercent: number): { amount: number; tax: number; total: number } {
+  const cents = Math.round(amount * 100);
+  const tax = Math.round((cents * ratePercent) / 100);
+  return { amount: cents / 100, tax: tax / 100, total: (cents + tax) / 100 };
+}
+
+/** Split an amount into n parts, with the remainder on the first ones. */
+export function moneySplit(amount: number, parts: number): number[] {
+  const n = Math.max(1, Math.floor(parts));
+  const cents = Math.round(amount * 100);
+  const base = Math.floor(cents / n);
+  const over = cents - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < over ? 1 : 0)) / 100);
+}
+
+/* ---------------------------------- text 2 --------------------------------- */
+
+/** Count-in-words for the numbers things are limited to. */
+export function numberToWords(value: number): string {
+  const n = Math.floor(Math.abs(value));
+  if (n === 0) return "zero";
+  const ones = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+  const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+  const chunk = (v: number): string => {
+    if (v < 20) return ones[v];
+    if (v < 100) return tens[Math.floor(v / 10)] + (v % 10 ? `-${ones[v % 10]}` : "");
+    return `${ones[Math.floor(v / 100)]} hundred${v % 100 ? ` and ${chunk(v % 100)}` : ""}`;
+  };
+  const scales: [number, string][] = [[1_000_000_000, "billion"], [1_000_000, "million"], [1_000, "thousand"], [1, ""]];
+  let rest = n;
+  const out: string[] = [];
+  for (const [size, label] of scales) {
+    if (rest >= size) {
+      out.push(`${chunk(Math.floor(rest / size))}${label ? ` ${label}` : ""}`);
+      rest %= size;
+    }
+  }
+  return (value < 0 ? "minus " : "") + out.join(" ");
+}
