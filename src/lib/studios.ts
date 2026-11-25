@@ -575,7 +575,11 @@ export async function addAudioPart(
   const kind = String(a.kind ?? "notes");
 
   if (kind === "drums" || /drum/i.test(String(a.label ?? ""))) {
-    const style = /laid|loose|slow/i.test(String(a.style ?? a.label ?? "")) ? "laidback" : "driving";
+    // The style is whatever was asked for. This used to collapse every input to
+    // "laidback" or "driving", so the nine idioms in drumPattern were reachable
+    // only by calling it directly — "house" arrived as "driving".
+    const requested = String(a.style ?? "").trim().toLowerCase();
+    const style = requested || (/laid|loose|slow/i.test(String(a.label ?? "")) ? "lofi" : "pop");
     const bars = Math.max(1, Math.min(64, Number(a.bars ?? 4) || 4));
     const { clip, description } = drumPattern(style, bars, spec.bpm);
     clip.start = start;
