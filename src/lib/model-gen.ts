@@ -12,7 +12,39 @@ import "server-only";
  * than another, and they are the part a model is good at choosing.
  */
 
-export type ModelKind = "tree" | "crystal" | "rock" | "pillar" | "spaceship" | "terrain" | "tower" | "coin";
+export type ModelKind =
+  | "tree"
+  | "crystal"
+  | "rock"
+  | "pillar"
+  | "spaceship"
+  | "terrain"
+  | "tower"
+  | "coin"
+  | "vase"
+  | "bowl"
+  | "bottle"
+  | "lamp"
+  | "rocket"
+  | "sword"
+  | "shield"
+  | "table"
+  | "chair"
+  | "arch"
+  | "planet"
+  | "mushroom";
+
+/** One primitive placed in a scene, for models no preset covers. */
+export type ModelPart = {
+  shape: "box" | "cylinder" | "cone" | "sphere" | "icosahedron";
+  size?: [number, number, number];
+  radius?: number;
+  height?: number;
+  at?: [number, number, number];
+  rotate?: number;
+  /** Palette slot 0-3. */
+  color?: number;
+};
 
 export type ModelRequest = {
   kind: ModelKind;
@@ -21,6 +53,8 @@ export type ModelRequest = {
   /** Overall size in world units. */
   scale?: number;
   seed?: number;
+  /** For a composed model: the parts to place. When given, `kind` is ignored. */
+  parts?: ModelPart[];
 };
 
 type Vec3 = [number, number, number];
@@ -161,6 +195,95 @@ function icosahedron(mesh: Mesh, radius: number, x = 0, y = 0, z = 0): void {
   for (const f of faces) mesh.face(...f.map((i) => base + i));
 }
 
+/** A box, centred on (x,y,z), with optional per-axis size. */
+function box(mesh: Mesh, w: number, h: number, d: number, x = 0, y = 0, z = 0): void {
+  const base = mesh.vertices.length;
+  const hw = w / 2;
+  const hh = h / 2;
+  const hd = d / 2;
+  const corners: Vec3[] = [
+    [-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd],
+    [-hw, hh, -hd], [hw, hh, -hd], [hw, hh, hd], [-hw, hh, hd],
+  ];
+  for (const [cx, cy, cz] of corners) mesh.add([cx + x, cy + y, cz + z]);
+  for (const f of [
+    [1, 2, 3, 4], [5, 8, 7, 6], [1, 5, 6, 2], [2, 6, 7, 3],
+    [3, 7, 8, 4], [4, 8, 5, 1],
+  ]) {
+    mesh.face(...f.map((i) => base + i));
+  }
+}
+
+/** A UV sphere, low-poly by construction — segments are driven by detail. */
+function sphere(mesh: Mesh, radius: number, segments: number, rings: number, x = 0, y = 0, z = 0): void {
+  const base = mesh.vertices.length;
+  const grid: number[][] = [];
+  for (let r = 0; r <= rings; r++) {
+    const phi = (r / rings) * Math.PI;
+    const row: number[] = [];
+    for (let c = 0; c < segments; c++) {
+      const theta = (c / segments) * Math.PI * 2;
+      mesh.add([
+        x + radius * Math.sin(phi) * Math.cos(theta),
+        y + radius * Math.cos(phi),
+        z + radius * Math.sin(phi) * Math.sin(theta),
+      ]);
+      row.push(base + (r * segments + c) + 1);
+    }
+    grid.push(row);
+  }
+  for (let r = 0; r < rings; r++) {
+    for (let c = 0; c < segments; c++) {
+      const a = grid[r][c];
+      const b = grid[r][(c + 1) % segments];
+      const cc = grid[r + 1][(c + 1) % segments];
+      const d = grid[r + 1][c];
+      // The poles collapse to a point, so those rows are triangles.
+      if (r === 0) mesh.face(a, cc, d);
+      else if (r === rings - 1) mesh.face(a, b, cc);
+      else mesh.face(a, b, cc, d);
+    }
+  }
+}
+
+/**
+ * A surface of revolution: a profile spun around the Y axis.
+ *
+ * This is the workhorse the old shapes lacked — a vase, a bowl, a rocket nose,
+ * a lamp and a bottle are all one profile, and adding one costs a dozen numbers
+ * instead of a hundred vertices.
+ */
+function lathe(mesh: Mesh, profile: [number, number][], sides: number, scale = 1): void {
+  const base = mesh.vertices.length;
+  const rings: number[][] = [];
+  for (const [radius, height] of profile) {
+    const row: number[] = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2;
+      mesh.add([Math.cos(a) * radius * scale, height * scale, Math.sin(a) * radius * scale]);
+      row.push(base + (rings.length * sides + i) + 1);
+    }
+    rings.push(row);
+  }
+  for (let r = 0; r < rings.length - 1; r++) {
+    for (let i = 0; i < sides; i++) {
+      mesh.face(rings[r][i], rings[r][(i + 1) % sides], rings[r + 1][(i + 1) % sides], rings[r + 1][i]);
+    }
+  }
+  // Cap the ends when their radius is not zero, or the shape is hollow.
+  const first = profile[0][0];
+  const last = profile[profile.length - 1][0];
+  if (first > 0.001) {
+    const centre = mesh.add([0, profile[0][1] * scale, 0]);
+    for (let i = 0; i < sides; i++) mesh.face(centre, rings[0][(i + 1) % sides], rings[0][i]);
+  }
+  if (last > 0.001) {
+    const at = rings.length - 1;
+    const centre = mesh.add([0, profile[at][1] * scale, 0]);
+    for (let i = 0; i < sides; i++) mesh.face(centre, rings[at][i], rings[at][(i + 1) % sides]);
+  }
+}
+
 /** Build the mesh for a request. Deterministic for a given seed. */
 export function buildModel(req: ModelRequest): { mesh: Mesh; name: string } {
   const detail = Math.max(1, Math.min(5, Math.round(req.detail ?? 2)));
@@ -168,6 +291,37 @@ export function buildModel(req: ModelRequest): { mesh: Mesh; name: string } {
   const rand = rng(req.seed ?? 7);
   const sides = 4 + detail * 2;
   const mesh = new Mesh();
+
+  // A composed model comes first: when parts are given the preset is ignored,
+  // so a Bot can build something no list contains without a new shape being
+  // written for it.
+  if (Array.isArray(req.parts) && req.parts.length) {
+    const allowed = new Set(["box", "cylinder", "cone", "sphere", "icosahedron"]);
+    for (const part of req.parts.slice(0, 60)) {
+      if (!allowed.has(part.shape)) continue;
+      mesh.use(Math.max(0, Math.min(3, Math.round(part.color ?? 0))));
+      const [x, y, z] = part.at ?? [0, 0, 0];
+      const size = part.size ?? [1, 1, 1];
+      switch (part.shape) {
+        case "box":
+          box(mesh, (size[0] ?? 1) * scale, (size[1] ?? 1) * scale, (size[2] ?? 1) * scale, x * scale, y * scale, z * scale);
+          break;
+        case "sphere":
+          sphere(mesh, (part.radius ?? 0.5) * scale, sides, Math.max(3, Math.round(sides / 2)), x * scale, y * scale, z * scale);
+          break;
+        case "icosahedron":
+          icosahedron(mesh, (part.radius ?? 0.5) * scale, x * scale, y * scale, z * scale);
+          break;
+        case "cylinder":
+          cylinder(mesh, (part.radius ?? 0.5) * scale, (part.height ?? 1) * scale, sides, y * scale);
+          break;
+        case "cone":
+          cone(mesh, (part.radius ?? 0.5) * scale, (part.height ?? 1) * scale, sides, y * scale);
+          break;
+      }
+    }
+    return { mesh, name: "composed-model" };
+  }
 
   switch (req.kind) {
     case "tree": {
@@ -343,6 +497,152 @@ export function buildModel(req: ModelRequest): { mesh: Mesh; name: string } {
         mesh.face(bellA + i, bellA + ((i + 1) % 8), bellB + ((i + 1) % 8), bellB + i);
       }
       return { mesh, name: "spaceship" };
+    }
+    case "vase": {
+      // One profile, spun: wide belly, narrow neck, flared lip.
+      mesh.use(0);
+      lathe(mesh, [[0.22, 0], [0.34, 0.1], [0.44, 0.36], [0.4, 0.68], [0.24, 0.92], [0.2, 1.05], [0.3, 1.18], [0.26, 1.22]], sides, scale);
+      return { mesh, name: "vase" };
+    }
+    case "bowl": {
+      mesh.use(0);
+      lathe(mesh, [[0.06, 0], [0.3, 0.02], [0.46, 0.14], [0.52, 0.34], [0.5, 0.36]], sides, scale);
+      return { mesh, name: "bowl" };
+    }
+    case "bottle": {
+      mesh.use(0);
+      lathe(mesh, [[0.26, 0], [0.3, 0.06], [0.3, 0.72], [0.16, 0.92], [0.14, 1.24], [0.17, 1.3], [0.14, 1.32]], sides, scale);
+      mesh.use(1);
+      cylinder(mesh, 0.15 * scale, 0.1 * scale, sides, 1.32 * scale);
+      return { mesh, name: "bottle" };
+    }
+    case "lamp": {
+      mesh.use(1);
+      lathe(mesh, [[0.3, 0], [0.32, 0.04], [0.12, 0.1], [0.05, 0.5], [0.05, 1.0], [0.08, 1.02]], sides, scale);
+      mesh.use(0);
+      // The shade is an open cone, wider at the bottom than the top.
+      lathe(mesh, [[0.46, 1.0], [0.28, 1.38], [0.26, 1.4]], sides, scale);
+      return { mesh, name: "lamp" };
+    }
+    case "rocket": {
+      mesh.use(1);
+      lathe(mesh, [[0.2, 0], [0.24, 0.12], [0.24, 1.2], [0.16, 1.5], [0.02, 1.76]], sides, scale);
+      mesh.use(0);
+      // Three fins, evenly spaced, angled out from the body.
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const cx = Math.cos(a);
+        const cz = Math.sin(a);
+        const base = mesh.vertices.length;
+        mesh.add([cx * 0.2 * scale, 0.55 * scale, cz * 0.2 * scale]);
+        mesh.add([cx * 0.55 * scale, 0.02 * scale, cz * 0.55 * scale]);
+        mesh.add([cx * 0.2 * scale, 0, cz * 0.2 * scale]);
+        mesh.face(base + 1, base + 2, base + 3);
+      }
+      return { mesh, name: "rocket" };
+    }
+    case "sword": {
+      mesh.use(1);
+      // The blade tapers to a point and is thin in one axis.
+      const tip = 2.1 * scale;
+      const b = mesh.vertices.length;
+      mesh.add([-0.09 * scale, 0.3 * scale, -0.02 * scale]);
+      mesh.add([0.09 * scale, 0.3 * scale, -0.02 * scale]);
+      mesh.add([0.09 * scale, 0.3 * scale, 0.02 * scale]);
+      mesh.add([-0.09 * scale, 0.3 * scale, 0.02 * scale]);
+      const t = mesh.add([0, tip, 0]);
+      mesh.face(b + 1, b + 2, t);
+      mesh.face(b + 3, b + 4, t);
+      mesh.face(b + 2, b + 3, t);
+      mesh.face(b + 4, b + 1, t);
+      mesh.face(b + 1, b + 4, b + 3, b + 2);
+      mesh.use(0);
+      box(mesh, 0.44 * scale, 0.07 * scale, 0.1 * scale, 0, 0.28 * scale, 0);
+      cylinder(mesh, 0.05 * scale, 0.26 * scale, sides, -0.26 * scale);
+      sphere(mesh, 0.075 * scale, sides, 3, 0, -0.3 * scale, 0);
+      return { mesh, name: "sword" };
+    }
+    case "shield": {
+      mesh.use(0);
+      // A lathe laid flat would be a dish; a shield is a slightly domed disc,
+      // so the profile is shallow and wide.
+      lathe(mesh, [[0.02, 0], [0.3, 0.02], [0.5, 0.06], [0.62, 0.1], [0.62, 0.12]], sides, scale);
+      mesh.use(1);
+      box(mesh, 0.9 * scale, 0.05 * scale, 0.12 * scale, 0, 0.15 * scale, 0);
+      box(mesh, 0.12 * scale, 0.05 * scale, 0.9 * scale, 0, 0.15 * scale, 0);
+      return { mesh, name: "shield" };
+    }
+    case "table": {
+      mesh.use(0);
+      box(mesh, 1.5 * scale, 0.09 * scale, 0.9 * scale, 0, 0.72 * scale, 0);
+      mesh.use(1);
+      // Legs are boxes, not cylinders: a cylinder primitive grows at the
+      // origin, and this one used to shift its own vertices afterwards by
+      // counting backwards from the end of the array — wrong the moment another
+      // primitive was added inside the loop.
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+        box(mesh, 0.07 * scale, 0.72 * scale, 0.07 * scale, sx * 0.64 * scale, 0.36 * scale, sz * 0.34 * scale);
+      }
+      return { mesh, name: "table" };
+    }
+    case "chair": {
+      mesh.use(0);
+      box(mesh, 0.48 * scale, 0.07 * scale, 0.48 * scale, 0, 0.45 * scale, 0);
+      box(mesh, 0.48 * scale, 0.55 * scale, 0.06 * scale, 0, 0.75 * scale, -0.21 * scale);
+      mesh.use(1);
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+        box(mesh, 0.05 * scale, 0.45 * scale, 0.05 * scale, sx * 0.2 * scale, 0.22 * scale, sz * 0.2 * scale);
+      }
+      return { mesh, name: "chair" };
+    }
+    case "arch": {
+      mesh.use(0);
+      // Two piers and a half-torus of wedges, which reads as a real arch.
+      for (const sx of [-1, 1]) box(mesh, 0.3 * scale, 1.2 * scale, 0.4 * scale, sx * 0.5 * scale, 0.6 * scale, 0);
+      const wedges = Math.max(6, sides);
+      for (let i = 0; i < wedges; i++) {
+        const a0 = Math.PI - (i / wedges) * Math.PI;
+        const a1 = Math.PI - ((i + 1) / wedges) * Math.PI;
+        const inner = 0.4 * scale;
+        const outer = 0.66 * scale;
+        const b = mesh.vertices.length;
+        const z = 0.18 * scale;
+        for (const [rad, ang, zz] of [
+          [inner, a0, -z], [outer, a0, -z], [outer, a1, -z], [inner, a1, -z],
+          [inner, a0, z], [outer, a0, z], [outer, a1, z], [inner, a1, z],
+        ] as [number, number, number][]) {
+          mesh.add([Math.cos(ang) * rad, 1.2 * scale + Math.sin(ang) * rad, zz]);
+        }
+        for (const f of [[1, 2, 3, 4], [5, 8, 7, 6], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 8, 4], [4, 8, 5, 1]]) {
+          mesh.face(...f.map((n) => b + n));
+        }
+      }
+      return { mesh, name: "arch" };
+    }
+    case "planet": {
+      mesh.use(0);
+      sphere(mesh, 0.6 * scale, Math.max(8, sides * 2), Math.max(6, sides), 0, 0, 0);
+      mesh.use(1);
+      // A ring, as a flat annulus: two radii, one plane.
+      const seg = Math.max(12, sides * 3);
+      for (let i = 0; i < seg; i++) {
+        const a0 = (i / seg) * Math.PI * 2;
+        const a1 = ((i + 1) / seg) * Math.PI * 2;
+        const b = mesh.vertices.length;
+        for (const [rad, ang] of [[0.75, a0], [1.05, a0], [1.05, a1], [0.75, a1]] as [number, number][]) {
+          mesh.add([Math.cos(ang) * rad * scale, 0, Math.sin(ang) * rad * scale]);
+        }
+        mesh.face(b + 1, b + 2, b + 3, b + 4);
+      }
+      return { mesh, name: "planet" };
+    }
+    case "mushroom": {
+      mesh.use(1);
+      cylinder(mesh, 0.11 * scale, 0.42 * scale, sides, 0);
+      mesh.use(0);
+      // The cap is a lathe, which gives a rounded dome rather than a cone.
+      lathe(mesh, [[0.5, 0.4], [0.46, 0.48], [0.34, 0.58], [0.16, 0.64], [0.02, 0.66]], sides, scale);
+      return { mesh, name: "mushroom" };
     }
     case "terrain": {
       // A heightfield: a grid where the height is smoothed noise.

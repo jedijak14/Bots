@@ -316,13 +316,33 @@ const MODEL_TOOLS: Tool[] = [
     parameters: obj(
       {
         title: { type: "string", description: "What the model is." },
-        kind: { type: "string", enum: ["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin"], description: "Which generator to use." },
+        kind: {
+          type: "string",
+          enum: ["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin", "vase", "bowl", "bottle", "lamp", "rocket", "sword", "shield", "table", "chair", "arch", "planet", "mushroom"],
+          description: "Which generator to use. Leave it out when you are passing parts.",
+        },
         detail: { type: "number", description: "1 (very low poly) to 5 (smoother). Defaults to 2." },
         scale: { type: "number", description: "World size, 0.2-20. Defaults to 1." },
         seed: { type: "number", description: "Any number; the same seed gives the same model." },
         palette: { type: "array", items: { type: "string" }, description: "Body, structure, accent colours." },
+        parts: {
+          type: "array",
+          description:
+            "Build a model no preset covers, by stacking primitives. Each part is placed on its own: shape is box, cylinder, cone, sphere or icosahedron; size is [x,y,z] for a box; radius and height for the round ones; at is [x,y,z]; color is a palette slot 0-3. Up to 60 parts. When parts are given, kind is ignored.",
+          items: obj(
+            {
+              shape: { type: "string", enum: ["box", "cylinder", "cone", "sphere", "icosahedron"] },
+              size: { type: "array", items: { type: "number" } },
+              radius: { type: "number" },
+              height: { type: "number" },
+              at: { type: "array", items: { type: "number" } },
+              color: { type: "number" },
+            },
+            ["shape"],
+          ),
+        },
       },
-      ["title", "kind"],
+      ["title"],
     ),
   },
 ];

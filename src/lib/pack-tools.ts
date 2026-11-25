@@ -613,16 +613,34 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
     case "make_3d_model": {
       const { buildModel, viewerHtml } = await import("@/lib/model-gen");
       const title = String(a.title ?? "Model").trim();
-      const kind = String(a.kind ?? "rock") as Parameters<typeof buildModel>[0]["kind"];
-      if (!["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin"].includes(kind)) {
-        return { output: "Pick a kind: tree, crystal, rock, pillar, spaceship, terrain, tower or coin." };
+      const kinds = [
+        "tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin",
+        "vase", "bowl", "bottle", "lamp", "rocket", "sword", "shield", "table",
+        "chair", "arch", "planet", "mushroom",
+      ];
+      const parts = Array.isArray(a.parts) ? (a.parts as Record<string, unknown>[]) : [];
+      const kind = String(a.kind ?? (parts.length ? "rock" : "rock"));
+      if (!parts.length && !kinds.includes(kind)) {
+        return { output: `Pick a kind: ${kinds.join(", ")} — or pass parts to build something new.` };
       }
       const palette = Array.isArray(a.palette) ? a.palette.map(String).slice(0, 3) : undefined;
       const built = buildModel({
-        kind,
+        kind: kind as Parameters<typeof buildModel>[0]["kind"],
         detail: Number(a.detail) || 2,
         scale: Number(a.scale) || 1,
         seed: Number(a.seed) || 1,
+        ...(parts.length
+          ? {
+              parts: parts.map((part) => ({
+                shape: String(part.shape ?? "box") as "box" | "cylinder" | "cone" | "sphere" | "icosahedron",
+                ...(Array.isArray(part.size) ? { size: part.size.map(Number).slice(0, 3) as [number, number, number] } : {}),
+                ...(part.radius !== undefined ? { radius: Number(part.radius) } : {}),
+                ...(part.height !== undefined ? { height: Number(part.height) } : {}),
+                ...(Array.isArray(part.at) ? { at: part.at.map(Number).slice(0, 3) as [number, number, number] } : {}),
+                ...(part.color !== undefined ? { color: Number(part.color) } : {}),
+              })),
+            }
+          : {}),
       });
       const obj = built.mesh.toObj(built.name);
       const stats = built.mesh.stats();
