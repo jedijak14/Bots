@@ -236,6 +236,21 @@ function AiTab() {
       .catch(() => {});
   }, [s.hasAiKey]);
 
+  // Whether reasoning can actually run here. Checked when a level is chosen, so
+  // the panel can say "not installed" instead of letting the user pay for a
+  // setting that silently does nothing.
+  const [reason, setReason] = useState<{ ok: boolean; detail: string; callsPerReply: number } | null>(null);
+  useEffect(() => {
+    if (reasoning === "off") {
+      setReason(null);
+      return;
+    }
+    fetch("/api/settings/reasoning")
+      .then((r) => r.json())
+      .then((j) => setReason({ ok: !!j.ok, detail: String(j.detail ?? ""), callsPerReply: Number(j.callsPerReply ?? 0) }))
+      .catch(() => setReason(null));
+  }, [reasoning, s.hasAiKey]);
+
   async function save() {
     setBusy(true);
     setMsg(null);
@@ -411,6 +426,17 @@ function AiTab() {
                 ? " A reply that uses tools always runs direct, with no extra calls — reasoning only pays for itself when the model is thinking, not when it is acting."
                 : ""}
             </p>
+            {reason && (
+              <p
+                className={cx(
+                  "mt-1.5 flex items-start gap-1.5 text-[12px]",
+                  reason.ok ? "text-emerald-400/90" : "text-amber-400/90",
+                )}
+              >
+                <span aria-hidden className="mt-[3px] size-1.5 shrink-0 rounded-full bg-current" />
+                <span>{reason.detail}</span>
+              </p>
+            )}
           </div>
         </div>
       )}

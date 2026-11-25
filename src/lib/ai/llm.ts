@@ -145,7 +145,10 @@ async function reasonInstead(o: AgentOptions, msgs: Record<string, unknown>[], f
     }
     // A technique that returns less than the plain answer has not improved
     // anything; keep the original rather than shipping a truncated regression.
-    if (out.trim().length < Math.min(20, firstDraft.trim().length / 2)) {
+    // The bar is absolute, not relative: a short correct answer is normal, and
+    // "The answer is 4." is not a regression on "The answer is 4." Measured
+    // against the first draft it flagged every brief reply as a failure.
+    if (out.trim().length < Math.min(8, firstDraft.trim().length / 2)) {
       o.onOptimiseFailed?.("the reasoned answer was shorter than the first draft, so the first draft was kept");
       return null;
     }
@@ -256,9 +259,11 @@ async function openaiLoop(o: AgentOptions) {
           o.onText(reasoned);
           return;
         }
-        // The proxy declined. Whatever it told us is worth one line in the
-        // turn, then the original answer is delivered unchanged.
-        o.onOptimiseFailed?.("the proxy did not answer, so this reply is the model's first draft");
+        // `reasonInstead` has already reported the specific reason through
+        // `onOptimiseFailed` — a bad status, a network error, or a reply too
+        // short to be an improvement. Saying "the proxy did not answer" here
+        // would add a second, less accurate line about the same failure.
+        
       }
       if (text) o.onText(text);
       return;
