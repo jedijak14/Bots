@@ -5,6 +5,7 @@ import { handleError, requireUser } from "@/lib/auth";
 import { CONNECTORS } from "@/lib/connectors";
 import { splitRecipients } from "@/lib/email";
 import { MailError, sendEmail } from "@/lib/mail";
+import { isUuid } from "@/lib/ids";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const user = await requireUser();
     userId = user.id;
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a crash. Postgres rejects a non-UUID string
+    // for a uuid column with 22P02, which came back as a 500 from every route
+    // that took an id — including the artifact fetches the studio players make
+    // for every clip on a timeline.
+    if (!isUuid(id)) return Response.json({ error: "Artifact not found." }, { status: 404 });
     const body = (await req.json().catch(() => ({}))) as { retry?: boolean };
 
     const [draft] = await db

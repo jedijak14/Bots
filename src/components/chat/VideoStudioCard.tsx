@@ -76,7 +76,9 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
     (async () => {
       for (const track of spec.tracks) {
         for (const clip of track.clips) {
-          if (clip.kind === "text" || !clip.source || loaded.has(clip.source)) continue;
+          // A voiced clip has no media to fetch: the browser speaks it. Asking
+          // for an artifact called "narration" produced a 404 on every load.
+          if (clip.kind === "text" || clip.speak || !clip.source || loaded.has(clip.source)) continue;
           try {
             const url = await resolveUrl(clip);
             if (clip.kind === "image") {
@@ -189,6 +191,18 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
           const top = canvas.height * (style === "caption" ? 0.82 : 0.5) - ((lines.length - 1) * lineHeight) / 2;
           lines.forEach((line, i) => ctx.fillText(line, canvas.width / 2, top + i * lineHeight));
           ctx.shadowBlur = 0;
+        } else if (clip.speak) {
+          // Narration is heard, not seen. Draw the line as a caption so a
+          // silent viewing still reads, but never render a "clip unavailable".
+          const size = canvas.height * 0.036;
+          ctx.font = `500 ${size}px ui-sans-serif, system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "rgba(255,255,255,0.82)";
+          const lines = wrap(ctx, clip.speak, canvas.width * 0.8);
+          const lineHeight = size * 1.35;
+          const top = canvas.height * 0.88 - ((lines.length - 1) * lineHeight) / 2;
+          lines.slice(0, 3).forEach((line, i) => ctx.fillText(line, canvas.width / 2, top + i * lineHeight));
         } else {
           const el = sources.loaded.get(clip.source);
           if (el) {

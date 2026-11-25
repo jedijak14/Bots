@@ -3,11 +3,15 @@ import { db } from "@/db";
 import { bots, skills } from "@/db/schema";
 import { handleError, requireUser } from "@/lib/auth";
 import { normalizeSkillConnectors, normalizeSkillTools } from "@/lib/skill-permissions";
+import { isUuid } from "@/lib/ids";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a 500: Postgres raises 22P02 on a non-uuid
+    // string and every route that took an id answered with a server error.
+    if (!isUuid(id)) return Response.json({ error: "Skill not found." }, { status: 404 });
     const body = (await req.json()) as { enabled?: boolean; name?: string; instructions?: string; botId?: string | null; allowedTools?: unknown; allowedConnectors?: unknown };
     const update: Partial<typeof skills.$inferInsert> = { updatedAt: new Date() };
     let changed = false;
@@ -45,6 +49,10 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a 500: Postgres raises 22P02 on a
+    // non-uuid string and every route that took an id answered with a
+    // server error instead of "not found".
+    if (!isUuid(id)) return Response.json({ error: "Skill not found." }, { status: 404 });
     const [deleted] = await db.delete(skills).where(and(eq(skills.id, id), eq(skills.userId, user.id))).returning({ id: skills.id });
     if (!deleted) return Response.json({ error: "Skill not found." }, { status: 404 });
     return Response.json({ deleted: true });

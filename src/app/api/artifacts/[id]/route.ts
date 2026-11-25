@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts } from "@/db/schema";
 import { handleError, requireUser } from "@/lib/auth";
+import { isUuid } from "@/lib/ids";
 
 export type ArtifactDTO = {
   id: string;
@@ -27,6 +28,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a crash. Postgres rejects a non-UUID string
+    // for a uuid column with 22P02, which came back as a 500 from every route
+    // that took an id — including the artifact fetches the studio players make
+    // for every clip on a timeline.
+    if (!isUuid(id)) return Response.json({ error: "Artifact not found." }, { status: 404 });
     const [row] = await db.select().from(artifacts).where(and(eq(artifacts.id, id), eq(artifacts.userId, user.id))).limit(1);
     if (!row) return Response.json({ error: "Artifact not found." }, { status: 404 });
     return Response.json(pick(row), { headers: { "Cache-Control": "no-store" } });
@@ -39,6 +45,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a crash. Postgres rejects a non-UUID string
+    // for a uuid column with 22P02, which came back as a 500 from every route
+    // that took an id — including the artifact fetches the studio players make
+    // for every clip on a timeline.
+    if (!isUuid(id)) return Response.json({ error: "Artifact not found." }, { status: 404 });
     const body = (await req.json()) as { archived?: boolean; content?: string };
     const hasArchived = typeof body.archived === "boolean";
     const hasContent = typeof body.content === "string";
@@ -75,6 +86,11 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
+    // A malformed id is a 404, not a crash. Postgres rejects a non-UUID string
+    // for a uuid column with 22P02, which came back as a 500 from every route
+    // that took an id — including the artifact fetches the studio players make
+    // for every clip on a timeline.
+    if (!isUuid(id)) return Response.json({ error: "Artifact not found." }, { status: 404 });
     const [deleted] = await db.delete(artifacts).where(and(eq(artifacts.id, id), eq(artifacts.userId, user.id))).returning({ id: artifacts.id });
     if (!deleted) return Response.json({ error: "Artifact not found." }, { status: 404 });
     return Response.json({ deleted: true });

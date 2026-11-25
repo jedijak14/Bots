@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { isUuid } from "@/lib/ids";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getCurrentUser();
   if (!user) return new Response("Please sign in.", { status: 401 });
   const { id } = await ctx.params;
+    // A malformed id is a 404, not a crash. Postgres rejects a non-UUID string
+    // for a uuid column with 22P02, which came back as a 500 from every route
+    // that took an id — including the artifact fetches the studio players make
+    // for every clip on a timeline.
+    if (!isUuid(id)) return Response.json({ error: "Artifact not found." }, { status: 404 });
   const [row] = await db
     .select({ content: artifacts.content, kind: artifacts.kind, title: artifacts.title })
     .from(artifacts)
