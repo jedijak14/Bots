@@ -13,6 +13,8 @@ import { Composer, ComposerMode, type Attachment } from "./Composer";
 import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
 import { AssistantBlock, UserBubble, type ArtifactRef, type LiveStep } from "./Message";
 import { ModelPicker } from "./ModelPicker";
+import { BriefCard } from "./BriefCard";
+import type { IconName } from "../icons";
 import type { ComputerPhase } from "./useComputer";
 import { Menu, placeMenu, type MenuItem, type MenuPosition } from "../Menu";
 
@@ -82,10 +84,12 @@ function speak(markdown: string) {
  * They are now chips — a capability line, not a questionnaire — and the middle
  * of the screen stays open for whatever the person actually came to say.
  */
-const CAPABILITIES: Array<{ label: string; prompt: string; icon: "search" | "sparkles" | "mail" | "monitor" }> = [
+const CAPABILITIES: Array<{ label: string; prompt: string; icon: IconName }> = [
+  { label: "Plan my day", prompt: "Look at my open goals and plan my day. Tell me what to do first and why.", icon: "target" },
+  { label: "Catch me up", prompt: "Catch me up: what did we work on recently, and what is still outstanding?", icon: "clock" },
   { label: "Research the web", prompt: "Research a topic for me: ", icon: "search" },
-  { label: "Plan something", prompt: "Help me plan ", icon: "sparkles" },
   { label: "Draft an email", prompt: "Draft an email for me. ", icon: "mail" },
+  { label: "Write it down", prompt: "Save this to my artifacts: ", icon: "archive" },
   { label: "Use the computer", prompt: "Open a browser and show me what you can do.", icon: "monitor" },
 ];
 
@@ -699,6 +703,8 @@ function EmptyChat({
       </div>
       <h1 className="mt-6 text-center text-[28px] font-semibold tracking-[-0.035em] text-white sm:text-[34px]">Hi, I&apos;m {name}.</h1>
       <p className="mt-1.5 text-[14.5px] text-neutral-500">What are we working on?</p>
+
+      <BriefCard />
 
       <div className="mt-7 flex max-w-[560px] flex-wrap items-center justify-center gap-1.5">
         {capabilities.map((c, i) => (
