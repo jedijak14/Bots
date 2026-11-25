@@ -306,6 +306,53 @@ export async function removeVideoClip(
 }
 
 /**
+ * Repeat a part along its track.
+ *
+ * A song is a loop, and writing sixteen bars of the same drum pattern by hand
+ * is both tedious and where a model loses count. This takes a part and lays
+ * copies of it end to end, re-timing the notes so each copy is a real clip with
+ * its own notes rather than one long clip — which keeps every part addressable
+ * by id for the edits that come after.
+ */
+export async function repeatAudioPart(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<AudioProjectSpec>(ctx.userId, ctx.botId, "audio_project", title);
+  if (!found) return { output: `There is no audio project called “${title}”.` };
+  const spec = found.spec;
+  const hit = findAudioClip(spec, a.id ?? a.clip, a.track);
+  if (!hit) {
+    const ids = spec.tracks.flatMap((t) => t.clips.map((c) => c.id));
+    return { output: ids.length ? `No part with that id. The parts are ${ids.join(", ")}.` : "There are no parts to repeat yet." };
+  }
+  // The count is the number of copies *including* the original, which is how a
+  // person asks for it: "play it four times" means four, not four more.
+  const times = Math.max(2, Math.min(64, Math.round(Number(a.times ?? 4) || 4)));
+  const end = hit.clip.start + hit.clip.duration;
+  let at = end;
+  let made = 0;
+  for (let i = 1; i < times; i++) {
+    const copy: AudioClip = {
+      ...hit.clip,
+      id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 100000)}`,
+      start: Math.round(at * 100) / 100,
+      ...(hit.clip.kind === "synth" ? { notes: hit.clip.notes.map((n) => ({ ...n })) } : {}),
+    };
+    hit.track.clips.push(copy);
+    at += copy.duration;
+    made++;
+  }
+  spec.duration = audioDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "audio_project", title, spec, found.id);
+  return {
+    output: `Repeated ${hit.clip.id} ${times} times on ${hit.track.id} — ${made} more part${made === 1 ? "" : "s"}, now running to ${spec.duration.toFixed(1)}s.`,
+    artifactId: found.id,
+  };
+}
+
+/**
  * Write narration into a film.
  *
  * A script is a list of lines. The Bot should not have to work out how long

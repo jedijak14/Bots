@@ -23,6 +23,7 @@ import {
   readAudioProject,
   readVideoProject,
   removeAudioPart,
+  repeatAudioPart,
   removeVideoClip,
   splitVideoClip,
   tightenVideoTrack,
@@ -547,6 +548,20 @@ const STUDIO_TOOLS: Tool[] = [
         muted: { type: "boolean", description: "Start muted." },
       },
       ["title", "name"],
+    ),
+  },
+  {
+    name: "audio_repeat",
+    description:
+      "Repeat a part along its track. A song is a loop: asking for sixteen bars means writing one bar and repeating it, not sixteen bars of notes. The count includes the original, so times 4 gives four playthroughs. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        id: { type: "string", description: "The part to repeat." },
+        track: { type: "string", description: "Which track it is on." },
+        times: { type: "number", description: "Total playthroughs including the original. Defaults to 4." },
+      },
+      ["title", "id"],
     ),
   },
   {
@@ -1206,6 +1221,8 @@ export function buildToolset(opts: {
         return `Read the video project “${clip(s("title"), 40)}”`;
       case "audio_track":
         return `Added the track “${clip(s("name"), 30)}”`;
+      case "audio_repeat":
+        return `Repeated a part in “${clip(s("title"), 40)}”`;
       case "audio_remove":
         return s("id") ? `Removed a part from “${clip(s("title"), 40)}”` : `Removed a track from “${clip(s("title"), 40)}”`;
       case "audio_move":
@@ -1755,6 +1772,7 @@ export function buildToolset(opts: {
     if (name === "video_tighten") return await tightenVideoTrack({ userId, botId: bot.id }, a);
     if (name === "video_read") return await readVideoProject({ userId, botId: bot.id }, a);
     if (name === "audio_track") return await addAudioTrack({ userId, botId: bot.id }, a);
+    if (name === "audio_repeat") return await repeatAudioPart({ userId, botId: bot.id }, a);
     if (name === "audio_remove") return await removeAudioPart({ userId, botId: bot.id }, a);
     if (name === "audio_move") return await moveAudioPart({ userId, botId: bot.id }, a);
     if (name === "video_studio") return await openVideoStudio({ userId, botId: bot.id }, a);
