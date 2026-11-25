@@ -386,7 +386,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
       <nav aria-label="Bots" onScroll={() => { tip.hide(); closeMenu(); }} className={cx("mt-3 min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-2.5 pb-3", collapsed && "md:[scrollbar-width:none]")}>
         <div className={cx("flex items-center justify-between px-2 pb-1.5 pt-1.5", collapsed && "md:hidden")}>
-            <Link href="/" aria-label="Home" className="text-[11px] font-medium uppercase tracking-[0.09em] text-neutral-500 transition hover:text-neutral-300">
+            {/* This used to point at "/", which for a signed-in person is the
+                marketing page: clicking the heading above your own Bots sent
+                you out of the app. It goes to the Bots list instead. */}
+            <Link href="/bots" aria-label="Your bots" className="text-[11px] font-medium uppercase tracking-[0.09em] text-neutral-500 transition hover:text-neutral-300">
               Your bots
             </Link>
           <span className="text-[11px] tabular-nums text-neutral-600">{app.bots.length || ""}</span>

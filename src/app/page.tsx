@@ -36,14 +36,24 @@ const CAPABILITIES = [
     body: "Every Bot gets a real desktop. It clicks, types and signs in to your sites the way you would, then hands back the finished thing.",
   },
   {
+    icon: "sparkles",
+    title: "A thousand tools, used sparingly",
+    body: "Logos, readmes, landing pages, game genres: a library of purpose-built tools, loaded only when a request calls for one instead of filling the prompt with everything it might need.",
+  },
+  {
+    icon: "grid",
+    title: "Renders with real Blender",
+    body: "Kinetix builds a scene and path-traces it with Cycles — materials, real light, soft shadows — and hands back the render plus a glTF you can open in any engine.",
+  },
+  {
+    icon: "globe",
+    title: "Asks the API before the browser",
+    body: "A flight, a price, a score: the Bot calls the site's own API, which answers in milliseconds. Only a page it has to see gets a browser, and it says which it chose and why.",
+  },
+  {
     icon: "mail",
     title: "Drafts and sends email",
     body: "Ask for a message and the Bot writes it in your voice, shows you the draft, and only sends once you say go.",
-  },
-  {
-    icon: "sparkles",
-    title: "Real artifacts",
-    body: "Documents, sites, lyric videos and email drafts arrive as things you can open, edit and keep — not as a wall of text.",
   },
   {
     icon: "brain",
