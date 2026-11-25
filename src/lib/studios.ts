@@ -306,6 +306,61 @@ export async function removeVideoClip(
 }
 
 /**
+ * Write narration into a film.
+ *
+ * A script is a list of lines. The Bot should not have to work out how long
+ * each one takes to say or where the next one starts — at a normal speaking
+ * rate that is about 150 words a minute, so the timings follow from the words.
+ * Lines are placed back to back from `start`, and each becomes an audio clip
+ * carrying the text; the player speaks it.
+ */
+export async function narrateVideo(
+  ctx: { userId: string; botId: string },
+  a: Record<string, unknown>,
+): Promise<StudioResult> {
+  const title = String(a.title ?? "").trim();
+  const found = await loadProject<VideoProjectSpec>(ctx.userId, ctx.botId, "video_project", title);
+  if (!found) return { output: `There is no video project called “${title}”.` };
+  const spec = found.spec;
+  const track = spec.tracks.find((t) => t.kind === "audio");
+  if (!track) return { output: `“${title}” has no audio track to hold narration.` };
+
+  const raw = a.script ?? a.lines ?? a.text;
+  const lines = Array.isArray(raw)
+    ? raw.map(String)
+    : String(raw ?? "").split(/\n+|(?<=[.!?])\s+/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return { output: "Give the narration as a script: one line per sentence." };
+
+  const perLine =
+    a.voice === "slow" ? 130 : a.voice === "fast" ? 185 : 150;
+  let at = a.start === undefined ? nextFreeSlot(track) : Math.max(0, Number(a.start) || 0);
+  const added: string[] = [];
+  for (const line of lines.slice(0, 100)) {
+    const words = line.split(/\s+/).filter(Boolean).length;
+    // A floor of 0.8s stops a two-word line flashing past, and the gap is what
+    // makes consecutive lines sound like sentences rather than one run-on.
+    const duration = Math.max(0.8, Math.round(((words / perLine) * 60 + 0.25) * 100) / 100);
+    track.clips.push({
+      id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`,
+      kind: "audio",
+      source: "narration",
+      start: Math.round(at * 100) / 100,
+      duration,
+      speak: line.slice(0, 2000),
+      label: line.slice(0, 40),
+    });
+    added.push(`${at.toFixed(1)}s “${line.slice(0, 44)}”`);
+    at += duration;
+  }
+  spec.duration = projectDuration(spec);
+  await saveProject(ctx.userId, ctx.botId, "video_project", title, spec, found.id);
+  return {
+    output: `Wrote ${added.length} narration line${added.length === 1 ? "" : "s"} from ${(a.start === undefined ? "the end of the audio track" : `${Number(a.start)}s`)}, running to ${at.toFixed(1)}s.\n${added.join("\n")}`,
+    artifactId: found.id,
+  };
+}
+
+/**
  * Cut a clip in two at a time on the timeline.
  *
  * A split is the one edit that cannot be expressed as an update to a single

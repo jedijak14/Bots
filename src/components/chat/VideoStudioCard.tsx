@@ -34,6 +34,8 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
   const audioRefs = useRef<HTMLAudioElement[]>([]);
   const rafRef = useRef<number>(0);
   const startedAt = useRef<number>(0);
+  /** Which narration line is currently being spoken, so it is not re-queued. */
+  const spokenRef = useRef<string>("");
 
   const spec = useMemo(() => {
     try {
@@ -257,6 +259,37 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, duration]);
+
+  // Narration.
+  //
+  // `speak` has been stored on audio clips since the studio was written and
+  // nothing ever voiced it — a narrated film played silently. The browser's own
+  // speech synthesis is the only voice available with no computer and no key,
+  // so a clip that carries a line is spoken as the playhead reaches it, and
+  // cancelled the moment it leaves or playback stops.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (!spec || !playing) {
+      window.speechSynthesis.cancel();
+      return;
+    }
+    const due = spec.tracks
+      .filter((t) => !t.muted)
+      .flatMap((t) => t.clips)
+      .filter((c) => c.speak && time >= c.start && time < c.start + c.duration);
+    if (!due.length) {
+      window.speechSynthesis.cancel();
+      return;
+    }
+    // The line is spoken once, at the moment it starts, not re-queued on every
+    // frame: the loop runs at 60fps and speechSynthesis queues rather than
+    // replaces.
+    const key = due.map((c) => c.id).join(",");
+    if (spokenRef.current === key) return;
+    spokenRef.current = key;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(due.map((c) => c.speak).join(" ").slice(0, 1200)));
+  }, [time, playing, spec]);
 
   // Follow the clips with `time`, not with a boolean.
   //

@@ -26,6 +26,7 @@ import {
   removeVideoClip,
   splitVideoClip,
   tightenVideoTrack,
+  narrateVideo,
 } from "@/lib/studios";
 import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary, WEAK_MATCH_SCORE } from "@/lib/tool-library";
 import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
@@ -409,6 +410,21 @@ const STUDIO_TOOLS: Tool[] = [
     name: "video_remove",
     description: "Remove one clip from a video project, by id.",
     parameters: obj({ title: { type: "string" }, id: { type: "string" } }, ["title", "id"]),
+  },
+  {
+    name: "video_narrate",
+    description:
+      "Write narration into a film. Give the lines and the studio places them back to back on the audio track, timing each to how long it takes to say (about 150 words a minute), and the player speaks them. Use it instead of adding one audio clip per sentence by hand. Works with no computer.",
+    parameters: obj(
+      {
+        title: { type: "string" },
+        script: { type: "string", description: "The narration. Each line or sentence becomes one clip." },
+        lines: { type: "array", items: { type: "string" }, description: "Alternative to script: the lines already split." },
+        start: { type: "number", description: "Seconds in. Defaults to the end of the audio track." },
+        voice: { type: "string", enum: ["normal", "slow", "fast"], description: "Speaking rate used to time the lines. Defaults to normal." },
+      },
+      ["title"],
+    ),
   },
   {
     name: "video_split",
@@ -1178,6 +1194,8 @@ export function buildToolset(opts: {
         return `Mixed “${clip(s("title"), 50)}”`;
       case "audio_read":
         return `Read “${clip(s("title"), 50)}”`;
+      case "video_narrate":
+        return `Wrote narration for “${clip(s("title"), 40)}”`;
       case "video_split":
         return `Split a clip in “${clip(s("title"), 40)}” at ${clip(s("at"), 8)}s`;
       case "video_duplicate":
@@ -1731,6 +1749,7 @@ export function buildToolset(opts: {
       const op = String(a.op ?? "slug") as Parameters<typeof transformText>[1];
       return { output: transformText(String(a.text ?? ""), op) };
     }
+    if (name === "video_narrate") return await narrateVideo({ userId, botId: bot.id }, a);
     if (name === "video_split") return await splitVideoClip({ userId, botId: bot.id }, a);
     if (name === "video_duplicate") return await duplicateVideoClip({ userId, botId: bot.id }, a);
     if (name === "video_tighten") return await tightenVideoTrack({ userId, botId: bot.id }, a);
