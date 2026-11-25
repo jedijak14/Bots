@@ -318,7 +318,7 @@ const MODEL_TOOLS: Tool[] = [
         title: { type: "string", description: "What the model is." },
         kind: {
           type: "string",
-          enum: ["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin", "vase", "bowl", "bottle", "lamp", "rocket", "sword", "shield", "table", "chair", "arch", "planet", "mushroom"],
+          enum: ["tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin", "vase", "bowl", "bottle", "lamp", "rocket", "sword", "shield", "table", "chair", "arch", "planet", "mushroom", "bridge", "stairs", "fence", "crate", "barrel", "lantern", "gem", "asteroid", "crown", "key", "signpost", "campfire", "well", "statue", "gate"],
           description: "Which generator to use. Leave it out when you are passing parts.",
         },
         detail: { type: "number", description: "1 (very low poly) to 5 (smoother). Defaults to 2." },

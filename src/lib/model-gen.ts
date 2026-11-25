@@ -32,7 +32,22 @@ export type ModelKind =
   | "chair"
   | "arch"
   | "planet"
-  | "mushroom";
+  | "mushroom"
+  | "bridge"
+  | "stairs"
+  | "fence"
+  | "crate"
+  | "barrel"
+  | "lantern"
+  | "gem"
+  | "asteroid"
+  | "crown"
+  | "key"
+  | "signpost"
+  | "campfire"
+  | "well"
+  | "statue"
+  | "gate";
 
 /** One primitive placed in a scene, for models no preset covers. */
 export type ModelPart = {
@@ -281,6 +296,61 @@ function lathe(mesh: Mesh, profile: [number, number][], sides: number, scale = 1
     const at = rings.length - 1;
     const centre = mesh.add([0, profile[at][1] * scale, 0]);
     for (let i = 0; i < sides; i++) mesh.face(centre, rings[at][i], rings[at][(i + 1) % sides]);
+  }
+}
+
+/** A torus: the ring a well, a gate arch and a barrel hoop all need. */
+function torus(mesh: Mesh, radius: number, tube: number, sides: number, segments: number, cx = 0, cy = 0, cz = 0): void {
+  const base = mesh.vertices.length;
+  const grid: number[][] = [];
+  for (let i = 0; i < sides; i++) {
+    const u = (i / sides) * Math.PI * 2;
+    const row: number[] = [];
+    for (let j = 0; j < segments; j++) {
+      const v = (j / segments) * Math.PI * 2;
+      const x = (radius + tube * Math.cos(v)) * Math.cos(u);
+      const y = tube * Math.sin(v);
+      const z = (radius + tube * Math.cos(v)) * Math.sin(u);
+      mesh.add([x + cx, y + cy, z + cz]);
+      row.push(base + (i * segments + j) + 1);
+    }
+    grid.push(row);
+  }
+  for (let i = 0; i < sides; i++) {
+    for (let j = 0; j < segments; j++) {
+      const a = grid[i][j];
+      const b = grid[(i + 1) % sides][j];
+      const c = grid[(i + 1) % sides][(j + 1) % segments];
+      const d = grid[i][(j + 1) % segments];
+      mesh.face(a, b, c, d);
+    }
+  }
+}
+
+/** A regular prism lying along the X axis — a log, a rail, a bar. */
+function beam(mesh: Mesh, radius: number, length: number, sides: number, x = 0, y = 0, z = 0): void {
+  const base = mesh.vertices.length;
+  // Each ring records the ids it actually created. Deriving the second ring's
+  // indices from an offset worked only while the two were built adjacently.
+  const ring = (dx: number) => {
+    const ids: number[] = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2;
+      ids.push(mesh.add([x + dx, y + Math.cos(a) * radius, z + Math.sin(a) * radius]));
+    }
+    return ids;
+  };
+  const left = ring(-length / 2);
+  const right = ring(length / 2);
+  for (let i = 0; i < sides; i++) {
+    mesh.face(left[i], left[(i + 1) % sides], right[(i + 1) % sides], right[i]);
+  }
+  // Caps, so a beam is not a hollow tube.
+  const lc = mesh.add([x - length / 2, y, z]);
+  const rc = mesh.add([x + length / 2, y, z]);
+  for (let i = 0; i < sides; i++) {
+    mesh.face(lc, left[(i + 1) % sides], left[i]);
+    mesh.face(rc, right[i], right[(i + 1) % sides]);
   }
 }
 
@@ -643,6 +713,255 @@ export function buildModel(req: ModelRequest): { mesh: Mesh; name: string } {
       // The cap is a lathe, which gives a rounded dome rather than a cone.
       lathe(mesh, [[0.5, 0.4], [0.46, 0.48], [0.34, 0.58], [0.16, 0.64], [0.02, 0.66]], sides, scale);
       return { mesh, name: "mushroom" };
+    }
+    case "bridge": {
+      mesh.use(0);
+      // A deck, two piers and a handrail on each side — a bridge reads as a
+      // bridge mostly by having a rail, not by the span.
+      box(mesh, 3 * scale, 0.16 * scale, 1.1 * scale, 0, 0.72 * scale, 0);
+      mesh.use(1);
+      for (const sx of [-1, 1]) {
+        box(mesh, 0.26 * scale, 0.72 * scale, 0.9 * scale, sx * 1.1 * scale, 0.36 * scale, 0);
+        for (const sz of [-1, 1]) {
+          beam(mesh, 0.035 * scale, 3 * scale, 5, 0, 1.02 * scale, sz * 0.52 * scale);
+          for (let i = -2; i <= 2; i++) {
+            box(mesh, 0.05 * scale, 0.26 * scale, 0.05 * scale, i * 0.7 * scale, 0.9 * scale, sz * 0.52 * scale);
+          }
+        }
+      }
+      return { mesh, name: "bridge" };
+    }
+    case "stairs": {
+      mesh.use(0);
+      const steps = Math.max(3, Math.round(3 + detail * 1.4));
+      for (let i = 0; i < steps; i++) {
+        // Each tread is a box; stacking them with rising y and x builds the run.
+        box(mesh, 0.5 * scale, 0.16 * scale, 1.1 * scale, (i - steps / 2) * 0.45 * scale, i * 0.18 * scale, 0);
+        mesh.use(1);
+        box(mesh, 0.5 * scale, 0.18 * scale, 1.1 * scale, (i - steps / 2) * 0.45 * scale, Math.max(0, i * 0.18 * scale - 0.09 * scale), 0);
+        mesh.use(0);
+      }
+      return { mesh, name: "stairs" };
+    }
+    case "fence": {
+      mesh.use(1);
+      const posts = Math.max(3, Math.round(2 + detail * 1.5));
+      const span = posts * 0.42 * scale;
+      for (let i = 0; i <= posts; i++) {
+        box(mesh, 0.08 * scale, 0.9 * scale, 0.08 * scale, -span / 2 + i * 0.42 * scale, 0.45 * scale, 0);
+      }
+      mesh.use(0);
+      for (const y of [0.34, 0.62]) {
+        box(mesh, span, 0.07 * scale, 0.04 * scale, 0, y * scale, 0);
+      }
+      return { mesh, name: "fence" };
+    }
+    case "crate": {
+      mesh.use(0);
+      const w = 0.9 * scale;
+      box(mesh, w, w, w, 0, w / 2, 0);
+      mesh.use(1);
+      // Corner battens: the detail that says "crate" rather than "cube".
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          box(mesh, 0.09 * scale, w * 1.01, 0.09 * scale, sx * w * 0.47, w / 2, sz * w * 0.47);
+        }
+      }
+      for (const sy of [0.14, 0.86]) {
+        box(mesh, w * 1.01, 0.08 * scale, w * 1.01, 0, w * sy, 0);
+      }
+      return { mesh, name: "crate" };
+    }
+    case "barrel": {
+      mesh.use(0);
+      // A lathe with a belly — a straight cylinder is a can.
+      lathe(mesh, [[0.34, 0], [0.4, 0.18], [0.44, 0.45], [0.4, 0.72], [0.34, 0.9]], sides, scale);
+      mesh.use(1);
+      for (const y of [0.14, 0.45, 0.76]) {
+        torus(mesh, 0.41 * scale, 0.028 * scale, Math.max(8, sides), Math.max(6, sides), 0, y * scale, 0);
+      }
+      return { mesh, name: "barrel" };
+    }
+    case "lantern": {
+      mesh.use(1);
+      // A frame of four uprights around a glowing core.
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          box(mesh, 0.05 * scale, 0.5 * scale, 0.05 * scale, sx * 0.16 * scale, 0.25 * scale, sz * 0.16 * scale);
+        }
+      }
+      lathe(mesh, [[0.26, 0.5], [0.3, 0.56], [0.05, 0.62]], sides, scale);
+      box(mesh, 0.36 * scale, 0.05 * scale, 0.36 * scale, 0, 0.02 * scale, 0);
+      torus(mesh, 0.09 * scale, 0.02 * scale, Math.max(6, sides), Math.max(6, sides), 0, 0.66 * scale, 0);
+      mesh.use(2);
+      icosahedron(mesh, 0.12 * scale, 0, 0.27 * scale, 0);
+      return { mesh, name: "lantern" };
+    }
+    case "gem": {
+      mesh.use(0);
+      // A crown of facets over a point: the classic cut-stone silhouette.
+      const belt = Math.max(6, sides);
+      const top = mesh.vertices.length;
+      for (let i = 0; i < belt; i++) {
+        const a = (i / belt) * Math.PI * 2;
+        mesh.add([Math.cos(a) * 0.4 * scale, 0.5 * scale, Math.sin(a) * 0.4 * scale]);
+      }
+      const tip = mesh.add([0, 1.05 * scale, 0]);
+      const bottom = mesh.add([0, 0, 0]);
+      for (let i = 0; i < belt; i++) {
+        mesh.face(top + i + 1, top + ((i + 1) % belt) + 1, tip);
+        mesh.face(top + ((i + 1) % belt) + 1, top + i + 1, bottom);
+      }
+      return { mesh, name: "gem" };
+    }
+    case "asteroid": {
+      mesh.use(0);
+      // An icosahedron whose vertices are pushed in and out: a lumpy rock. Two
+      // levels of subdivision, because 20 flat faces at 12 vertices is a
+      // dodecahedron with a bad complexion, not a rock.
+      const lumpy = new Mesh();
+      lumpy.use(0);
+      icosahedron(lumpy, 0.7 * scale, 0, 0, 0);
+      const split = (m: Mesh, times: number) => {
+        for (let pass = 0; pass < times; pass++) {
+          const cache = new Map<string, number>();
+          const mid = (a: number, b: number) => {
+            const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+            const hit = cache.get(key);
+            if (hit !== undefined) return hit;
+            const va = m.vertices[a - 1];
+            const vb = m.vertices[b - 1];
+            const id = m.add([(va[0] + vb[0]) / 2, (va[1] + vb[1]) / 2, (va[2] + vb[2]) / 2]);
+            cache.set(key, id);
+            return id;
+          };
+          const next: number[][] = [];
+          for (const [a, b, c] of m.faces) {
+            const ab = mid(a, b);
+            const bc = mid(b, c);
+            const ca = mid(c, a);
+            next.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
+          }
+          m.faces = next;
+        }
+      };
+      if (detail >= 2) split(lumpy, detail >= 4 ? 2 : 1);
+      lumpy.vertices = lumpy.vertices.map(([x, y, z]) => {
+        const k = 0.78 + rand() * 0.44;
+        return [x * k, y * k, z * k] as Vec3;
+      });
+      const offset = mesh.vertices.length;
+      for (const v of lumpy.vertices) mesh.add(v);
+      for (const f of lumpy.faces) mesh.face(...f.map((i) => i + offset));
+      return { mesh, name: "asteroid" };
+    }
+    case "crown": {
+      mesh.use(0);
+      torus(mesh, 0.42 * scale, 0.06 * scale, Math.max(8, sides), Math.max(8, sides), 0, 0.12 * scale, 0);
+      mesh.use(2);
+      const points = Math.max(5, Math.round(4 + detail));
+      for (let i = 0; i < points; i++) {
+        const a = (i / points) * Math.PI * 2;
+        // Build the point at the origin, then move exactly the vertices it
+        // created. Counting backwards from the end of the shared array is what
+        // put the table legs in the wrong place, and it breaks the same way here.
+        const from = mesh.vertices.length;
+        cone(mesh, 0.09 * scale, (0.38 + (i % 2) * 0.12) * scale, 4, 0.12 * scale);
+        const ox = Math.cos(a) * 0.42 * scale;
+        const oz = Math.sin(a) * 0.42 * scale;
+        for (let k = from; k < mesh.vertices.length; k++) {
+          mesh.vertices[k] = [mesh.vertices[k][0] + ox, mesh.vertices[k][1], mesh.vertices[k][2] + oz];
+        }
+      }
+      return { mesh, name: "crown" };
+    }
+    case "key": {
+      mesh.use(1);
+      beam(mesh, 0.045 * scale, 1.5 * scale, 6, 0, 0.4 * scale, 0);
+      mesh.use(0);
+      torus(mesh, 0.2 * scale, 0.05 * scale, Math.max(8, sides), Math.max(8, sides), -0.85 * scale, 0.4 * scale, 0);
+      // The teeth are what make it a key rather than a rod with a ring.
+      for (let i = 0; i < 3; i++) {
+        box(mesh, 0.06 * scale, 0.18 * scale, 0.09 * scale, (0.3 + i * 0.18) * scale, 0.28 * scale, 0);
+      }
+      return { mesh, name: "key" };
+    }
+    case "signpost": {
+      mesh.use(1);
+      cylinder(mesh, 0.07 * scale, 1.5 * scale, Math.max(5, sides), 0);
+      mesh.use(0);
+      box(mesh, 1.05 * scale, 0.3 * scale, 0.06 * scale, 0.36 * scale, 1.16 * scale, 0);
+      box(mesh, 0.8 * scale, 0.26 * scale, 0.06 * scale, -0.26 * scale, 0.82 * scale, 0);
+      return { mesh, name: "signpost" };
+    }
+    case "campfire": {
+      mesh.use(1);
+      // Logs in a teepee, leaning in.
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const b = mesh.vertices.length;
+        const r0 = 0.42 * scale;
+        const r1 = 0.1 * scale;
+        mesh.add([Math.cos(a) * r0, 0, Math.sin(a) * r0]);
+        mesh.add([Math.cos(a + 0.18) * r0, 0, Math.sin(a + 0.18) * r0]);
+        mesh.add([Math.cos(a + 0.09) * r1, 0.62 * scale, Math.sin(a + 0.09) * r1]);
+        mesh.face(b + 1, b + 2, b + 3);
+        mesh.face(b + 3, b + 2, b + 1);
+      }
+      mesh.use(2);
+      for (let i = 0; i < 3 + detail; i++) {
+        cone(mesh, (0.26 - i * 0.03) * scale, (0.5 - i * 0.05) * scale, Math.max(4, sides - 2), 0.04 * scale);
+      }
+      return { mesh, name: "campfire" };
+    }
+    case "well": {
+      mesh.use(1);
+      lathe(mesh, [[0.52, 0], [0.52, 0.36], [0.44, 0.38]], sides, scale);
+      mesh.use(0);
+      // Two posts and a roof: without the roof a well is a bucket.
+      for (const sx of [-1, 1]) box(mesh, 0.08 * scale, 0.8 * scale, 0.08 * scale, sx * 0.42 * scale, 0.76 * scale, 0);
+      beam(mesh, 0.05 * scale, 0.9 * scale, 6, 0, 1.12 * scale, 0);
+      for (const sz of [-1, 1]) {
+        const b = mesh.vertices.length;
+        mesh.add([-0.62 * scale, 1.16 * scale, sz * 0.1 * scale]);
+        mesh.add([0.62 * scale, 1.16 * scale, sz * 0.1 * scale]);
+        mesh.add([0, 1.5 * scale, sz * 0.1 * scale]);
+        mesh.face(b + 1, b + 2, b + 3);
+      }
+      return { mesh, name: "well" };
+    }
+    case "statue": {
+      mesh.use(1);
+      box(mesh, 0.7 * scale, 0.16 * scale, 0.7 * scale, 0, 0.08 * scale, 0);
+      mesh.use(0);
+      lathe(mesh, [[0.16, 0.16], [0.2, 0.5], [0.13, 0.62], [0.19, 0.66], [0.2, 0.78]], sides, scale);
+      sphere(mesh, 0.13 * scale, Math.max(6, sides), Math.max(4, Math.round(sides / 2)), 0, 0.94 * scale, 0);
+      return { mesh, name: "statue" };
+    }
+    case "gate": {
+      mesh.use(1);
+      for (const sx of [-1, 1]) box(mesh, 0.16 * scale, 1.5 * scale, 0.22 * scale, sx * 0.62 * scale, 0.75 * scale, 0);
+      mesh.use(0);
+      // An arch of wedges, using the same half-torus as the arch preset.
+      const wedges = Math.max(7, sides);
+      for (let i = 0; i < wedges; i++) {
+        const a0 = Math.PI - (i / wedges) * Math.PI;
+        const a1 = Math.PI - ((i + 1) / wedges) * Math.PI;
+        const inner = 0.5 * scale;
+        const outer = 0.72 * scale;
+        const b = mesh.vertices.length;
+        const z = 0.1 * scale;
+        for (const [rad, ang, zz] of [
+          [inner, a0, -z], [outer, a0, -z], [outer, a1, -z], [inner, a1, -z],
+          [inner, a0, z], [outer, a0, z], [outer, a1, z], [inner, a1, z],
+        ] as [number, number, number][]) {
+          mesh.add([Math.cos(ang) * rad, 1.5 * scale + Math.sin(ang) * rad, zz]);
+        }
+        for (const f of [[1, 2, 3, 4], [5, 8, 7, 6], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 8, 4], [4, 8, 5, 1]]) {
+          mesh.face(...f.map((n) => b + n));
+        }
+      }
+      return { mesh, name: "gate" };
     }
     case "terrain": {
       // A heightfield: a grid where the height is smoothed noise.

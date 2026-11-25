@@ -616,7 +616,9 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
       const kinds = [
         "tree", "crystal", "rock", "pillar", "spaceship", "terrain", "tower", "coin",
         "vase", "bowl", "bottle", "lamp", "rocket", "sword", "shield", "table",
-        "chair", "arch", "planet", "mushroom",
+        "chair", "arch", "planet", "mushroom", "bridge", "stairs", "fence", "crate",
+        "barrel", "lantern", "gem", "asteroid", "crown", "key", "signpost",
+        "campfire", "well", "statue", "gate",
       ];
       const parts = Array.isArray(a.parts) ? (a.parts as Record<string, unknown>[]) : [];
       const kind = String(a.kind ?? (parts.length ? "rock" : "rock"));
