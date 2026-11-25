@@ -3,7 +3,7 @@ import { splitRecipients } from "./email";
 import type { Sandbox } from "@e2b/desktop";
 import path from "node:path";
 import type { Tool, ToolResult } from "@/lib/ai/llm";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts, privacySessions, type ChoicesRecord, type StepRecord } from "@/db/schema";
 import { getConnectionToken } from "@/lib/connectors";
@@ -120,6 +120,38 @@ const CORE_TOOLS: Tool[] = [
     name: "get_current_time",
     description: "Current date and time in an IANA timezone (e.g. America/New_York).",
     parameters: obj({ timezone: { type: "string" } }, ["timezone"]),
+  },
+];
+
+/**
+ * A workspace that exists without a computer.
+ *
+ * `write_file` and `read_file` need a desktop, so an account with no E2B key
+ * could not keep a scratch file between two calls — every multi-step job that
+ * needs a note, a draft, or a slice of a long document had to hold it in the
+ * conversation. These store the same thing as artifacts, which every account
+ * already has, and are found back by path. They are deliberately named
+ * differently from the desktop tools so a model cannot confuse a path on a
+ * machine with a path in the workspace.
+ */
+const WORKSPACE_TOOLS: Tool[] = [
+  {
+    name: "workspace_write",
+    description:
+      "Save a named file in this Bot's workspace, so it survives between steps and turns. Use it for notes, drafts, or a slice of data you will need again. Works with no computer. Overwrites a file of the same path.",
+    parameters: obj(
+      {
+        path: { type: "string", description: "Name for the file, e.g. notes.md or data/rows.json" },
+        content: { type: "string", description: "Exact contents to store." },
+      },
+      ["path", "content"],
+    ),
+  },
+  {
+    name: "workspace_read",
+    description:
+      "Read back a file saved with workspace_write, by path. Also lists the workspace when called with no path.",
+    parameters: obj({ path: { type: "string", description: "Path to read. Leave empty to list what is stored." } }, []),
   },
 ];
 
@@ -289,8 +321,8 @@ export function buildToolset(opts: {
   const libraryMatches = opts.libraryQuery ? searchToolLibrary(opts.libraryQuery, 8) : [];
   const matchedLibraryTools = libraryMatches.map((match) => match.tool);
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -325,6 +357,10 @@ export function buildToolset(opts: {
     switch (name) {
       case "run_command":
         return `Ran ${clip(s("command").replace(/\s+/g, " "), 70)}`;
+      case "workspace_write":
+        return `Saved ${clip(s("path"), 60)} to the workspace`;
+      case "workspace_read":
+        return s("path") ? `Read ${clip(s("path"), 60)}` : "Listed the workspace";
       case "build_toolchain":
         return s("kind") === "android" ? "Installed the Android SDK" : s("kind") === "windows-exe" ? "Installed the Windows .exe compiler" : "Installed Android and .exe toolchains";
       case "web_search":
@@ -704,6 +740,53 @@ export function buildToolset(opts: {
           return helpersFor(opts.turnId).map((helper) => helperSummary(helper));
         },
       });
+    }
+
+    // The workspace needs no computer, so it is handled before the desktop is
+    // ever requested. These two cases used to fall through to `getDesktop()`,
+    // which throws "No E2B key configured" on exactly the accounts that need
+    // them most.
+    if (name === "workspace_write") {
+      const path = String(a.path ?? "").trim().slice(0, 200);
+      const content = String(a.content ?? "");
+      if (!path) return { output: "Give the file a path, e.g. notes.md" };
+      if (!content) return { output: "Nothing to write: content was empty." };
+      const title = `workspace:${path}`;
+      // One row per path, so a path reads back as its latest version rather
+      // than as a pile of drafts nobody can choose between.
+      const [existing] = await db
+        .select({ id: artifacts.id })
+        .from(artifacts)
+        .where(and(eq(artifacts.userId, userId), eq(artifacts.botId, bot.id), eq(artifacts.title, title)))
+        .limit(1);
+      if (existing) {
+        await db.update(artifacts).set({ content, kind: "file" }).where(eq(artifacts.id, existing.id));
+      } else {
+        await db.insert(artifacts).values({ userId, botId: bot.id, title, kind: "file", content });
+      }
+      return { output: `Saved ${path} (${content.length} characters) to the workspace.` };
+    }
+    if (name === "workspace_read") {
+      const path = String(a.path ?? "").trim();
+      const mine = and(eq(artifacts.userId, userId), eq(artifacts.botId, bot.id), eq(artifacts.kind, "file"));
+      if (!path) {
+        const rows = await db
+          .select({ title: artifacts.title, content: artifacts.content })
+          .from(artifacts)
+          .where(mine)
+          .orderBy(desc(artifacts.createdAt))
+          .limit(50);
+        if (!rows.length) return { output: "The workspace is empty. Save something with workspace_write." };
+        return {
+          output: `Workspace files:\n${rows.map((r) => `- ${r.title.replace(/^workspace:/, "")} (${r.content.length} chars)`).join("\n")}`,
+        };
+      }
+      const [row] = await db
+        .select({ content: artifacts.content })
+        .from(artifacts)
+        .where(and(mine, eq(artifacts.title, `workspace:${path.slice(0, 200)}`)))
+        .limit(1);
+      return { output: row ? clip(row.content, 20000) : `No file at ${path} in the workspace. Call workspace_read with no path to list what is there.` };
     }
 
     // Anything that reaches here should be a known tool. Falling through to the
