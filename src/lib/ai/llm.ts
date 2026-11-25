@@ -378,7 +378,14 @@ async function anthropicLoop(o: AgentOptions) {
         uses.push(b);
       }
     }
-    if (!uses.length) return;
+    if (!uses.length) {
+      // Anthropic replies in prose. Reasoning was asked for and this loop
+      // ignores `optimise`, so without this the level silently did nothing on
+      // every Claude reply. The proxy cannot speak the Anthropic wire format,
+      // so the honest move is to say so once rather than pretend.
+      if (o.optimise) o.onOptimiseFailed?.("reasoning needs an OpenAI-compatible provider; Claude replies run unoptimised");
+      return;
+    }
 
     msgs.push({ role: "assistant", content });
     const results: unknown[] = [];

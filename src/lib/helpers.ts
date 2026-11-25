@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { artifacts, bots } from "@/db/schema";
 import { runAgent } from "@/lib/ai/llm";
 import { aiConfigFrom, getSettings } from "@/lib/settings";
+import { approachFor, optimisedModel, shouldOptimise, type Reasoning } from "@/lib/ai/optillm";
+import { ensureProxy } from "@/lib/ai/optillm-server";
 
 /**
  * Helper Bots.
@@ -143,11 +145,26 @@ async function runHelper(input: SpawnInput, helper: Helper): Promise<void> {
     // first version of this looped nine times on one draw_asset.
     const done: string[] = [];
     const seen = new Set<string>();
+    // Helpers are where reasoning is worth the most: a helper does one task
+    // with nobody watching, so a wrong first answer waits for a human to notice.
+    // Same rule as the chat — only when the helper has no tool left to call.
+    const reasoning = (["low", "medium", "high"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
+    let optimise: { url: string; model: string; approach: string } | undefined;
+    if (shouldOptimise(reasoning, !!cfg.apiKey)) {
+      const started = await ensureProxy(
+        { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, provider: cfg.provider, reasoning },
+        { port: Number(process.env.OPTILLM_PORT ?? 8000) || 8000 },
+      ).catch(() => ({ error: "the proxy could not start" } as const));
+      if ("url" in started) {
+        optimise = { url: started.url, model: optimisedModel(cfg.defaultModel ?? "", reasoning), approach: approachFor(reasoning) ?? "re2" };
+      }
+    }
     await runAgent({
       provider: cfg.provider,
       apiKey: cfg.apiKey,
       baseUrl: cfg.baseUrl,
       model: cfg.defaultModel ?? "",
+      optimise,
       system,
       history: [{ role: "user", content: helper.task }],
       tools: allowed,

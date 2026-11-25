@@ -265,7 +265,7 @@ function AiTab() {
   }
 
   return (
-    <Section title="AI Provider" desc="Bring your own key. Paste it and we'll detect the provider automatically — OpenAI, Anthropic, Google AI Studio, OpenRouter, Groq, xAI and more.">
+    <Section title="AI Provider" desc="Bring your own key. Paste it and the provider is detected from the key itself — OpenAI, Anthropic, Google AI Studio, OpenRouter, Groq, xAI, DeepSeek, NVIDIA NIM and more.">
       <StatusPill ok={s.hasAiKey}>
         {s.hasAiKey ? (
           <>
@@ -278,7 +278,7 @@ function AiTab() {
       </StatusPill>
 
       <div>
-        <Label hint={s.hasAiKey ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…"}>API key</Label>
+        <Label hint={s.hasAiKey ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…, nvapi-…"}>API key</Label>
         <SecretInput value={key} onChange={setKey} placeholder={s.hasAiKey ? "Saved — paste a new key to replace it" : "Paste your API key"} label="AI API key" />
       </div>
 
@@ -392,13 +392,15 @@ function AiTab() {
             </div>
             <p className="mt-1.5 text-[12px] text-neutral-500">
               {reasoning === "off"
-                ? "Off. Answers come straight from your model, one call per step."
+                ? "Off. Every reply comes straight from your model, one call."
                 : reasoning === "low"
-                  ? "Low. Reads each question twice before answering — about 2 calls per step."
+                  ? "Low. Reads the question twice before answering — 2 calls per reply."
                   : reasoning === "medium"
-                    ? "Medium. Plans, then answers with reflection — about 5 calls per step."
-                    : "High. Drafts several answers and keeps the best — 9 or more calls per step."}
-              {reasoning !== "off" ? " Only used on replies that need no tools; tool steps always run direct." : ""}
+                    ? "Medium. Plans, then answers with reflection — 6 calls per reply."
+                    : "High. Several agents answer, the best are kept, the majority wins — 11 calls per reply."}
+              {reasoning !== "off"
+                ? " A reply that uses tools always runs direct, with no extra calls — reasoning only pays for itself when the model is thinking, not when it is acting."
+                : ""}
             </p>
           </div>
         </div>

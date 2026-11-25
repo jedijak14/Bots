@@ -778,11 +778,20 @@ export function buildToolset(opts: {
         }
         out.push(
           "",
-          "Note: a .exe must be a native Windows binary. Electron is a browser wrapped in one — " +
-            "they are not the same thing and will not run on a machine with no Chromium. With the " +
-            "toolchain above, compile C/C++ with x86_64-w64-mingw32-gcc/-g++ (or Rust with " +
-            "--target x86_64-pc-windows-gnu) and the result is a real executables. Use `file` to confirm " +
-            "it reports 'PE32+ executable (console) x86-64, for MS Windows'.",
+          "A .exe must be a native Windows binary. Electron is a browser wrapped inside one — " +
+            "not the same thing, and it will not run on a machine without Chromium. The two ways " +
+            "that produce a real one here:",
+          "  C/C++:  x86_64-w64-mingw32-gcc -O2 -o app.exe main.c -static",
+          "  Rust:   cargo build --release --target x86_64-pc-windows-gnu",
+          "Then prove it — do not assume:",
+          "  x86_64-w64-mingw32-objdump -f app.exe | grep -E 'architecture|file format'",
+          "Expect `pei-x86-64` and `pei-x86-64`. `file app.exe` also says 'PE32+ executable " +
+            "(console) x86-64, for MS Windows' where binutils' `file` is installed.",
+          wantAndroid
+            ? "Android: set ANDROID_HOME and PATH as printed above, then build with Gradle " +
+              "(`./gradlew assembleDebug`) or compile a plain .apk with aapt2 + d8 + zipalign + apksigner " +
+              "from build-tools. `sdkmanager --list_installed` shows what actually landed."
+            : "",
         );
         return { output: out.join("\n") };
       }
