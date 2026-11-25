@@ -131,6 +131,19 @@ const COMPUTER_TOOLS: Tool[] = [
     parameters: obj({ command: { type: "string" } }, ["command"]),
   },
   {
+    name: "build_toolchain",
+    description:
+      "Install a real compiler toolchain on your computer and prove it works. Use this before building an Android app or a native Windows .exe — the plain desktop image has neither. " +
+      'kind: "android" installs the Android SDK command-line tools, platform, build-tools and accepts licences; "windows-exe" installs the MinGW-w64 cross-compiler so C, C++ and Rust produce genuine PE32+ .exe files that run on Windows without Electron or a browser; "all" does both. ' +
+      "Returns the versions it found after install, so a failed install is visible rather than assumed.",
+    parameters: obj(
+      {
+        kind: { type: "string", enum: ["android", "windows-exe", "all"] },
+      },
+      ["kind"],
+    ),
+  },
+  {
     name: "web_search",
     description: "Search the web and get back the text of the results page. Also shows the results in the browser on your computer.",
     parameters: obj({ query: { type: "string" } }, ["query"]),
@@ -183,6 +196,24 @@ const safePath = (input: string) => {
   return resolved;
 };
 const SCREEN_TOOLS = new Set(["run_command", "web_search", "open_url", "click", "type_text", "press_key"]);
+
+/**
+ * Run a command on the desktop and return its output regardless of failure.
+ *
+ * `run_command` reports the exit code to the model and lets it decide; a
+ * toolchain install needs the opposite — the versions printed even when apt or
+ * a download half-failed, because "which of these actually landed" is the whole
+ * question. Errors become text here, never exceptions.
+ */
+async function sh(sb: Sandbox, command: string, timeoutMs: number): Promise<string> {
+  const r = await sb.commands.run(command, { cwd: "/home/user", timeoutMs }).catch((e: { exitCode?: number; stdout?: string; stderr?: string; message?: string }) => ({
+    exitCode: e.exitCode ?? 1,
+    stdout: e.stdout ?? "",
+    stderr: e.stderr ?? e.message ?? "",
+  }));
+  const text = `exit ${r.exitCode ?? 0}\n${r.stdout ?? ""}${r.stderr ? `\n${r.stderr}` : ""}`.trim();
+  return clip(text, 3000);
+}
 
 const STRIP_PY = `import sys,re,html
 t=sys.stdin.read()
@@ -294,6 +325,8 @@ export function buildToolset(opts: {
     switch (name) {
       case "run_command":
         return `Ran ${clip(s("command").replace(/\s+/g, " "), 70)}`;
+      case "build_toolchain":
+        return s("kind") === "android" ? "Installed the Android SDK" : s("kind") === "windows-exe" ? "Installed the Windows .exe compiler" : "Installed Android and .exe toolchains";
       case "web_search":
         return `Searched “${clip(s("query"), 60)}”`;
       case "fetch_page":
@@ -686,6 +719,72 @@ export function buildToolset(opts: {
             stderr: e.stderr ?? e.message ?? "",
           }));
         return { output: clip(`exit code: ${r.exitCode}\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`, 12000) };
+      }
+      case "build_toolchain": {
+        const kind = String(a.kind ?? "all");
+        const wantAndroid = kind === "android" || kind === "all";
+        const wantWindows = kind === "windows-exe" || kind === "all";
+        const out: string[] = [];
+        // Both installs share one apt pass: two `apt-get update`s cost a minute
+        // each on a cold desktop image.
+        if (wantWindows) {
+          out.push(
+            "== windows-exe ==",
+            await sh(
+              sb,
+              "export DEBIAN_FRONTEND=noninteractive; " +
+                "sudo apt-get update -qq >/dev/null 2>&1; " +
+                // mingw-w64 gives a real PE cross-compiler; g++ too, so C++ and
+                // the Rust `x86_64-pc-windows-gnu` target both have a linker.
+                "sudo apt-get install -y -qq mingw-w64 >/dev/null 2>&1 || echo 'apt install failed'; " +
+                "which x86_64-w64-mingw32-gcc x86_64-w64-mingw32-g++ 2>/dev/null; " +
+                "x86_64-w64-mingw32-gcc --version 2>/dev/null | head -1",
+              600_000,
+            ),
+          );
+        }
+        if (wantAndroid) {
+          // The SDK is not in apt, and `sdkmanager` insists on a licence prompt,
+          // so this installs the command-line tools, accepts every licence, then
+          // resolves one platform and one build-tools release to prove it works.
+          out.push(
+            "== android ==",
+            await sh(
+              sb,
+              [
+                "export DEBIAN_FRONTEND=noninteractive",
+                "sudo apt-get install -y -qq openjdk-17-jdk unzip >/dev/null 2>&1 || echo 'jdk apt failed'",
+                "export ANDROID_HOME=/home/user/android-sdk",
+                "mkdir -p $ANDROID_HOME/cmdline-tools",
+                "if [ ! -d $ANDROID_HOME/cmdline-tools/latest ]; then",
+                "  cd /tmp && curl -sSL -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip || echo 'download failed'",
+                "  unzip -q -o cmdtools.zip -d /tmp/cmdtools && mv /tmp/cmdtools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest 2>/dev/null",
+                "fi",
+                "export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH",
+                "yes | sdkmanager --licenses >/dev/null 2>&1 || true",
+                "sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' >/dev/null 2>&1 || echo 'sdkmanager failed'",
+                "echo \"ANDROID_HOME=$ANDROID_HOME\"",
+                "ls $ANDROID_HOME/platforms 2>/dev/null | head -3",
+                "ls $ANDROID_HOME/build-tools 2>/dev/null | head -3",
+              ].join("; "),
+              900_000,
+            ),
+          );
+          out.push(
+            "Put these in the environment of every Android build:",
+            "ANDROID_HOME=/home/user/android-sdk",
+            "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH",
+          );
+        }
+        out.push(
+          "",
+          "Note: a .exe must be a native Windows binary. Electron is a browser wrapped in one — " +
+            "they are not the same thing and will not run on a machine with no Chromium. With the " +
+            "toolchain above, compile C/C++ with x86_64-w64-mingw32-gcc/-g++ (or Rust with " +
+            "--target x86_64-pc-windows-gnu) and the result is a real executables. Use `file` to confirm " +
+            "it reports 'PE32+ executable (console) x86-64, for MS Windows'.",
+        );
+        return { output: out.join("\n") };
       }
       case "web_search": {
         const q = String(a.query ?? "");

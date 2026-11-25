@@ -19,6 +19,8 @@ import type { ComputerPhase } from "./useComputer";
 import { Menu, placeMenu, type MenuItem, type MenuPosition } from "../Menu";
 
 type Live = { text: string; steps: LiveStep[]; choices: ChoicesRecord | null };
+/** Whether this turn was optimised, and what to tell the user about that. */
+type OptimiseNote = { state: "on" | "off" | "failed"; level: string; why: string };
 type LiveHelper = { id: string; name: string; state: "working" | "done" | "failed" };
 
 /** Total time of a finished assistant turn, from the stored per-tool timings. */
@@ -31,6 +33,7 @@ type StreamEvent =
   | { t: "shot"; data: string }
   | { t: "packs"; packs: Array<{ id: string; title: string }> }
   | { t: "helper"; helper: LiveHelper }
+  | { t: "optimise"; state: "on" | "off" | "failed"; level: string; why: string }
   | { t: "choices"; question: string; options: string[] }
   | { t: "error"; message: string }
   | { t: "done"; message: { id: string; createdAt: string } | null };
@@ -111,6 +114,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [livePacks, setLivePacks] = useState<Array<{ id: string; title: string }>>([]);
   /** Set when this run starts, so the reasoning line can count up. */
   const [liveStart, setLiveStart] = useState<number | null>(null);
+  const [optimise, setOptimise] = useState<OptimiseNote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [input, setInput] = useState("");
@@ -243,6 +247,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       app.setPreview(botId, raw.trim() || content.slice(0, 80));
       acc.current = { text: "", steps: [], choices: null };
       setLiveHelpers([]);
+      setOptimise(null);
       setLivePacks([]);
       setLive({ text: "", steps: [], choices: null });
       setLiveStart(Date.now());
@@ -324,6 +329,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               const next = list.filter((h) => h.id !== ev.helper.id);
               return [...next, ev.helper];
             });
+            break;
+          case "optimise":
+            setOptimise({ state: ev.state, level: ev.level, why: ev.why });
             break;
           case "shot":
             setShot({ n: Date.now(), data: ev.data });
@@ -585,6 +593,26 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     </div>
                   );
                 })}
+
+                {/* One chip, and only when reasoning is doing something worth
+                    saying: on, failed, or unavailable after being asked for. A
+                    silent "off" is the normal case and needs no furniture. */}
+                {optimise && optimise.state !== "off" ? (
+                  <div className="mb-2 ml-0 flex max-w-[min(740px,100%)] flex-wrap items-center gap-1.5">
+                    <span
+                      className={cx(
+                        "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]",
+                        optimise.state === "on"
+                          ? "border-white/[0.08] bg-white/[0.03] text-neutral-400"
+                          : "border-amber-400/25 bg-amber-400/[0.06] text-amber-200/90",
+                      )}
+                      title={optimise.why}
+                    >
+                      <span aria-hidden className={cx("size-1.5 rounded-full", optimise.state === "on" ? "bg-emerald-400" : "bg-amber-400")} />
+                      {optimise.state === "on" ? `Reasoning: ${optimise.level} — ${optimise.why}` : `Reasoning unavailable: ${optimise.why}`}
+                    </span>
+                  </div>
+                ) : null}
 
                 {liveHelpers.length > 0 && (
                   <div className="mb-3 ml-0 flex max-w-[min(740px,100%)] flex-wrap gap-1.5">

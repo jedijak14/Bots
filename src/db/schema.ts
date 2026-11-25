@@ -40,6 +40,12 @@ export const userSettings = pgTable("user_settings", {
   aiKeyHint: text("ai_key_hint"),
   aiProvider: text("ai_provider"),
   aiProviderMode: text("ai_provider_mode").notNull().default("auto"),
+  /**
+   * "off" | "low" | "medium" | "high" — how hard the model is asked to think.
+   * Off by default: every level above it spends more of the user's tokens, and
+   * a default that quietly multiplies the bill is not a default.
+   */
+  reasoning: text("reasoning").notNull().default("off"),
   aiBaseUrl: text("ai_base_url"),
   defaultModel: text("default_model"),
   /** Optional image model, when the provider serves images on a separate one. */

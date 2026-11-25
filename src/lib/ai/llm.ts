@@ -15,6 +15,18 @@ export type AgentOptions = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  /**
+   * When set, the request goes through an OptiLLM proxy instead of straight to
+   * the provider, and the model name carries the technique. The proxy holds its
+   * own copy of the key in its environment, so this request still sends the
+   * account's key — a proxy that ignored it would be met with a 401 rather than
+   * a silently different bill.
+   */
+  optimise?: { url: string; model: string; approach: string };
+  /** Called when the proxy fails, so the turn can say so once and move on. */
+  onOptimiseFailed?: (reason: string) => void;
+  /** Set by the loop itself after one failed optimisation attempt. */
+  optimiseRetried?: boolean;
   system: string;
   history: Hist[];
   tools: Tool[];
@@ -91,6 +103,59 @@ export async function runAgent(o: AgentOptions): Promise<void> {
   return openaiLoop(o);
 }
 
+/**
+ * Re-ask the turn's question through the optimising proxy and return the answer.
+ *
+ * The proxy is asked for the plain technique (no tools, because no technique
+ * carries them) and its reply is collected whole, then handed to `onText` in one
+ * piece. Returning `null` means "could not", never "answered with nothing": an
+ * empty reply is treated as a failure so the first-draft answer survives.
+ */
+async function reasonInstead(o: AgentOptions, msgs: Record<string, unknown>[], firstDraft: string): Promise<string | null> {
+  const opt = o.optimise;
+  if (!opt) return null;
+  try {
+    const res = await fetch(`${opt.url}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.apiKey}` },
+      body: JSON.stringify({ model: opt.model, messages: msgs, stream: true }),
+      signal: o.signal,
+    });
+    if (!res.ok) {
+      const err = await failure(res, PROVIDERS[o.provider].label);
+      o.onOptimiseFailed?.(err.message);
+      return null;
+    }
+    let out = "";
+    for await (const ev of sse(res)) {
+      if (ev.data === "[DONE]") break;
+      let j: { choices?: { delta?: { content?: string | string[] } }[]; error?: { message?: string } };
+      try {
+        j = JSON.parse(ev.data);
+      } catch {
+        continue;
+      }
+      if (j.error) {
+        o.onOptimiseFailed?.(j.error.message ?? "the proxy reported an error");
+        return null;
+      }
+      const parts = j.choices?.[0]?.delta?.content;
+      const piece = Array.isArray(parts) ? parts.filter((x) => typeof x === "string").join("") : parts;
+      if (typeof piece === "string") out += piece;
+    }
+    // A technique that returns less than the plain answer has not improved
+    // anything; keep the original rather than shipping a truncated regression.
+    if (out.trim().length < Math.min(20, firstDraft.trim().length / 2)) {
+      o.onOptimiseFailed?.("the reasoned answer was shorter than the first draft, so the first draft was kept");
+      return null;
+    }
+    return out;
+  } catch (e) {
+    o.onOptimiseFailed?.(e instanceof Error ? e.message.slice(0, 200) : "the proxy call failed");
+    return null;
+  }
+}
+
 /* ------------------------------ OpenAI-compatible ------------------------------ */
 
 async function openaiLoop(o: AgentOptions) {
@@ -107,18 +172,32 @@ async function openaiLoop(o: AgentOptions) {
     : undefined;
 
   for (let step = 0; step < max; step++) {
+    // Only the opening step of a turn can be a pure answer. After a tool has
+    // run, the model is reporting on work rather than reasoning about a
+    // question, and re-asking would be a second bill for the same words.
+    const hold = !!o.optimise && step === 0;
+    // The provider call itself.
+    //
+    // Optimisation is deliberately NOT applied here. No OptiLLM technique
+    // forwards the tool schema: `reread.py` and `cot_reflection.py` build an
+    // upstream request of `{model, messages, n, max_tokens}` from
+    // `request_config` and never pass `tools`, which was confirmed by reading
+    // the installed package and by sending a tool-bearing request through the
+    // proxy (the tool call disappeared). Since a Bot's every turn carries a
+    // toolset — seventeen tools in a plain greeting — routing the agent loop
+    // itself through a technique would silently disable the Bot's hands.
+    //
+    // So the loop always runs direct with tools, and the reasoned answer is
+    // applied afterwards by `optimisePureAnswer` if and only if the model chose
+    // to answer in prose rather than act.
     const res = await fetch(`${o.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.apiKey}` },
       body: JSON.stringify({
         model: o.model,
+        prompt_cache_key: `bot-${o.model}`,
         messages: msgs,
         stream: true,
-        // Cache the fixed prefix (system prompt + tools + history). Every
-        // tool-loop step re-sends all of it, so on a multi-step turn this is
-        // the difference between re-reading ~8k characters each pass and
-        // reading them once. Providers that ignore the field are unaffected.
-        prompt_cache_key: `bot-${o.model}`,
         ...(tools ? { tools } : {}),
       }),
       signal: o.signal,
@@ -139,11 +218,23 @@ async function openaiLoop(o: AgentOptions) {
         continue;
       }
       if (j.error) throw new Error(`${label}: ${j.error.message ?? "stream error"}`);
+      // Only the first choice is ours. OptiLLM's parallel and best-of-N
+      // approaches emit additional choices (index 1, 2, …) carrying competing
+      // drafts; appending them would splice several answers into one garbled
+      // turn. Its serial approaches reuse index 0, so this loses nothing.
       const d = j.choices?.[0]?.delta;
       if (!d) continue;
-      if (typeof d.content === "string" && d.content) {
-        text += d.content;
-        o.onText(d.content);
+      // `content` is normally a string, but OptiLLM emits it as an array of
+      // parts when a technique hands up a composed answer. Both mean text.
+      const parts = Array.isArray(d.content) ? d.content : [d.content];
+      const piece = parts.filter((x): x is string => typeof x === "string").join("");
+      if (piece) {
+        text += piece;
+        // Held back on the first step of an optimised turn: the answer may be
+        // replaced by a reasoned one, and a user watching a reply they already
+        // read get swapped out is worse than a moment's wait. Flushed below as
+        // soon as the step turns out to need tools.
+        if (!hold) o.onText(piece);
       }
       for (const tc of d.tool_calls ?? []) {
         const idx = tc.index ?? (tc.id || tc.function?.name ? calls.length : Math.max(0, calls.length - 1));
@@ -155,7 +246,25 @@ async function openaiLoop(o: AgentOptions) {
     }
 
     const real = calls.filter((c) => c && c.name);
-    if (!real.length) return;
+    if (!real.length) {
+      // The model answered in prose. On an optimised turn that answer was held
+      // back, so this is the moment to spend the extra inference and replace it
+      // with a reasoned one — or to keep it, if the proxy is not usable.
+      if (hold && o.optimise) {
+        const reasoned = await reasonInstead(o, msgs, text);
+        if (reasoned !== null) {
+          o.onText(reasoned);
+          return;
+        }
+        // The proxy declined. Whatever it told us is worth one line in the
+        // turn, then the original answer is delivered unchanged.
+        o.onOptimiseFailed?.("the proxy did not answer, so this reply is the model's first draft");
+      }
+      if (text) o.onText(text);
+      return;
+    }
+    // A turn that needs tools cannot be re-asked, so release the held text now.
+    if (hold && text) o.onText(text);
 
     // Text from the pass that requested tools and text from the pass that
     // follows it are separate paragraphs; without this they would be glued

@@ -9,6 +9,8 @@ import { buildToolset } from "@/lib/agent-tools";
 import { packsFor, packsPrompt, toolsForPacks } from "@/lib/packs";
 import { clearHelpers, helpersFor } from "@/lib/helpers";
 import { aiConfigFrom, e2bKeyFrom, getSettings } from "@/lib/settings";
+import { approachFor, optimisedModel, shouldOptimise, whyFor, type Reasoning } from "@/lib/ai/optillm";
+import { ensureProxy } from "@/lib/ai/optillm-server";
 import { goalsForPrompt, listGoals } from "@/lib/goals";
 
 /**
@@ -199,6 +201,29 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         },
       });
 
+      // Reasoning is opt-in. When it is on, this turn is worth an optimising
+      // proxy; when the proxy cannot start, say so once in the transcript and
+      // run the turn plainly rather than failing it.
+      const reasoning = (["low", "medium", "high", "off"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
+      const approach = shouldOptimise(reasoning, !!cfg.apiKey) && !ac.signal.aborted ? approachFor(reasoning) : null;
+      let optimise: { url: string; model: string; approach: string } | undefined;
+      if (approach) {
+        // The proxy needs a port of its own; 8000 is OptiLLM's default and is
+        // shared by every account on this host, so the base is derived from
+        // OPTILLM_PORT when the operator had to move it.
+        const base = Number(process.env.OPTILLM_PORT ?? 8000);
+        const started = await ensureProxy(
+          { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, provider: cfg.provider, reasoning },
+          { port: Number.isFinite(base) ? base : 8000 },
+        );
+        if ("url" in started) {
+          optimise = { url: started.url, model: optimisedModel(model, reasoning), approach };
+          send({ t: "optimise", state: "on", level: reasoning, why: whyFor(reasoning) });
+        } else {
+          send({ t: "optimise", state: "off", level: reasoning, why: started.error });
+        }
+      }
+
       try {
         await runAgent({
           provider: cfg.provider,
@@ -214,6 +239,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             send({ t: "text", d });
           },
           runTool: toolset.run,
+          optimise,
+          onOptimiseFailed: (reason) => send({ t: "optimise", state: "failed", level: reasoning, why: reason.slice(0, 240) }),
         });
       } catch (e) {
         if (!ac.signal.aborted) send({ t: "error", message: describeModelError(e) });

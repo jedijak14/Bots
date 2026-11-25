@@ -49,6 +49,7 @@ export function publicSettings(s: SettingsRow) {
     defaultModel: s.defaultModel,
     hasE2bKey: !!s.e2bKeyEnc,
     e2bKeyHint: s.e2bKeyHint,
+    reasoning: (["low", "medium", "high"].includes(s.reasoning) ? s.reasoning : "off") as "off" | "low" | "medium" | "high",
     followMouse: s.followMouse,
     animations: s.animations,
     voiceReplies: s.voiceReplies,

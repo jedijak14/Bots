@@ -28,6 +28,9 @@ export async function PATCH(req: Request) {
     if (typeof b.defaultModel === "string") patch.defaultModel = b.defaultModel.slice(0, 200) || null;
     if (typeof b.imageModel === "string") patch.imageModel = b.imageModel.slice(0, 200) || null;
     if (b.theme === "dark" || b.theme === "light" || b.theme === "system") patch.theme = b.theme;
+    // Reasoning is the switch for the optimising proxy; it is validated here so
+    // an unknown level cannot reach the column and be read back as junk.
+    if (b.reasoning === "off" || b.reasoning === "low" || b.reasoning === "medium" || b.reasoning === "high") patch.reasoning = b.reasoning;
     await db.update(userSettings).set(patch).where(eq(userSettings.userId, user.id));
     return Response.json(publicSettings(await getSettings(user.id)));
   } catch (e) {

@@ -27,7 +27,7 @@ type AppCtx = {
   setWorking: (w: { id: string; label: string } | null) => void;
   settings: PublicSettings;
   setSettings: (s: PublicSettings) => void;
-  patchSettings: (p: Partial<Pick<PublicSettings, "followMouse" | "animations" | "voiceReplies" | "defaultModel" | "imageModel" | "theme">>) => Promise<void>;
+  patchSettings: (p: Partial<Pick<PublicSettings, "followMouse" | "animations" | "voiceReplies" | "defaultModel" | "imageModel" | "theme" | "reasoning">>) => Promise<void>;
   botDialog: { id: string | null } | null;
   openBotDialog: (id?: string | null) => void;
   closeBotDialog: () => void;

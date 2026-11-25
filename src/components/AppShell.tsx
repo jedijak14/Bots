@@ -268,7 +268,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       // a 47x50 hover bubble around a 28px avatar — bigger than the bot it was
       // labelling. The rail row becomes a square just large enough to sit the
       // face on, so the highlight reads as a halo around the Bot.
-      collapsed ? "mx-auto size-9 justify-center rounded-[10px] px-0" : "h-11 rounded-xl pl-2 pr-2",
+      // Expanded, the highlight was a 50px-tall pill the full width of the rail
+      // around a 28px face — the bubble read as the subject and the bot as a
+      // detail in it. It hugs the row now: 40px tall, a tighter radius, and
+      // slightly inset so it reads as a halo around the Bot rather than a card.
+      collapsed ? "mx-auto size-9 justify-center rounded-[10px] px-0" : "h-10 rounded-[10px] pl-2 pr-2",
       active ? "bg-white/[0.08] text-white" : "text-neutral-300 hover:bg-white/[0.045] hover:text-white",
     );
 
@@ -421,7 +425,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                 // Bot rows carry two lines of text when the rail is open, so they
                 // are taller than the one-line rows — but not collapsed, where
                 // the row is a halo around the face alone.
-                className={cx(row(active || menuOpen), !collapsed && "h-[50px]", app.celebrateId === b.id && "pop-in")}
+                className={cx(row(active || menuOpen), app.celebrateId === b.id && "pop-in")}
                 {...railTip(working ? `${b.name} · ${app.working?.label}` : b.name)}
               >
                 <BotAvatar shape={b.shape} color={b.color} size={28} working={working} celebrate={app.celebrateId === b.id} />

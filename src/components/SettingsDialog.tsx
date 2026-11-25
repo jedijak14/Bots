@@ -211,6 +211,7 @@ function AiTab() {
   const s = app.settings;
   const [key, setKey] = useState("");
   const [mode, setMode] = useState<string>(s.aiProviderMode || "auto");
+  const [reasoning, setReasoning] = useState<"off" | "low" | "medium" | "high">(s.reasoning ?? "off");
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   const [model, setModel] = useState(s.defaultModel ?? "");
   const [imageModel, setImageModel] = useState(s.imageModel ?? "");
@@ -362,6 +363,43 @@ function AiTab() {
               aria-label="Image model"
               className={inputCls}
             />
+          </div>
+
+          {/* Reasoning. The honest framing matters here: these levels buy
+              accuracy with extra model calls on the user's own key, so each one
+              says what it costs rather than implying a better model. */}
+          <div className="mt-3">
+            <Label hint="Runs your key through OptiLLM. Higher levels make more model calls per reply and cost more.">Reasoning</Label>
+            <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1" role="radiogroup" aria-label="Reasoning level">
+              {(["off", "low", "medium", "high"] as const).map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  role="radio"
+                  aria-checked={reasoning === level}
+                  onClick={() => {
+                    setReasoning(level);
+                    app.patchSettings({ reasoning: level });
+                  }}
+                  className={cx(
+                    "rounded-lg px-2 py-1.5 text-[12px] font-medium capitalize transition",
+                    reasoning === level ? "bg-white/[0.09] text-white" : "text-neutral-400 hover:text-white",
+                  )}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[12px] text-neutral-500">
+              {reasoning === "off"
+                ? "Off. Answers come straight from your model, one call per step."
+                : reasoning === "low"
+                  ? "Low. Reads each question twice before answering — about 2 calls per step."
+                  : reasoning === "medium"
+                    ? "Medium. Plans, then answers with reflection — about 5 calls per step."
+                    : "High. Drafts several answers and keeps the best — 9 or more calls per step."}
+              {reasoning !== "off" ? " Only used on replies that need no tools; tool steps always run direct." : ""}
+            </p>
           </div>
         </div>
       )}

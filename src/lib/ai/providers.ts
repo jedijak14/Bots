@@ -10,6 +10,13 @@ export type ProviderId =
   | "together"
   | "fireworks"
   | "cerebras"
+  | "nvidia"
+  | "sambanova"
+  | "hyperbolic"
+  | "perplexity"
+  | "moonshot"
+  | "zhipu"
+  | "qwen"
   | "custom";
 
 export type ProviderInfo = {
@@ -34,6 +41,15 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   together: { label: "Together AI", baseUrl: "https://api.together.xyz/v1", kind: "openai" },
   fireworks: { label: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", kind: "openai" },
   cerebras: { label: "Cerebras", baseUrl: "https://api.cerebras.ai/v1", kind: "openai" },
+  // NIM is the one most often missed: the key looks like `nvapi-…` and the
+  // endpoint is an OpenAI shape, so a plain `sk-` guess never finds it.
+  nvidia: { label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", kind: "openai" },
+  sambanova: { label: "SambaNova", baseUrl: "https://api.sambanova.ai/v1", kind: "openai" },
+  hyperbolic: { label: "Hyperbolic", baseUrl: "https://api.hyperbolic.xyz/v1", kind: "openai" },
+  perplexity: { label: "Perplexity", baseUrl: "https://api.perplexity.ai", kind: "openai" },
+  moonshot: { label: "Moonshot (Kimi)", baseUrl: "https://api.moonshot.ai/v1", kind: "openai" },
+  zhipu: { label: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4", kind: "openai" },
+  qwen: { label: "Alibaba Qwen", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", kind: "openai" },
   custom: { label: "OpenAI-compatible", baseUrl: "", kind: "openai" },
 };
 
@@ -56,7 +72,44 @@ export function guessByPrefix(key: string): ProviderId | null {
   if (k.startsWith("fw_")) return "fireworks";
   if (k.startsWith("tgp_")) return "together";
   if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-") || k.startsWith("sk-admin-")) return "openai";
+  // Added because a prefix is the cheapest possible detection and every one of
+  // these is unambiguous. A key that matches none of them still gets probed, so
+  // this table being incomplete is a latency cost, never a failure.
+  if (k.startsWith("nvapi-")) return "nvidia";
+  if (k.startsWith("pplx-")) return "perplexity";
+  if (k.startsWith("sess-") || k.startsWith("sk-dashscope-")) return "qwen";
+  if (k.startsWith("moonshot-")) return "moonshot";
   return null;
+}
+
+/**
+ * Which providers a key of this shape could belong to, best first.
+ *
+ * Used when the prefix table has no answer and the app has to ask the provider
+ * itself. Plain `sk-` is shared by OpenAI, DeepSeek, Moonshot and several
+ * gateways, so it is the one shape that genuinely needs a network probe.
+ */
+export function candidatesForKey(key: string): ProviderId[] {
+  const k = key.trim();
+  if (k.startsWith("nvapi-")) return ["nvidia"];
+  if (k.startsWith("sk-ant-")) return ["anthropic"];
+  if (k.startsWith("sk-or-")) return ["openrouter"];
+  if (k.startsWith("AIza")) return ["google"];
+  if (k.startsWith("gsk_")) return ["groq"];
+  if (k.startsWith("xai-")) return ["xai"];
+  if (k.startsWith("csk-")) return ["cerebras"];
+  if (k.startsWith("fw_")) return ["fireworks"];
+  if (k.startsWith("tgp_")) return ["together"];
+  if (k.startsWith("pplx-")) return ["perplexity"];
+  if (k.startsWith("sess-") || k.startsWith("sk-dashscope-")) return ["qwen"];
+  if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-") || k.startsWith("sk-admin-")) return ["openai"];
+  const guess = guessByPrefix(k);
+  if (guess) return [guess];
+  // Order matters: the most common first, since Promise.any takes the first
+  // success and every loser is an aborted request the user paid latency for.
+  return k.startsWith("sk-")
+    ? ["openai", "deepseek", "moonshot", "mistral", "nvidia", "openrouter"]
+    : ["openai", "anthropic", "deepseek", "nvidia", "groq", "openrouter", "mistral"];
 }
 
 const NON_CHAT =
@@ -100,8 +153,6 @@ export async function listModels(
   return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
 }
 
-const PROBE_ORDER: ProviderId[] = ["openai", "deepseek", "mistral", "groq", "xai", "together", "fireworks", "cerebras", "google"];
-
 export type Detection = { provider: ProviderId; models: string[] };
 
 export async function detectProvider(key: string, baseUrl?: string | null): Promise<Detection> {
@@ -119,7 +170,9 @@ export async function detectProvider(key: string, baseUrl?: string | null): Prom
   const guess = guessByPrefix(k);
   if (guess) return { provider: guess, models: await listModels(guess, k) };
 
-  const candidates = k.startsWith("sk-") ? (["openai", "deepseek"] as ProviderId[]) : PROBE_ORDER;
+  // The probe order lives in one place, `candidatesForKey`, so the prefix table
+  // and the network probe can never disagree about which vendor a key is for.
+  const candidates = candidatesForKey(k);
   try {
     return await Promise.any(
       candidates.map(async (p) => ({ provider: p, models: await listModels(p, k, null, 7000) })),
