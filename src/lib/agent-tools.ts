@@ -9,7 +9,8 @@ import { artifacts, privacySessions, type ChoicesRecord, type StepRecord } from 
 import { getConnectionToken } from "@/lib/connectors";
 import { TOOL_CONNECTOR } from "@/lib/skill-permissions";
 import { ensureDesktop, normalizeUrl, openInBrowser, shot, sleep, type BotRef } from "@/lib/sandbox";
-import { runPackTool } from "@/lib/pack-tools";
+import { runLibraryTool, runPackTool } from "@/lib/pack-tools";
+import { LIBRARY_META_TOOLS, libraryToolByName, searchToolLibrary } from "@/lib/tool-library";
 import { helperSummary, helpersFor, spawnHelper, waitForHelpers, type Helper } from "@/lib/helpers";
 
 const obj = (properties: Record<string, unknown>, required: string[]) => ({
@@ -222,6 +223,8 @@ export function buildToolset(opts: {
    * scopes any Helper Bots it starts.
    */
   packTools?: Tool[];
+  /** The user message, used to pre-select a few library tools. */
+  libraryQuery?: string;
   turnId: string;
   /** Display name of the Bot, used when a Helper introduces itself. */
   botName?: string;
@@ -241,9 +244,15 @@ export function buildToolset(opts: {
   const connectorAllowlist = opts.allowedConnectors === undefined ? null : new Set(opts.allowedConnectors);
   let desktop: Sandbox | null = null;
 
+  // The library is large, so the model always gets the two meta-tools that can
+  // reach all of it, and only the handful a request actually matches goes in
+  // the schema. That is the difference between "a thousand tools available" and
+  // "a thousand tool definitions in every prompt".
+  const libraryMatches = opts.libraryQuery ? searchToolLibrary(opts.libraryQuery, 8) : [];
+  const matchedLibraryTools = libraryMatches.map((match) => match.tool);
   const allTools = e2bKey
-    ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? [])]
-    : [ASK, ...CORE_TOOLS, ...(opts.packTools ?? [])];
+    ? [ASK, ...CORE_TOOLS, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
+    : [ASK, ...CORE_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -532,6 +541,61 @@ export function buildToolset(opts: {
         return { output: JSON.stringify((data.projects ?? []).map((project: { name: string; id: string; link?: { repo?: string } }) => ({ name: project.name, id: project.id, repository: project.link?.repo }))) };
       } catch { return { output: `Could not access ${provider}. Check the connection and requested permissions in Settings > Connections.` }; }
     }
+    if (name === "find_tools") {
+      const query = String(a.query ?? "").trim();
+      if (!query) return { output: "Describe what you want to do." };
+      const limit = Math.max(1, Math.min(25, Number(a.limit) || 10));
+      const hits = searchToolLibrary(query, limit);
+      if (!hits.length) {
+        return { output: "Nothing in the library matches that. Build it yourself with the tools you have." };
+      }
+      return {
+        output: hits
+          .map((hit) => `${hit.name} — ${hit.summary} (call run_tool with this name)`)
+          .join("\n"),
+      };
+    }
+    if (name === "run_tool") {
+      const requested = String(a.name ?? "").trim();
+      const tool = libraryToolByName(requested);
+      // Only tools in the library may be run through this door — otherwise the
+      // meta-tool would be an escape hatch around permissions.
+      if (!tool) {
+        return { output: `There is no library tool called "${requested}". Use find_tools to get an exact name.` };
+      }
+      const title = String(a.title ?? tool.summary).trim();
+      const detail = String(a.detail ?? "").trim();
+      return runLibraryTool(tool, { title, detail }, {
+        userId,
+        botId: bot.id,
+        turnId: opts.turnId,
+        signal: opts.signal,
+        writeFile: e2bKey
+          ? async (path, content) => {
+              const sb = await getDesktop();
+              await sb.files.write(safePath(path), content);
+            }
+          : undefined,
+      });
+    }
+    if (opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
+      const tool = libraryToolByName(name);
+      if (tool) {
+        return runLibraryTool(tool, { title: String(a.title ?? tool.summary), detail: String(a.detail ?? "") }, {
+          userId,
+          botId: bot.id,
+          turnId: opts.turnId,
+          signal: opts.signal,
+          writeFile: e2bKey
+            ? async (path, content) => {
+                const sb = await getDesktop();
+                await sb.files.write(safePath(path), content);
+              }
+            : undefined,
+        });
+      }
+    }
+
     // Capability-pack tools are executed here so they can borrow the desktop
     // and the helper registry without the chat route having to know about them.
     if (opts.packTools?.some((tool) => tool.name === name)) {

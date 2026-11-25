@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { useState } from "react";
 import { useApp } from "./AppProvider";
 import { EmailPanel } from "./EmailPanel";
+import { BrandMark, HAS_BRAND_MARK } from "./BrandMark";
 import { Icon, Spinner } from "./icons";
 import { cx } from "./ui";
 
@@ -79,7 +80,7 @@ function ConnectionCard({ id: provider, name, detail, icon }: (typeof providers)
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3.5 transition hover:border-white/[0.11]">
       <div className="flex items-center gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/[0.06] bg-white/[0.05] text-neutral-300">
-          <Icon name={icon} size={17} />
+          {HAS_BRAND_MARK(provider) ? <BrandMark brand={provider} size={18} /> : <Icon name={icon} size={17} />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[13.5px] font-medium text-white">{name}</div>

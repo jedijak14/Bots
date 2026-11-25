@@ -1,0 +1,743 @@
+import type { Tool } from "./ai/llm";
+
+/**
+ * The tool library.
+ *
+ * A thousand tools is not the same as a thousand tools in the prompt. Sending
+ * every schema on every step is what makes models worse at choosing: they pick
+ * from a long list badly and the request grows without bound. So the library
+ * holds the definitions, each tagged with the words that mean it is relevant,
+ * and the run only puts a matched subset in front of the model.
+ *
+ * The tools themselves are generated from real operations rather than written
+ * one by one. Every project tool drives the same `project` action (create,
+ * open, list, duplicate...), and every media tool drives `produce`. That keeps
+ * each entry honest — there is one implementation behind it, and this file
+ * cannot drift from it — while still giving the model a precise name to ask for
+ * ("create_project_starter_game" rather than "do something with a game").
+ */
+
+export type LibraryCategory = "project" | "code" | "media" | "research" | "design" | "data";
+
+export type LibraryTool = {
+  name: string;
+  category: LibraryCategory;
+  /** Words that pull this tool in. Kept short and specific. */
+  keywords: string[];
+  summary: string;
+  /** What the executor does with it. */
+  action: string;
+  /** Free-form arguments folded into the action. */
+  preset?: Record<string, string>;
+  tool: Tool;
+  /**
+   * Words that name this tool specifically, as opposed to the family it
+   * belongs to. "developer" distinguishes write_readme_for_developer from the
+   * other four readme variants; "readme" does not.
+   */
+  specific: string[];
+};
+
+const PROJECT_SUBJECTS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "platformer", label: "a platformer", words: ["platformer", "jump", "platform"] },
+  { key: "puzzle", label: "a puzzle game", words: ["puzzle", "match", "logic"] },
+  { key: "shooter", label: "a shooter", words: ["shooter", "shoot", "bullet"] },
+  { key: "rpg", label: "an RPG", words: ["rpg", "quest", "character", "party"] },
+  { key: "racing", label: "a racing game", words: ["racing", "race", "car", "driving"] },
+  { key: "idle", label: "an idle game", words: ["idle", "clicker", "incremental"] },
+  { key: "card", label: "a card game", words: ["card", "deck", "poker"] },
+  { key: "tower", label: "a tower defence game", words: ["tower", "defence", "defense"] },
+  { key: "endless-runner", label: "an endless runner", words: ["runner", "endless", "dash"] },
+  { key: "word", label: "a word game", words: ["word", "spelling", "crossword"] },
+  { key: "sandbox", label: "a sandbox", words: ["sandbox", "building", "craft"] },
+  { key: "landing-page", label: "a landing page", words: ["landing", "launch", "waitlist"] },
+  { key: "portfolio", label: "a portfolio", words: ["portfolio", "showcase", "work"] },
+  { key: "store", label: "a storefront", words: ["store", "shop", "ecommerce", "products"] },
+  { key: "blog", label: "a blog", words: ["blog", "article", "writing"] },
+  { key: "dashboard", label: "a dashboard", words: ["dashboard", "metrics", "admin"] },
+  { key: "pricing-page", label: "a pricing page", words: ["pricing", "plans", "tiers"] },
+  { key: "waitlist", label: "a waitlist page", words: ["waitlist", "signup", "early"] },
+  { key: "docs-site", label: "a docs site", words: ["docs", "documentation", "guide"] },
+  { key: "restaurant-site", label: "a restaurant site", words: ["restaurant", "menu", "cafe", "bakery"] },
+  { key: "event-site", label: "an event site", words: ["event", "conference", "wedding"] },
+  { key: "agency-site", label: "an agency site", words: ["agency", "studio", "services"] },
+  { key: "link-in-bio", label: "a link page", words: ["link", "bio", "links"] },
+  { key: "quiz", label: "a quiz", words: ["quiz", "trivia", "test"] },
+  { key: "calculator", label: "a calculator", words: ["calculator", "estimate", "quote"] },
+  { key: "timeline", label: "a timeline", words: ["timeline", "history", "milestones"] },
+  { key: "map", label: "a map", words: ["map", "location", "geography"] },
+  { key: "chat-app", label: "a chat app", words: ["chat", "messaging", "inbox"] },
+  { key: "habit-tracker", label: "a habit tracker", words: ["habit", "streak", "tracker"] },
+  { key: "budget-tool", label: "a budget tool", words: ["budget", "expense", "money", "finance"] },
+  { key: "recipe-app", label: "a recipe app", words: ["recipe", "cooking", "ingredients"] },
+  { key: "workout", label: "a workout app", words: ["workout", "exercise", "fitness", "gym"] },
+  { key: "flashcards", label: "a flashcard app", words: ["flashcard", "study", "memory", "learn"] },
+  { key: "kanban", label: "a kanban board", words: ["kanban", "board", "tasks", "todo"] },
+  { key: "calendar", label: "a calendar", words: ["calendar", "schedule", "appointments"] },
+  { key: "invoice", label: "an invoice tool", words: ["invoice", "billing", "receipt"] },
+  { key: "survey", label: "a survey", words: ["survey", "form", "questionnaire", "feedback"] },
+  { key: "resume", label: "a resume site", words: ["resume", "cv", "hiring"] },
+  { key: "wiki", label: "a wiki", words: ["wiki", "knowledge", "notes"] },
+  { key: "music-player", label: "a music player", words: ["music", "player", "audio", "playlist"] },
+  { key: "weather", label: "a weather page", words: ["weather", "forecast", "temperature"] },
+  { key: "photo-gallery", label: "a photo gallery", words: ["photo", "gallery", "images", "album"] },
+  { key: "booking", label: "a booking flow", words: ["booking", "reserve", "appointment"] },
+  { key: "checkout", label: "a checkout flow", words: ["checkout", "cart", "payment", "buy"] },
+  { key: "onboarding", label: "an onboarding flow", words: ["onboarding", "signup", "welcome", "tutorial"] },
+  { key: "settings-page", label: "a settings page", words: ["settings", "preferences", "account"] },
+  { key: "pricing-table", label: "a pricing table", words: ["pricing", "table", "compare"] },
+  { key: "changelog", label: "a changelog", words: ["changelog", "releases", "updates"] },
+  { key: "faq", label: "an FAQ", words: ["faq", "questions", "answers"] },
+  { key: "error-page", label: "an error page", words: ["error", "404", "500"] },
+  { key: "splash", label: "a splash screen", words: ["splash", "loading", "skeleton"] },
+  { key: "leaderboard", label: "a leaderboard", words: ["leaderboard", "ranking", "scores"] },
+  { key: "search-page", label: "a search page", words: ["search", "filter", "results"] },
+  { key: "auth-flow", label: "an auth flow", words: ["auth", "login", "password"] },
+  { key: "api-docs", label: "API docs", words: ["api", "endpoints", "reference"] },
+];
+
+const PROJECT_VERBS: Array<{ key: string; label: string; words: string[]; action: string }> = [
+  { key: "create", label: "Create", words: ["create", "make", "new", "build", "start"], action: "create_project" },
+  { key: "brief", label: "Plan", words: ["plan", "brief", "spec", "outline"], action: "create_project" },
+  { key: "check", label: "Check", words: ["check", "audit", "review", "test", "verify"], action: "audit_project" },
+];
+
+const MEDIA_SUBJECTS: Array<{ key: string; label: string; words: string[]; kind: string }> = [
+  { key: "logo", label: "logo", words: ["logo", "mark", "wordmark"], kind: "logo" },
+  { key: "icon-set", label: "icon set", words: ["icon", "icons", "glyphs"], kind: "icon_set" },
+  { key: "poster", label: "poster", words: ["poster", "flyer", "print"], kind: "poster" },
+  { key: "social-card", label: "social card", words: ["social", "og", "share", "card"], kind: "social_card" },
+  { key: "avatar", label: "avatar", words: ["avatar", "profile", "face"], kind: "avatar" },
+  { key: "sprite", label: "sprite", words: ["sprite", "character", "pixel"], kind: "sprite" },
+  { key: "tileset", label: "tileset", words: ["tileset", "tile", "level"], kind: "tileset" },
+  { key: "ui-kit", label: "UI kit", words: ["ui", "kit", "components", "buttons"], kind: "ui_kit" },
+  { key: "pattern", label: "pattern", words: ["pattern", "texture", "background"], kind: "pattern" },
+  { key: "badge", label: "badge", words: ["badge", "sticker", "label"], kind: "badge" },
+  { key: "thumbnail", label: "thumbnail", words: ["thumbnail", "cover", "youtube"], kind: "thumbnail" },
+  { key: "invitation", label: "invitation", words: ["invitation", "invite", "announcement"], kind: "invitation" },
+  { key: "title-card", label: "title card", words: ["title", "intro", "opening"], kind: "title_card" },
+  { key: "lower-third", label: "lower third", words: ["lower third", "caption", "name plate"], kind: "lower_third" },
+  { key: "storyboard", label: "storyboard", words: ["storyboard", "shots", "frames"], kind: "storyboard" },
+  { key: "kinetic-type", label: "kinetic type", words: ["kinetic", "type", "typography", "text"], kind: "kinetic_type" },
+  { key: "transition", label: "transition", words: ["transition", "wipe", "cut"], kind: "transition" },
+  { key: "chart", label: "chart", words: ["chart", "graph", "data", "viz"], kind: "chart" },
+  { key: "diagram", label: "diagram", words: ["diagram", "flow", "architecture"], kind: "diagram" },
+  { key: "map-illustration", label: "map illustration", words: ["map", "illustration", "cartography"], kind: "map" },
+  { key: "book-cover", label: "book cover", words: ["book", "cover", "novel"], kind: "book_cover" },
+  { key: "packaging", label: "packaging", words: ["packaging", "box", "product"], kind: "packaging" },
+  { key: "menu", label: "menu", words: ["menu", "food", "restaurant"], kind: "menu" },
+  { key: "certificate", label: "certificate", words: ["certificate", "award", "diploma"], kind: "certificate" },
+  { key: "wallpaper", label: "wallpaper", words: ["wallpaper", "background", "desktop"], kind: "wallpaper" },
+  { key: "banner", label: "banner", words: ["banner", "header", "hero"], kind: "banner" },
+  { key: "sticker-pack", label: "sticker pack", words: ["sticker", "emoji", "reaction"], kind: "sticker_pack" },
+  { key: "invoice-template", label: "invoice template", words: ["invoice", "receipt", "billing"], kind: "invoice" },
+  { key: "resume-template", label: "resume template", words: ["resume", "cv", "applicant"], kind: "resume" },
+  { key: "presentation", label: "presentation deck", words: ["presentation", "deck", "slides"], kind: "presentation" },
+  { key: "logo-animation", label: "logo animation", words: ["logo", "reveal", "animation"], kind: "logo_animation" },
+  { key: "data-animation", label: "animated chart", words: ["chart", "data", "animate"], kind: "data_animation" },
+  { key: "explainer", label: "explainer frames", words: ["explainer", "how it works", "steps"], kind: "explainer" },
+  { key: "social-story", label: "story graphics", words: ["story", "instagram", "tiktok"], kind: "social_story" },
+  { key: "email-signature", label: "email signature", words: ["signature", "email", "footer"], kind: "email_signature" },
+  { key: "letterhead", label: "letterhead", words: ["letterhead", "stationery", "company"], kind: "letterhead" },
+  { key: "business-card", label: "business card", words: ["business card", "contact", "networking"], kind: "business_card" },
+  { key: "t-shirt", label: "t-shirt graphic", words: ["shirt", "apparel", "merch"], kind: "tshirt" },
+  { key: "merch-mockup", label: "merch mockup", words: ["merch", "mockup", "product"], kind: "merch" },
+  { key: "album-cover", label: "album cover", words: ["album", "cover", "music"], kind: "album_cover" },
+];
+
+const RESEARCH_SOURCES: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "web", label: "the open web", words: ["web", "internet", "google", "search"] },
+  { key: "docs", label: "library documentation", words: ["docs", "documentation", "api", "reference"] },
+  { key: "pricing", label: "pricing pages", words: ["pricing", "cost", "plans", "cheap"] },
+  { key: "competitors", label: "competitors", words: ["competitor", "compare", "versus", "alternatives"] },
+  { key: "reviews", label: "reviews", words: ["review", "rating", "opinion"] },
+  { key: "papers", label: "papers", words: ["paper", "research", "study", "arxiv"] },
+  { key: "news", label: "news", words: ["news", "latest", "announcement"] },
+  { key: "jobs", label: "job postings", words: ["job", "hiring", "salary"] },
+  { key: "recipes", label: "recipes", words: ["recipe", "cook", "food"] },
+  { key: "travel", label: "travel options", words: ["travel", "flight", "hotel", "trip"] },
+  { key: "local", label: "local businesses", words: ["local", "nearby", "restaurant"] },
+  { key: "events", label: "events", words: ["event", "tickets", "concert"] },
+];
+
+const DESIGN_TOPICS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "palette", label: "a palette", words: ["palette", "colour", "color", "scheme"] },
+  { key: "type-scale", label: "a type scale", words: ["type", "font", "scale", "typography"] },
+  { key: "spacing", label: "a spacing scale", words: ["spacing", "layout", "grid", "rhythm"] },
+  { key: "elevation", label: "elevation rules", words: ["shadow", "elevation", "depth"] },
+  { key: "motion", label: "motion rules", words: ["motion", "easing", "duration", "animation"] },
+  { key: "contrast", label: "a contrast check", words: ["contrast", "accessibility", "wcag", "a11y"] },
+  { key: "iconography", label: "an iconography rule", words: ["icon", "iconography", "stroke"] },
+  { key: "voice", label: "a voice and tone guide", words: ["voice", "tone", "copy", "writing"] },
+];
+
+const DATA_JOBS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "parse-csv", label: "CSV", words: ["csv", "spreadsheet", "table"] },
+  { key: "parse-json", label: "JSON", words: ["json", "api", "object"] },
+  { key: "summarise", label: "a summary", words: ["summarise", "summarize", "summary", "count"] },
+  { key: "chart-data", label: "a chart", words: ["chart", "plot", "graph"] },
+  { key: "clean", label: "cleaning", words: ["clean", "dedupe", "duplicate", "messy"] },
+  { key: "convert", label: "converting", words: ["convert", "format", "transform"] },
+];
+
+const CODE_TASKS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "scaffold", label: "scaffold a file", words: ["scaffold", "boilerplate", "template", "starter"] },
+  { key: "explain", label: "explain code", words: ["explain", "understand", "how does"] },
+  { key: "fix", label: "fix a bug", words: ["fix", "bug", "broken", "error"] },
+  { key: "refactor", label: "refactor", words: ["refactor", "clean up", "simplify"] },
+  { key: "test", label: "write tests", words: ["test", "spec", "coverage"] },
+  { key: "types", label: "add types", words: ["types", "typescript", "typing"] },
+  { key: "perf", label: "improve performance", words: ["performance", "slow", "optimise", "optimize"] },
+  { key: "a11y", label: "improve accessibility", words: ["accessibility", "a11y", "screen reader", "keyboard"] },
+];
+
+/**
+ * The formats an asset can be delivered in. These are real differences, not
+ * renames: an animated piece ships as frames or as a browser animation, a
+ * print piece ships as vector for the printer or PNG for review.
+ */
+const FORMATS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "svg", label: "as SVG", words: ["svg", "vector", "scalable"] },
+  { key: "animated", label: "animated", words: ["animated", "motion", "moving"] },
+  { key: "print", label: "print-ready", words: ["print", "300dpi", "bleed"] },
+  { key: "web", label: "optimised for the web", words: ["web", "lightweight", "page"] },
+];
+
+function makeTool(
+  name: string,
+  category: LibraryCategory,
+  keywords: string[],
+  summary: string,
+  action: string,
+  preset: Record<string, string>,
+  specific: string[] = [],
+): LibraryTool {
+  return {
+    name,
+    category,
+    keywords,
+    summary,
+    action,
+    preset,
+    specific,
+    tool: {
+      name,
+      description: `${summary} Then hand off to the ${action} step: it produces a real artifact you can open, not a description of one.`,
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short name for what is being produced." },
+          detail: { type: "string", description: "The specifics: subject, audience, constraints, anything the step needs." },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+
+/** Real ecosystems a build can target, each with its own idioms and pitfalls. */
+const STACKS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "react", label: "React", words: ["react", "jsx", "component"] },
+  { key: "nextjs", label: "Next.js", words: ["next", "nextjs", "app router"] },
+  { key: "vue", label: "Vue", words: ["vue", "nuxt"] },
+  { key: "svelte", label: "Svelte", words: ["svelte", "sveltekit"] },
+  { key: "vanilla-js", label: "plain JavaScript", words: ["vanilla", "javascript", "js", "dom"] },
+  { key: "canvas", label: "Canvas", words: ["canvas", "2d", "draw"] },
+  { key: "webgl", label: "WebGL", words: ["webgl", "shader", "3d", "gpu"] },
+  { key: "css", label: "CSS", words: ["css", "style", "layout"] },
+  { key: "tailwind", label: "Tailwind", words: ["tailwind", "utility", "classes"] },
+  { key: "svg", label: "SVG", words: ["svg", "vector", "path"] },
+  { key: "python", label: "Python", words: ["python", "py", "script"] },
+  { key: "node", label: "Node", words: ["node", "npm", "server"] },
+  { key: "supabase", label: "Supabase", words: ["supabase", "postgres", "auth", "database"] },
+  { key: "firebase", label: "Firebase", words: ["firebase", "firestore", "google"] },
+  { key: "stripe", label: "Stripe", words: ["stripe", "payments", "billing", "subscription"] },
+  { key: "openai", label: "an LLM API", words: ["openai", "llm", "gpt", "claude", "model api"] },
+  { key: "threejs", label: "Three.js", words: ["three", "threejs", "scene", "mesh"] },
+  { key: "phaser", label: "Phaser", words: ["phaser", "gameframework"] },
+  { key: "unity", label: "Unity", words: ["unity", "csharp", "prefab"] },
+  { key: "godot", label: "Godot", words: ["godot", "gdscript", "scene tree"] },
+  { key: "flutter", label: "Flutter", words: ["flutter", "dart", "mobile"] },
+  { key: "react-native", label: "React Native", words: ["react native", "expo", "ios", "android"] },
+  { key: "electron", label: "Electron", words: ["electron", "desktop app", "window"] },
+  { key: "wordpress", label: "WordPress", words: ["wordpress", "cms", "theme", "plugin"] },
+  { key: "shopify", label: "Shopify", words: ["shopify", "store", "liquid"] },
+];
+
+/** Jobs a build needs done regardless of stack. */
+const BUILD_JOBS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "routing", label: "routing", words: ["route", "page", "navigation", "link"] },
+  { key: "state", label: "state management", words: ["state", "store", "redux", "context"] },
+  { key: "forms", label: "forms", words: ["form", "input", "validation", "submit"] },
+  { key: "loading", label: "loading states", words: ["loading", "skeleton", "spinner", "wait"] },
+  { key: "empty-states", label: "empty states", words: ["empty", "nothing", "zero", "first run"] },
+  { key: "errors", label: "error handling", words: ["error", "failure", "retry", "exception"] },
+  { key: "responsive", label: "responsive layout", words: ["responsive", "mobile", "breakpoint", "wide"] },
+  { key: "dark-mode", label: "dark mode", words: ["dark", "theme", "light mode"] },
+  { key: "animation", label: "animation", words: ["animation", "transition", "motion", "ease"] },
+  { key: "seo", label: "SEO", words: ["seo", "meta", "search", "crawl"] },
+  { key: "analytics", label: "analytics", words: ["analytics", "track", "event", "measure"] },
+  { key: "auth", label: "authentication", words: ["auth", "login", "session", "user"] },
+  { key: "performance", label: "performance", words: ["performance", "speed", "bundle", "lazy"] },
+  { key: "testing", label: "tests", words: ["test", "spec", "assert", "mock"] },
+  { key: "deploy", label: "deployment", words: ["deploy", "host", "build", "ci"] },
+  { key: "data-fetching", label: "data fetching", words: ["fetch", "request", "api", "cache"] },
+  { key: "accessibility", label: "accessibility", words: ["accessibility", "a11y", "aria", "focus"] },
+  { key: "i18n", label: "localisation", words: ["i18n", "translation", "locale", "language"] },
+  { key: "security", label: "security", words: ["security", "xss", "csrf", "injection"] },
+  { key: "payments", label: "payments", words: ["payment", "checkout", "price", "stripe"] },
+];
+
+/** Integrations: things a Bot can wire into a build. */
+const INTEGRATIONS: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "github", label: "GitHub", words: ["github", "repo", "pull request"] },
+  { key: "vercel", label: "Vercel", words: ["vercel", "deploy", "preview"] },
+  { key: "gmail", label: "Gmail", words: ["gmail", "inbox", "email"] },
+  { key: "notion", label: "Notion", words: ["notion", "page", "database"] },
+  { key: "spotify", label: "Spotify", words: ["spotify", "track", "playlist"] },
+  { key: "youtube", label: "YouTube", words: ["youtube", "video", "channel"] },
+  { key: "slack", label: "Slack", words: ["slack", "message", "channel"] },
+  { key: "discord", label: "Discord", words: ["discord", "server", "bot"] },
+  { key: "sheets", label: "Google Sheets", words: ["sheet", "spreadsheet", "rows"] },
+  { key: "airtable", label: "Airtable", words: ["airtable", "base", "record"] },
+  { key: "calendar", label: "a calendar", words: ["calendar", "event", "invite"] },
+  { key: "maps", label: "maps", words: ["map", "location", "address"] },
+];
+
+/** Written deliverables a build or a business actually needs. */
+const DOCUMENTS: Array<{ key: string; label: string; words: string[]; kind: string }> = [
+  { key: "readme", label: "a README", words: ["readme", "install", "usage"], kind: "readme" },
+  { key: "landing-copy", label: "landing page copy", words: ["copy", "headline", "hero text"], kind: "landing_copy" },
+  { key: "product-spec", label: "a product spec", words: ["spec", "requirements", "scope"], kind: "spec" },
+  { key: "prd", label: "a PRD", words: ["prd", "product doc"], kind: "prd" },
+  { key: "release-notes", label: "release notes", words: ["release", "changelog", "notes"], kind: "release_notes" },
+  { key: "onboarding-email", label: "an onboarding email", words: ["email", "welcome", "sequence"], kind: "email" },
+  { key: "pitch-deck", label: "a pitch deck", words: ["pitch", "deck", "investor"], kind: "pitch" },
+  { key: "case-study", label: "a case study", words: ["case study", "results", "client"], kind: "case_study" },
+  { key: "faq-copy", label: "FAQ copy", words: ["faq", "questions", "answers"], kind: "faq" },
+  { key: "terms", label: "terms of service", words: ["terms", "legal", "policy"], kind: "terms" },
+  { key: "privacy-policy", label: "a privacy policy", words: ["privacy", "policy", "data"], kind: "privacy" },
+  { key: "style-guide", label: "a style guide", words: ["style", "guide", "brand"], kind: "style_guide" },
+  { key: "user-persona", label: "user personas", words: ["persona", "audience", "user"], kind: "persona" },
+  { key: "roadmap", label: "a roadmap", words: ["roadmap", "milestones", "quarters"], kind: "roadmap" },
+  { key: "test-plan", label: "a test plan", words: ["test", "qa", "coverage"], kind: "test_plan" },
+  { key: "runbook", label: "a runbook", words: ["runbook", "ops", "incident"], kind: "runbook" },
+  { key: "interview-questions", label: "interview questions", words: ["interview", "hiring", "candidate"], kind: "interview" },
+  { key: "email-sequence", label: "an email sequence", words: ["sequence", "drip", "campaign"], kind: "sequence" },
+  { key: "seo-brief", label: "an SEO brief", words: ["seo", "keywords", "ranking"], kind: "seo" },
+  { key: "postmortem", label: "a postmortem", words: ["postmortem", "incident", "retrospective"], kind: "postmortem" },
+];
+
+const AUDIENCES: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "developer", label: "a developer", words: ["developer", "engineer", "technical"] },
+  { key: "executive", label: "an executive", words: ["executive", "leadership", "brief"] },
+  { key: "customer", label: "a customer", words: ["customer", "user", "buyer"] },
+  { key: "investor", label: "an investor", words: ["investor", "funding", "raise"] },
+  { key: "beginner", label: "a beginner", words: ["beginner", "simple", "plain english"] },
+];
+
+const GAME_MODES: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "2d-topdown", label: "2D top-down", words: ["top down", "topdown", "2d"] },
+  { key: "2d-side", label: "2D side-on", words: ["side", "platformer", "sidescroll"] },
+  { key: "3d", label: "3D", words: ["3d", "three", "perspective"] },
+  { key: "isometric", label: "isometric", words: ["isometric", "iso", "tiles"] },
+  { key: "first-person", label: "first person", words: ["first person", "fps", "pov"] },
+  { key: "turn-based", label: "turn based", words: ["turn", "tactics", "strategy"] },
+  { key: "multiplayer-local", label: "local multiplayer", words: ["multiplayer", "two player", "coop"] },
+  { key: "touch", label: "touch first", words: ["touch", "mobile", "swipe", "tap"] },
+];
+
+/** Built once at module load: ~1000 entries, each a few hundred bytes. */
+function buildLibrary(): LibraryTool[] {
+  const out: LibraryTool[] = [];
+
+  // projects (30 subjects x create/plan/check)
+  for (const subject of PROJECT_SUBJECTS) {
+    for (const verb of PROJECT_VERBS) {
+      out.push(
+        makeTool(
+          `${verb.key}_${subject.key.replace(/-/g, "_")}`,
+          "project",
+          [...subject.words, ...verb.words],
+          `${verb.label} ${subject.label}.`,
+          verb.action,
+          { medium: subject.key, ...(verb.key === "check" ? {} : { verb: verb.key }) },
+          subject.words,
+        ),
+      );
+    }
+  }
+
+  // media (24 kinds x 2: generate and plan)
+  for (const kind of MEDIA_SUBJECTS) {
+    for (const verb of [
+      { key: "generate", label: "Generate", words: ["generate", "draw", "make", "create"] },
+      { key: "plan", label: "Plan", words: ["plan", "spec", "brief", "think"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${kind.key.replace(/-/g, "_")}`,
+          "media",
+          [...kind.words, ...verb.words],
+          `${verb.label} ${kind.label}.`,
+          "produce",
+          { kind: kind.kind, verb: verb.key },
+        ),
+      );
+    }
+  }
+
+  // media delivery: every kind, in every format it can actually ship in
+  for (const kind of MEDIA_SUBJECTS) {
+    for (const format of FORMATS) {
+      out.push(
+        makeTool(
+          `${kind.key.replace(/-/g, "_")}_${format.key}`,
+          "media",
+          [...kind.words, ...format.words],
+          `${kind.label[0].toUpperCase()}${kind.label.slice(1)} ${format.label}.`,
+          "produce",
+          { kind: kind.kind, format: format.key },
+        ),
+      );
+    }
+  }
+
+  // research (12 sources x 3: search, summarise, extract)
+  for (const source of RESEARCH_SOURCES) {
+    for (const verb of [
+      { key: "search", label: "Search", words: ["search", "look up", "find"] },
+      { key: "summarise", label: "Summarise", words: ["summarise", "summary", "tl;dr"] },
+      { key: "compare", label: "Compare", words: ["compare", "diff", "versus"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${source.key.replace(/-/g, "_")}`,
+          "research",
+          [...source.words, ...verb.words],
+          `${verb.label} ${source.label}.`,
+          "research",
+          { source: source.key, verb: verb.key },
+          source.words,
+        ),
+      );
+    }
+  }
+
+  // design (8 topics x 4 verbs)
+  for (const topic of DESIGN_TOPICS) {
+    for (const verb of [
+      { key: "define", label: "Define", words: ["define", "choose", "pick", "set"] },
+      { key: "audit", label: "Audit", words: ["audit", "check", "review"] },
+      { key: "apply", label: "Apply", words: ["apply", "use", "adopt"] },
+      { key: "document", label: "Document", words: ["document", "write down", "record"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${topic.key.replace(/-/g, "_")}`,
+          "design",
+          [...topic.words, ...verb.words],
+          `${verb.label} ${topic.label}.`,
+          "design_system",
+          { topic: topic.key, verb: verb.key },
+        ),
+      );
+    }
+  }
+
+  // data (6 jobs x 4 verbs)
+  for (const job of DATA_JOBS) {
+    for (const verb of [
+      { key: "read", label: "Read", words: ["read", "load", "open"] },
+      { key: "analyse", label: "Analyse", words: ["analyse", "analyze", "inspect"] },
+      { key: "transform", label: "Transform", words: ["transform", "convert", "reshape"] },
+      { key: "report", label: "Report", words: ["report", "summarise", "write up"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${job.key.replace(/-/g, "_")}`,
+          "data",
+          [...job.words, ...verb.words],
+          `${verb.label} ${job.label}.`,
+          "data_job",
+          { job: job.key, verb: verb.key },
+        ),
+      );
+    }
+  }
+
+  // code (8 tasks x 5 languages)
+  for (const language of ["typescript", "html", "sql"]) {
+    for (const task of CODE_TASKS) {
+      out.push(
+        makeTool(
+          `${task.key}_${language}`,
+          "code",
+          [language, ...task.words],
+          `${task.label} in ${language}.`,
+          "code_task",
+          { language, task: task.key },
+        ),
+      );
+    }
+  }
+
+  // stacks: for each real ecosystem, the four things you actually do with it
+  for (const stack of STACKS) {
+    for (const verb of [
+      { key: "scaffold", label: "Set up", words: ["set up", "scaffold", "boilerplate"] },
+      { key: "integrate", label: "Integrate", words: ["integrate", "add", "connect"] },
+      { key: "debug", label: "Debug", words: ["debug", "broken", "not working", "error"] },
+      { key: "optimise", label: "Optimise", words: ["optimise", "optimize", "speed", "improve"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${stack.key.replace(/-/g, "_")}`,
+          "code",
+          [...stack.words, ...verb.words],
+          `${verb.label} ${stack.label}.`,
+          "code_task",
+          { stack: stack.key, verb: verb.key },
+        ),
+      );
+    }
+  }
+
+  // build jobs: the universal list, done for a project
+  for (const job of BUILD_JOBS) {
+    out.push(
+      makeTool(
+        `add_${job.key.replace(/-/g, "_")}`,
+        "project",
+        job.words,
+        `Add ${job.label} to a build.`,
+        "create_project",
+        { job: job.key },
+      ),
+    );
+    out.push(
+      makeTool(
+        `review_${job.key.replace(/-/g, "_")}`,
+        "project",
+        [...job.words.map((w) => w), "review", "check", "audit"],
+        `Review ${job.label} in a build.`,
+        "audit_project",
+        { job: job.key },
+      ),
+    );
+  }
+
+  // integrations: connect, read from, write to
+  for (const integration of INTEGRATIONS) {
+    for (const verb of [
+      { key: "connect", label: "Connect", words: ["connect", "link", "set up", "authorise"] },
+      { key: "read", label: "Read from", words: ["read", "get", "fetch", "list"] },
+      { key: "write", label: "Write to", words: ["write", "send", "post", "publish"] },
+    ]) {
+      out.push(
+        makeTool(
+          `${verb.key}_${integration.key.replace(/-/g, "_")}`,
+          "code",
+          [...integration.words, ...verb.words],
+          `${verb.label} ${integration.label}.`,
+          "integrate",
+          { service: integration.key, verb: verb.key },
+          integration.words,
+        ),
+      );
+    }
+  }
+
+  // documents: every deliverable for every audience it is written for
+  for (const doc of DOCUMENTS) {
+    for (const audience of AUDIENCES) {
+      out.push(
+        makeTool(
+          `write_${doc.key.replace(/-/g, "_")}_for_${audience.key}`,
+          "data",
+          [...doc.words, ...audience.words],
+          `Write ${doc.label} for ${audience.label}.`,
+          "write_document",
+          { kind: doc.kind, audience: audience.key },
+          audience.words,
+        ),
+      );
+    }
+  }
+
+  // game modes: the perspective changes the whole build, so it is its own axis
+  for (const mode of GAME_MODES) {
+    for (const subject of PROJECT_SUBJECTS.slice(0, 12)) {
+      out.push(
+        makeTool(
+          `build_game_${subject.key.replace(/-/g, "_")}_${mode.key.replace(/-/g, "_")}`,
+          "project",
+          [...subject.words.slice(0, 2), ...mode.words],
+          `Build ${subject.label} as a ${mode.label} game.`,
+          "create_project",
+          { medium: subject.key, mode: mode.key, kind: "game" },
+        ),
+      );
+    }
+  }
+
+  // checks: the passes a build needs before it is called finished
+  const CHECKS = [
+    { key: "accessibility", label: "accessibility", words: ["accessibility", "a11y", "contrast", "keyboard"] },
+    { key: "performance", label: "performance", words: ["performance", "speed", "load time"] },
+    { key: "security", label: "security", words: ["security", "vulnerability", "exposure"] },
+    { key: "responsive", label: "responsive layout", words: ["responsive", "mobile", "tablet"] },
+    { key: "content", label: "copy and content", words: ["copy", "wording", "content"] },
+    { key: "seo", label: "search visibility", words: ["seo", "meta", "indexing"] },
+    { key: "errors", label: "error handling", words: ["errors", "edge cases", "failure"] },
+    { key: "tests", label: "test coverage", words: ["tests", "coverage", "regression"] },
+  ];
+  const SURFACES = [
+    { key: "game", label: "a game", words: ["game", "gameplay"] },
+    { key: "website", label: "a website", words: ["website", "site", "page"] },
+    { key: "app", label: "an app", words: ["app", "application", "flow"] },
+    { key: "motion", label: "a motion piece", words: ["motion", "animation", "video"] },
+    { key: "asset", label: "an asset", words: ["asset", "art", "sprite", "logo"] },
+  ];
+  for (const check of CHECKS) {
+    for (const surface of SURFACES) {
+      out.push(
+        makeTool(
+          `check_${surface.key}_${check.key}`,
+          "project",
+          [...surface.words, ...check.words],
+          `Check ${surface.label} for ${check.label}.`,
+          "audit_project",
+          { surface: surface.key, check: check.key },
+        ),
+      );
+    }
+  }
+
+  return out;
+}
+
+export const TOOL_LIBRARY: LibraryTool[] = buildLibrary();
+
+export const LIBRARY_SIZE = TOOL_LIBRARY.length;
+
+export type LibraryMatch = LibraryTool & { score: number };
+
+const STOP = new Set(
+  "a an the and or but if then than that this these those i you we they it is are was were be been being do does did doing have has had having to of in on at for with about from as by into over under again more most some such only own same so too very can will just should now make build create please me my your our more lot really want need help".split(
+    /\s+/,
+  ),
+);
+
+function tokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9+#.]+/)
+    .filter((word) => word.length > 1 && !STOP.has(word));
+}
+
+/**
+ * Rank the library against a request.
+ *
+ * Deliberately cheap: token overlap, weighted so a keyword match in the
+ * request beats a generic verb. Nothing here calls a model, because it runs on
+ * every turn.
+ */
+/**
+ * The verbs a request uses, mapped to the action they imply. This is what
+ * separates "build me a game" (create) from "check my game" (audit): the noun
+ * is identical, and only the verb tells them apart.
+ */
+const INTENT_VERBS: Array<{ pattern: RegExp; actions: string[]; boost: number }> = [
+  { pattern: /\b(game|games|gameplay)\b/i, actions: ["create_project"], boost: 4 },
+  { pattern: /\b(make|build|create|start|scaffold|set ?up|new|generate|design|produce|write|draw)\b/i, actions: ["create_project", "produce", "write_document", "design_system", "code_task", "research"], boost: 6 },
+  { pattern: /\b(check|audit|review|test|verify|fix|lint|validate|debug)\b/i, actions: ["audit_project", "code_task"], boost: 6 },
+  { pattern: /\b(connect|integrate|link|set ?up|authorise|authorize)\b/i, actions: ["integrate"], boost: 6 },
+  { pattern: /\b(search|find|research|look ?up|compare|summarise|summarize)\b/i, actions: ["research"], boost: 6 },
+  { pattern: /\b(read|parse|analyse|analyze|convert|clean)\b/i, actions: ["data_job"], boost: 5 },
+];
+
+function intentActions(query: string): Map<string, number> {
+  const wanted = new Map<string, number>();
+  for (const rule of INTENT_VERBS) {
+    if (!rule.pattern.test(query)) continue;
+    for (const action of rule.actions) {
+      wanted.set(action, Math.max(wanted.get(action) ?? 0, rule.boost));
+    }
+  }
+  return wanted;
+}
+
+export function searchToolLibrary(query: string, limit = 40): LibraryMatch[] {
+  const words = tokens(query);
+  if (!words.length) return [];
+  const wanted = new Set(words);
+  const intents = intentActions(query);
+  const scored: LibraryMatch[] = [];
+  for (const tool of TOOL_LIBRARY) {
+    let score = 0;
+    // Subject overlap: what the thing is about.
+    for (const keyword of tool.keywords) {
+      for (const part of tokens(keyword)) {
+        // A keyword the user did not write should not dominate the score.
+        if (wanted.has(part)) score += 2;
+      }
+    }
+    // The differentiating word ("stripe", "developer", "accessibility") must
+    // beat the family word shared by every sibling, or all five readme
+    // variants score identically and the order is alphabetical noise.
+    for (const word of tool.specific) {
+      for (const part of tokens(word)) {
+        if (wanted.has(part)) score += 8;
+      }
+    }
+    for (const part of tokens(tool.name)) {
+      if (wanted.has(part) && part.length > 3) score += 2;
+    }
+    // Intent: what they want done with it.
+    const boost = intents.get(tool.action) ?? 0;
+    if (boost && score > 0) score += boost;
+    if (score > 0) scored.push({ ...tool, score });
+  }
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return scored.slice(0, limit);
+}
+
+/** The meta-tools that make the library reachable without loading all of it. */
+export const LIBRARY_META_TOOLS: Tool[] = [
+  {
+    name: "find_tools",
+    description:
+      "Search a library of about a thousand specific tools by describing what you want to do. Use this before writing something from scratch: it will tell you whether there is a purpose-built step for it already. Returns the best matches with the name to call.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What you are trying to do, in a few words." },
+        limit: { type: "number", description: "How many results, 1-25. Defaults to 10." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "run_tool",
+    description:
+      "Execute one tool from the library by the exact name find_tools gave you. The tool produces a real artifact. Always search first — you cannot call a library tool that you have not found.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Exact tool name from find_tools." },
+        title: { type: "string", description: "Name for what is being produced." },
+        detail: { type: "string", description: "Specifics: subject, audience, constraints." },
+      },
+      required: ["name", "title"],
+      additionalProperties: false,
+    },
+  },
+];
+
+export function libraryToolByName(name: string): LibraryTool | undefined {
+  return TOOL_LIBRARY.find((tool) => tool.name === name);
+}

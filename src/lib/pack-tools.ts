@@ -365,3 +365,104 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
       return { output: `Unknown pack tool ${name}.` };
   }
 }
+
+/* ------------------------------ the library ------------------------------- */
+
+export type LibraryContext = {
+  userId: string;
+  botId: string;
+  turnId: string;
+  signal: AbortSignal;
+  writeFile?: (path: string, content: string) => Promise<void>;
+};
+
+/**
+ * Execute one library tool.
+ *
+ * Every library tool resolves to an action that produces something the user can
+ * open. The generated names ("generate_logo_animated", "write_readme_for_
+ * developer") carry the intent, so this maps the name back onto a concrete
+ * action and hands it to the same builders the packs use — one implementation,
+ * many precise handles.
+ *
+ * Where a step needs the model to do the creation itself (a logo's actual
+ * shapes), it returns a written brief with exact requirements rather than
+ * pretending to have drawn something. A tool that claims to have produced art
+ * and produced nothing is worse than one that says what it needs.
+ */
+export async function runLibraryTool(
+  tool: { name: string; summary: string; action: string; preset?: Record<string, string> },
+  args: { title: string; detail: string },
+  ctx: LibraryContext,
+): Promise<ToolResult> {
+  const { title } = args;
+  const detail = String(args.detail ?? "").trim();
+  const preset = tool.preset ?? {};
+  const brief = {
+    tool: tool.name,
+    summary: tool.summary,
+    title,
+    detail,
+    instructions: [] as string[],
+    next: "",
+  };
+
+  if (tool.action === "produce") {
+    brief.instructions.push(
+      `Produce ${preset.kind ?? "the asset"}${preset.format ? ` in the ${preset.format} format` : ""} as SVG or a self-contained HTML document.`,
+      "Draw from the design brief's palette, not a new one. If no brief exists yet, write one first with design_brief.",
+      "Keep the asset to shapes and paths: no filters, no embedded fonts, no external URLs.",
+      preset.format === "animated"
+        ? "Animate with CSS or the Web Animations API, 120-220ms easing out; nothing loops faster than 6s."
+        : "Export at a size that survives 2x: at least 2x the largest place it will be used.",
+    );
+    brief.next = "Save what you draw with draw_asset (SVG) or scaffold_motion / scaffold_site (animated or HTML).";
+  } else if (tool.action === "create_project" || tool.action === "audit_project") {
+    brief.instructions.push(
+      tool.action === "create_project"
+        ? `Plan then build: ${preset.medium ? `a ${preset.medium}` : "the thing"}${preset.mode ? ` in ${preset.mode}` : ""}${preset.job ? `, with attention to ${preset.job}` : ""}.`
+        : `Check the build for ${preset.check ?? preset.job ?? "correctness"}${preset.surface ? ` in the ${preset.surface}` : ""}.`,
+      "Use game_design / site_plan first, then scaffold_game or scaffold_site, then playtest_game or audit_page.",
+      "Do not describe a plan as a result. The turn is only finished when an artifact exists.",
+    );
+    brief.next = tool.action === "create_project" ? "Call create_project-adjacent build steps, then verify." : "Fix what the check finds, then re-check.";
+  } else if (tool.action === "write_document") {
+    brief.instructions.push(
+      `Write ${preset.kind ?? "a document"} for ${preset.audience ?? "the reader"}.`,
+      "Be complete and specific: no placeholders like [your name] unless the user must fill them.",
+      "Save it with save_artifact as kind \"document\".",
+    );
+    brief.next = "save_artifact";
+  } else if (tool.action === "research") {
+    brief.instructions.push(`Research ${preset.source ?? "the web"} and ${preset.verb ?? "summarise"}.`, "Return findings with links. Do not invent sources.");
+    brief.next = "web_search or fetch_page, then save_artifact the summary";
+  } else if (tool.action === "design_system") {
+    brief.instructions.push(`Define ${preset.topic ?? "the design system"}${preset.verb ? ` (${preset.verb})` : ""}.`, "Give concrete values: hex codes, px sizes, ms durations. Not adjectives.");
+    brief.next = "design_brief";
+  } else if (tool.action === "data_job") {
+    brief.instructions.push(`Handle ${preset.job ?? "the data"}: ${preset.verb ?? "process"} it.`, "Work from real input the user provided. If there is none, ask for it rather than inventing rows.");
+    brief.next = "run_command (for parsing) or save_artifact (for a report)";
+  } else if (tool.action === "code_task") {
+    brief.instructions.push(`Do ${preset.task ?? preset.verb ?? "the task"} in ${preset.language ?? preset.stack ?? "the code"}.`, "Write real, runnable code. No TODOs where the work is obvious.");
+    brief.next = "write_file, then run it";
+  } else if (tool.action === "integrate") {
+    brief.instructions.push(`Integrate ${preset.service ?? "the service"}: ${preset.verb ?? "connect"}.`, "This deployment supports Google, GitHub, Notion, Vercel and Spotify connections. For anything else, build the integration to call its API directly and say what credentials it needs.");
+    brief.next = "save_artifact or the connection tools";
+  }
+
+  const saved = await saveArtifact(ctx, `${title} — ${tool.summary.replace(/\.$/, "")}`, "tool_plan", JSON.stringify(brief, null, 2));
+  return {
+    ...(saved ? { artifactId: saved.id } : {}),
+    output: [
+      `${tool.name} is ready to run: ${tool.summary}`,
+      detail ? `Detail you gave: ${detail}` : "",
+      "",
+      "Do this now:",
+      ...brief.instructions.map((line) => `- ${line}`),
+      "",
+      `Then: ${brief.next}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}
