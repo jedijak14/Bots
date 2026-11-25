@@ -1071,11 +1071,27 @@ export function buildToolset(opts: {
     }
   }
 
+  // A small model's most common way to waste a turn is to retry the exact call
+  // that just failed — same tool, same arguments — until the step cap ends the
+  // job. The second identical attempt is honest (a flaky request can succeed on
+  // a retry), so it runs; the fourth is a loop, and the useful thing to return
+  // is a sentence that names the problem instead of the same error again.
+  let lastKey = "";
+  let repeats = 0;
+
   async function run(name: string, args: Record<string, unknown>, id: string): Promise<ToolResult> {
     const label = labelFor(name, args);
     const startedAt = Date.now();
     ev.onStepStart({ id, name, label });
     if (opts.signal.aborted) throw new Error("aborted");
+    const key = `${name}:${JSON.stringify(args)}`;
+    repeats = key === lastKey ? repeats + 1 : 0;
+    lastKey = key;
+    if (repeats >= 3) {
+      const looped = `You have now asked for ${name} with these exact arguments ${repeats + 1} times and the result has not changed. Do not call it again. Either change the arguments, use a different tool, or tell the user plainly what is blocking you and what you need from them.`;
+      ev.onStepEnd({ id, name, label, ok: false, ms: Date.now() - startedAt, output: clip(looped, 400) });
+      return { output: looped };
+    }
     try {
       if (toolAllowlist && name !== "ask_user" && !toolAllowlist.has(name)) throw new Error("This tool is not allowed by the Bot's enabled skills.");
       const connector = TOOL_CONNECTOR[name];
