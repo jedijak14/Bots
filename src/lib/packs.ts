@@ -17,7 +17,7 @@ import type { Tool } from "./ai/llm";
  * new branch in the chat route.
  */
 
-export type PackId = "assets" | "game" | "motion" | "web" | "models" | "helpers";
+export type PackId = "assets" | "game" | "motion" | "web" | "lookup" | "models" | "helpers";
 
 export type Pack = {
   id: PackId;
@@ -244,7 +244,8 @@ const WEB_TOOLS: Tool[] = [
 
 /* ---------------------------------- models ---------------------------------- */
 
-const MODEL_TOOLS: Tool[] = [
+/* Answers that live on a website: fetched deliberately, the cheap way first. */
+const LOOKUP_TOOLS: Tool[] = [
   {
     name: "api_call",
     description:
@@ -270,6 +271,10 @@ const MODEL_TOOLS: Tool[] = [
       ["request"],
     ),
   },
+];
+
+/* Meshes and renders: built here, or by real Blender. */
+const MODEL_TOOLS: Tool[] = [
   {
     name: "kinetix",
     description:
@@ -382,11 +387,18 @@ export const PACKS: Pack[] = [
     signals: /\b(landing|website|web page|webpage|html|css|site|portfolio|storefront|dashboard|responsive)\b/i,
   },
   {
+    id: "lookup",
+    title: "Live lookups",
+    purpose: "Answers that live on a website, fetched the cheap way or the slow way, deliberately.",
+    tools: LOOKUP_TOOLS,
+    signals: /\b(flight|flights|airfare|hotel|hotels|train|bus|fare|fares|price|prices|cost|cheap|cheapest|stock|stocks|crypto|weather|forecast|schedule|schedules|listing|listings|score|scores|odds|availability|book|booking|reserve|look up|lookup|latest|live|current)\b/i,
+  },
+  {
     id: "models",
     title: "3D models",
-    purpose: "Real meshes and viewers for props, terrain and simple characters.",
+    purpose: "Real meshes and viewers for props, terrain and simple characters, and Blender for photoreal renders.",
     tools: MODEL_TOOLS,
-    signals: /\b(3d|model|mesh|obj|terrain|prop|sculpt|isometric|low[- ]poly|asset pack)\b/i,
+    signals: /\b(3d|model|models|mesh|meshes|obj|glb|gltf|stl|terrain|prop|props|sculpt|isometric|low[- ]poly|asset pack|blender|kinetix|render|renders|rendered|photoreal|photorealistic|shader|turntable|product shot)\b/i,
   },
   {
     id: "helpers",

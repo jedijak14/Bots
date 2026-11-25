@@ -116,11 +116,15 @@ def main() -> int:
         print(f"Blender did not finish within {timeout}s", file=sys.stderr)
         return 4
 
-    tail = "\n".join(result.stdout.splitlines()[-40:])
+    lines = result.stdout.splitlines()
+    # The renderer's own JSON is the last line that parses as our result shape;
+    # Blender's progress log is noisy and can appear after it.
+    result_line = next((l for l in reversed(lines) if l.startswith('{"ok"')), "")
     body = {
         "ok": result.returncode == 0,
         "exit": result.returncode,
-        "log": tail,
+        "result": result_line,
+        "log": "\n".join(lines[-25:]),
         "stderr": "\n".join(result.stderr.splitlines()[-15:]),
         "out": str(out_dir),
     }

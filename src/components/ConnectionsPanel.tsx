@@ -207,6 +207,15 @@ export function ConnectionsPanel() {
       <p className="mt-4 text-[11.5px] leading-relaxed text-neutral-600">
         Connecting runs through Vercel Connect, so tokens stay on the server and can be revoked at any time. Nothing here is needed to chat.
       </p>
+
+      {/* Two services people ask for, and why they are not in the list above.
+          Listing them as connectable would promise something no credential can
+          deliver: neither publishes an API for the thing people want from it. */}
+      <p className="mt-2 text-[11.5px] leading-relaxed text-neutral-600">
+        Netflix and Amazon have no personal API to connect to — Netflix publishes none for your viewing, and Amazon&apos;s
+        sign-in does not reach your orders or watchlists. Asking a Bot to read either one means it opens the page on its
+        computer and signs in with you, in Privacy Mode, rather than holding a token.
+      </p>
     </div>
   );
 }

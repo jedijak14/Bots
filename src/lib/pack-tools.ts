@@ -82,7 +82,12 @@ async function saveArtifact(
 ): Promise<{ id: string } | null> {
   const clean = title.trim().slice(0, 160);
   if (!clean || !content) return null;
-  if (content.length > 200_000) return null;
+  // A text artifact that large is a mistake worth refusing. An image or a
+  // mesh is not: a 900x640 render is routinely a few hundred KB, and a silent
+  // drop there reads as "the tool did nothing".
+  const isBinaryPayload = /^data:[^;]+;base64,/.test(content);
+  const limit = isBinaryPayload ? 8_000_000 : 200_000;
+  if (content.length > limit) return null;
   const [row] = await db
     .insert(artifacts)
     .values({ userId: ctx.userId, botId: ctx.botId, title: clean, kind, content })
@@ -511,18 +516,28 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
       // First use installs Blender on the computer. It is a ~900 MB one-time
       // download, so this checks before paying for it, and the check is a real
       // render rather than an import (an import can succeed with Cycles broken).
+      // The check prints its JSON and exits non-zero when not installed, so it
+      // must not be piped into anything: the last command in a pipeline decides
+      // the exit code, and `| head` always succeeds.
       const ready = await ctx.runCommand(
-        `KINETIX_HOME="$HOME/.kinetix" python3 "$HOME/kinetix/blender.py" --check 2>/dev/null | head -c 200`,
+        `KINETIX_HOME="$HOME/.kinetix" python3 "$HOME/kinetix/kinetix/blender.py" --check`,
         30_000,
       );
-      if (!ready.stdout.includes('"ok":true')) {
+      if (!ready.stdout.includes('"ok": true') && !ready.stdout.includes('"ok":true')) {
         const install = await ctx.runCommand(
-          `test -d "$HOME/kinetix" || git clone --depth 1 https://github.com/${process.env.KINETIX_REPO ?? "jedijak14/Bots"}.git "$HOME/kinetix" 2>&1 | tail -2; cd "$HOME/kinetix/kinetix" 2>/dev/null || cd "$HOME/kinetix"; KINETIX_HOME="$HOME/.kinetix" bash install.sh 2>&1 | tail -6`,
+          [
+            'set -e',
+            'if [ ! -d "$HOME/kinetix/kinetix" ]; then',
+            `  git clone --depth 1 https://github.com/${process.env.KINETIX_REPO ?? "jedijak14/Bots"}.git "$HOME/kinetix"`,
+            'fi',
+            'cd "$HOME/kinetix/kinetix"',
+            'KINETIX_HOME="$HOME/.kinetix" bash install.sh',
+          ].join("\n"),
           1_500_000,
         );
         if (install.exitCode !== 0) {
           return {
-            output: `Kinetix is not installed on this computer and could not install itself.\n${(install.stderr || install.stdout).slice(-400)}\n\nUse make_3d_model instead: it needs no renderer.`,
+            output: `Kinetix is not installed on this computer and could not install itself.\n${(install.stderr || install.stdout).slice(-500)}\n\nUse make_3d_model instead: it needs no renderer.`,
           };
         }
       }
@@ -531,13 +546,39 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
         `cd ${work} && KINETIX_HOME="$HOME/.kinetix" python3 "$HOME/kinetix/kinetix/blender.py" scene.json --out . --timeout 600`,
         660_000,
       );
-      const parsed = parseKinetix(run.stdout);
+      // Prefer the envelope blender.py prints (which carries the renderer's own
+      // result on "result"); fall back to scanning the raw log.
+      let parsed = parseKinetix(run.stdout);
+      const envelope = (() => {
+        for (const line of run.stdout.trim().split("\n").reverse()) {
+          if (!line.startsWith('{"ok"') || !line.includes('"result"')) continue;
+          try {
+            const outer = JSON.parse(line) as { result?: string };
+            if (!outer.result) continue;
+            return JSON.parse(outer.result) as {
+              ok?: boolean;
+              stats?: { faces?: number; vertices?: number; blender?: string };
+            };
+          } catch {
+            /* a log line that merely starts with {"ok" is not the envelope */
+          }
+        }
+        return null;
+      })();
+      if (envelope) {
+        parsed = {
+          ok: !!envelope.ok,
+          reason: envelope.ok ? "" : "the renderer reported a failure",
+          raw: JSON.stringify(envelope),
+          stats: envelope.stats,
+        };
+      }
       if (!parsed.ok) {
+        // "No result line" usually means the renderer died before it could
+        // speak; its stderr is the only useful thing to pass on.
+        const detail = parsed.raw ? parsed.reason : (run.stderr || run.stdout).slice(-400) || "no output";
         return {
-          output:
-            run.exitCode === 0 && !parsed.raw
-              ? "Kinetix did not report a result."
-              : `Kinetix could not finish. ${parsed.reason}\n\nUse make_3d_model for a model that needs no renderer.`,
+          output: `Kinetix could not finish (exit ${run.exitCode}). ${detail}\n\nUse make_3d_model for a model that needs no renderer.`,
         };
       }
       const saved: string[] = [];
@@ -546,12 +587,18 @@ console.log(JSON.stringify({...r,pageErrors:errs.slice(0,4)},null,1));await b.cl
         const ok = await saveArtifact(ctx, title, "image", `data:image/png;base64,${image}`);
         if (ok) saved.push(`render: ${ok.id}`);
       }
-      for (const ext of ["glb", "obj"]) {
-        const file = await readBackText(ctx, `${work}/${spec.name}.${ext}`);
-        if (file) {
-          const ok = await saveArtifact(ctx, `${title} (${ext.toUpperCase()})`, ext === "glb" ? "model_glb" : "model_obj", file);
-          if (ok) saved.push(`${ext}: ${ok.id}`);
-        }
+      // glTF is binary, so it cannot go through the text artifact column as-is.
+      // Base64 in a data URL keeps it intact and still opens from the card; the
+      // OBJ is plain text and is stored as text.
+      const glb = await readBack(ctx, `${work}/${spec.name}.glb`);
+      if (glb) {
+        const ok = await saveArtifact(ctx, `${title} (glTF)`, "model_glb", `data:model/gltf-binary;base64,${glb}`);
+        if (ok) saved.push(`glb: ${ok.id}`);
+      }
+      const objFile = await readBackText(ctx, `${work}/${spec.name}.obj`);
+      if (objFile) {
+        const ok = await saveArtifact(ctx, `${title} (OBJ)`, "model_obj", objFile);
+        if (ok) saved.push(`obj: ${ok.id}`);
       }
       return {
         ...(saved.length ? {} : {}),

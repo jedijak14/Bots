@@ -86,14 +86,19 @@ export default async function LandingPage() {
           <span className="text-[17px] font-semibold tracking-[-0.02em]">{BRAND.name}</span>
         </Link>
         <nav className="flex items-center gap-1.5" aria-label="Account">
-          <Link href="/login" className="rounded-full px-3.5 py-2 text-[13px] font-medium text-neutral-300 transition hover:bg-white/[0.06] hover:text-white">
-            Sign in
+          {/* Someone already signed in has no use for a "Sign in" button, and
+              offering one is how the front door stops being a way in. */}
+          <Link
+            href={signedIn ? "/bots" : "/login"}
+            className="rounded-full px-3.5 py-2 text-[13px] font-medium text-neutral-300 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            {signedIn ? "Your Bots" : "Sign in"}
           </Link>
           <Link
-            href="/login?intent=signup"
+            href={signedIn ? "/bots" : "/login?intent=signup"}
             className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-black transition hover:bg-neutral-200 active:scale-[0.97]"
           >
-            Sign up
+            {signedIn ? "Open app" : "Sign up"}
           </Link>
         </nav>
       </header>
@@ -129,16 +134,16 @@ export default async function LandingPage() {
 
           <div className="land-rise mt-9 flex flex-wrap items-center justify-center gap-2.5" style={{ animationDelay: "260ms" }}>
             <Link
-              href="/login?intent=signup"
+              href={signedIn ? "/bots" : "/login?intent=signup"}
               className="land-cta-sheen relative overflow-hidden rounded-full bg-white px-6 py-3 text-[14px] font-semibold text-black transition hover:bg-neutral-200 active:scale-[0.98]"
             >
-              <span className="relative z-10">Get started — it&rsquo;s free</span>
+              <span className="relative z-10">{signedIn ? "Open your Bots" : "Get started — it’s free"}</span>
             </Link>
             <Link
-              href="/login"
+              href={signedIn ? "/bots" : "/login"}
               className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.03] px-5 py-3 text-[14px] font-medium text-neutral-200 backdrop-blur transition hover:border-white/25 hover:bg-white/[0.07] active:scale-[0.98]"
             >
-              Sign in
+              {signedIn ? "Your Bots" : "Sign in"}
               <Icon name="arrow-up-right" size={14} />
             </Link>
           </div>
@@ -287,10 +292,12 @@ export default async function LandingPage() {
             <div className="land-grid absolute inset-0 opacity-60" />
             <div className="relative">
               <h2 className="mx-auto max-w-[640px] text-balance text-[clamp(1.8rem,4vw,3rem)] font-semibold leading-tight tracking-[-0.035em]">
-                Give a Bot its first job.
+                {signedIn ? "Back to work." : "Give a Bot its first job."}
               </h2>
               <p className="mx-auto mt-3 max-w-[440px] text-[14.5px] leading-relaxed text-neutral-400">
-                Sign up in seconds, bring your own key, and meet the little face that does the boring part.
+                {signedIn
+                  ? "Your Bots are waiting. Pick one up where you left off."
+                  : "Sign up in seconds, bring your own key, and meet the little face that does the boring part."}
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-2.5">
                 <Link
@@ -319,12 +326,20 @@ export default async function LandingPage() {
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/login" className="transition hover:text-neutral-300">
-            Sign in
-          </Link>
-          <Link href="/login?intent=signup" className="transition hover:text-neutral-300">
-            Sign up
-          </Link>
+          {signedIn ? (
+            <Link href="/bots" className="transition hover:text-neutral-300">
+              Your Bots
+            </Link>
+          ) : (
+            <>
+              <Link href="/login" className="transition hover:text-neutral-300">
+                Sign in
+              </Link>
+              <Link href="/login?intent=signup" className="transition hover:text-neutral-300">
+                Sign up
+              </Link>
+            </>
+          )}
         </div>
       </footer>
     </main>
