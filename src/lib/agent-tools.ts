@@ -470,7 +470,7 @@ const STUDIO_TOOLS: Tool[] = [
   {
     name: "audio_add",
     description:
-      "Add a part to an audio project. A composed part is notes as “C4:0:1 E4:1:1 G4:2:2” (pitch:beat:length) or a noteList. kind drums writes a beat pattern in bars. kind sample places an audio artifact.",
+      "Add a part to an audio project. A composed part is notes as “C4:0:1 E4:1:1 G4:2:2” (pitch:beat:length) or a noteList. kind drums writes a beat in a given style and number of bars. kind sample places an audio artifact. The kit is addressed by pitch: C2 kick, D2 snare, F#2 closed hat, A#2 open hat, C#2 clap, D3 tom, F2 rim, A3 crash, G2 shaker, C3 cowbell.",
     parameters: obj(
       {
         title: { type: "string", description: "Project title." },
@@ -479,6 +479,11 @@ const STUDIO_TOOLS: Tool[] = [
         notes: { type: "string", description: "For kind notes: “C4:0:1 E4:1:1 G4:2:2”." },
         noteList: { type: "array", description: "Alternative to notes: [{pitch, at, beats}].", items: obj({ pitch: { type: "string" }, at: { type: "number" }, beats: { type: "number" } }, ["pitch", "at", "beats"]) },
         bars: { type: "number", description: "For kind drums: how many bars." },
+        style: {
+          type: "string",
+          enum: ["pop", "rock", "house", "trap", "halftime", "breaks", "lofi", "bossa", "waltz"],
+          description: "For kind drums: the idiom. house is four-on-the-floor with off-beat hats, trap rolls triplets, breaks is a 16th-note breakbeat, lofi is behind the beat, bossa is brushed with no backbeat, waltz is 3/4.",
+        },
         wave: { type: "string", enum: ["sine", "square", "sawtooth", "triangle"], description: "Tone. sine is soft, square is chiptune, sawtooth is strings, triangle is a bell." },
         source: { type: "string", description: "For kind sample: the audio artifact id." },
         start: { type: "number", description: "Seconds from the start. Defaults to after what is already on the track." },

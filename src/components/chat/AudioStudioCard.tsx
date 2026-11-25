@@ -19,10 +19,118 @@ import { Icon } from "../icons";
  * Using the same note data as everything else keeps the project one format.
  */
 
-const DRUM_PITCHES: Record<string, "kick" | "snare" | "hat"> = { C2: "kick", D2: "snare", "F#2": "hat" };
+/**
+ * The kit, addressed by pitch.
+ *
+ * Each name is a different synthesis recipe, not a different sample — a tom is
+ * a pitched sine with a shorter tail than a kick, a clap is three noise bursts
+ * a few milliseconds apart, and an open hat is the same noise as a closed one
+ * with a slower decay. Low pitches are drums and mid ones are cymbals, so a Bot
+ * writing notes can pick a piece of the kit the same way it picks a note.
+ */
+type DrumKind = "kick" | "snare" | "hat" | "openhat" | "clap" | "tom" | "rim" | "crash" | "shaker" | "cowbell";
+
+const DRUM_PITCHES: Record<string, DrumKind> = {
+  C2: "kick",
+  D2: "snare",
+  "F#2": "hat",
+  "A#2": "openhat",
+  "C#2": "clap",
+  D3: "tom",
+  "F2": "rim",
+  A3: "crash",
+  G2: "shaker",
+  C3: "cowbell",
+};
+
+/** The list, for the tool description and the read-back. */
+export const DRUM_NAMES: { pitch: string; kind: DrumKind }[] = Object.entries(DRUM_PITCHES).map(([pitch, kind]) => ({ pitch, kind }));
+
+/** A burst of filtered noise with an exponential decay — the basis of every
+ *  cymbal, snare and shaker in the kit. */
+function noiseBurst(ctx: AudioContext, dest: AudioNode, at: number, seconds: number, filter: { type: BiquadFilterType; frequency: number; q?: number }, gainValue: number, decay: number) {
+  const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * seconds)), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    // Noise with an exponential shaping: a hit, not a hiss.
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, decay);
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const biquad = ctx.createBiquadFilter();
+  biquad.type = filter.type;
+  biquad.frequency.value = filter.frequency;
+  if (filter.q) biquad.Q.value = filter.q;
+  const gain = ctx.createGain();
+  gain.gain.value = gainValue;
+  src.connect(biquad).connect(gain).connect(dest);
+  src.start(at);
+}
 
 /** Percussion is a shape, not a note: build it from an oscillator or noise. */
-function scheduleDrum(ctx: AudioContext, dest: AudioNode, kind: "kick" | "snare" | "hat", at: number, velocity: number) {
+function scheduleDrum(ctx: AudioContext, dest: AudioNode, kind: DrumKind, at: number, velocity: number) {
+  if (kind === "tom") {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(220, at);
+    osc.frequency.exponentialRampToValueAtTime(110, at + 0.18);
+    gain.gain.setValueAtTime(0.7 * velocity, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.3);
+    osc.connect(gain).connect(dest);
+    osc.start(at);
+    osc.stop(at + 0.32);
+    return;
+  }
+  if (kind === "rim") {
+    // A short pitched click: a stick on a rim.
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 1700;
+    gain.gain.setValueAtTime(0.18 * velocity, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.04);
+    osc.connect(gain).connect(dest);
+    osc.start(at);
+    osc.stop(at + 0.05);
+    return;
+  }
+  if (kind === "clap") {
+    // Three bursts a few milliseconds apart: one burst is a snare, three is a
+    // room of hands.
+    for (let i = 0; i < 3; i++) {
+      noiseBurst(ctx, dest, at + i * 0.011, 0.09, { type: "bandpass", frequency: 1400, q: 0.8 }, 0.28 * velocity, 3);
+    }
+    noiseBurst(ctx, dest, at + 0.033, 0.16, { type: "bandpass", frequency: 1200, q: 0.7 }, 0.18 * velocity, 2);
+    return;
+  }
+  if (kind === "crash") {
+    noiseBurst(ctx, dest, at, 1.1, { type: "highpass", frequency: 4200 }, 0.3 * velocity, 1.6);
+    return;
+  }
+  if (kind === "shaker") {
+    noiseBurst(ctx, dest, at, 0.06, { type: "highpass", frequency: 6500 }, 0.16 * velocity, 3);
+    return;
+  }
+  if (kind === "cowbell") {
+    // Two square waves a fifth apart, which is the whole joke of a cowbell.
+    for (const hz of [540, 800]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.11 * velocity, at);
+      gain.gain.exponentialRampToValueAtTime(0.001, at + 0.28);
+      osc.connect(gain).connect(dest);
+      osc.start(at);
+      osc.stop(at + 0.3);
+    }
+    return;
+  }
+  if (kind === "openhat") {
+    noiseBurst(ctx, dest, at, 0.34, { type: "highpass", frequency: 7000 }, 0.2 * velocity, 2.2);
+    return;
+  }
   if (kind === "kick") {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

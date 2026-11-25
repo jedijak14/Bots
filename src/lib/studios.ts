@@ -457,22 +457,67 @@ export async function readVideoProject(
 
 /** A drum pattern, written as notes, so the Bot can compose one. */
 function drumPattern(style: string, bars: number, bpm: number): { clip: Extract<AudioClip, { kind: "synth" }>; description: string } {
-  // Drum sounds are synthesised noise and clicks at these pitches; the names
-  // map to the kit the studio plays, not to real drums.
-  const beatsPerBar = 4;
-  const total = bars * beatsPerBar;
+  // A waltz is three beats to the bar. Treating it as a 4/4 pattern with fewer
+  // hits puts every bar after the first out of phase with the count.
+  const name0 = style.toLowerCase();
+  const beatsPerBar = name0 === "waltz" ? 3 : 4;
   const notes: Note[] = [];
-  const kick = "C2";
-  const snare = "D2";
-  const hat = "F#2";
-  const laid = style === "laidback";
-  for (let beat = 0; beat < total; beat++) {
-    // Kick on 1 and 3, plus a pickup before the bar when the style is busy.
-    if (beat % beatsPerBar === 0 || beat % beatsPerBar === 2) notes.push({ pitch: kick, at: beat, beats: 0.4, velocity: 1 });
-    if (beat % beatsPerBar === (laid ? 2 : 2)) notes.push({ pitch: snare, at: beat, beats: 0.4, velocity: 0.8 });
-    // Hats on every eighth; a laid-back pattern skips every other one.
-    if (!laid || beat % 2 === 0) notes.push({ pitch: hat, at: beat, beats: 0.2, velocity: 0.35 });
+  // Pitch names, corresponding to the kit the studio plays.
+  const K = "C2", S = "D2", H = "F#2", OH = "A#2", CL = "C#2", T = "D3", R = "F2", CR = "A3", SH = "G2";
+  const hit = (pitch: string, at: number, velocity = 0.8, beats = 0.25) => notes.push({ pitch, at, beats, velocity });
+
+  /**
+   * Each style is a bar pattern, not a tempo.
+   *
+   * The old generator had one rock beat with a "laidback" switch, so every
+   * genre came out the same. These are the actual idioms: house puts the kick
+   * on every beat and the hat on the off-beats, trap rolls the hats in
+   * triplets, bossa has no backbeat at all.
+   */
+  const name = style.toLowerCase();
+  for (let bar = 0; bar < bars; bar++) {
+    const b = bar * beatsPerBar;
+    if (name === "house" || name === "four-on-the-floor") {
+      for (let i = 0; i < 4; i++) hit(K, b + i, 1);
+      hit(CL, b + 1, 0.5); hit(CL, b + 3, 0.5);
+      for (let i = 0; i < 8; i++) hit(H, b + i * 0.5, i % 2 ? 0.5 : 0.28);
+      if (bar % 2) hit(OH, b + 3.5, 0.4);
+    } else if (name === "trap") {
+      hit(K, b, 1); hit(K, b + 1.5, 0.9); hit(K, b + 2.75, 0.8);
+      hit(S, b + 2, 0.85); hit(CL, b + 2, 0.4);
+      // Triplet rolls are the signature; a straight eighth note grid cannot
+      // express them, which is why the beat count is fractional.
+      for (let i = 0; i < 12; i++) hit(H, b + i / 3, i % 3 === 0 ? 0.45 : 0.22, 0.2);
+    } else if (name === "bossa" || name === "bossa nova") {
+      for (let i = 0; i < 4; i++) hit(K, b + i, i === 0 ? 0.9 : 0.55);
+      for (const at of [0.5, 1.5, 2.5, 3.5]) hit(R, b + at, 0.4);
+      for (const at of [1, 3]) hit(SH, b + at, 0.3);
+      hit(T, b + 2.5, 0.5);
+    } else if (name === "waltz") {
+      hit(K, b, 1); hit(R, b + 1, 0.35); hit(R, b + 2, 0.35);
+      hit(SH, b + 0.5, 0.22); hit(SH, b + 1.5, 0.22); hit(SH, b + 2.5, 0.22);
+    } else if (name === "trap-halftime" || name === "halftime") {
+      hit(K, b, 1); hit(K, b + 2.5, 0.8); hit(S, b + 2, 0.9);
+      for (let i = 0; i < 8; i++) hit(H, b + i * 0.5, 0.3);
+    } else if (name === "rock" || name === "driving") {
+      hit(K, b, 1); hit(K, b + 2, 0.95); hit(S, b + 1, 0.9); hit(S, b + 3, 0.9);
+      for (let i = 0; i < 8; i++) hit(H, b + i * 0.5, i % 2 ? 0.4 : 0.25);
+    } else if (name === "lofi" || name === "laidback" || name === "laid-back") {
+      hit(K, b, 0.95); hit(K, b + 2.5, 0.7); hit(S, b + 1, 0.7); hit(S, b + 3, 0.75);
+      for (let i = 0; i < 4; i++) hit(SH, b + i + 0.5, 0.28);
+      if (bar % 4 === 3) hit(CR, b, 0.35);
+    } else if (name === "break" || name === "breaks") {
+      hit(K, b, 1); hit(K, b + 2.5, 0.85); hit(S, b + 1, 0.9); hit(S, b + 3, 0.9);
+      for (let i = 0; i < 16; i++) hit(H, b + i * 0.25, i % 4 === 0 ? 0.4 : 0.2, 0.15);
+      hit(S, b + 3.75, 0.5);
+    } else {
+      // Pop: kick on 1 and 3, snare on 2 and 4, hats on eighths.
+      hit(K, b, 1); hit(K, b + 2, 0.9); hit(S, b + 1, 0.85); hit(S, b + 3, 0.85);
+      for (let i = 0; i < 8; i++) hit(H, b + i * 0.5, i % 2 ? 0.42 : 0.26);
+      if (bar === bars - 1) hit(CL, b + 3.5, 0.4);
+    }
   }
+
   const clip: Extract<AudioClip, { kind: "synth" }> = {
     kind: "synth",
     id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
@@ -480,11 +525,11 @@ function drumPattern(style: string, bars: number, bpm: number): { clip: Extract<
     duration: 0,
     wave: "square",
     notes,
-    gain: 0.25,
-    label: `${bars} bar ${style} drums`,
+    gain: 0.5,
+    label: name === "pop" ? "Drums" : `Drums (${name})`,
   };
   clip.duration = synthClipSeconds(clip, bpm);
-  return { clip, description: `${bars} bar${bars === 1 ? "" : "s"} of ${style} drums` };
+  return { clip, description: `${notes.length} hits, ${bars} bar${bars === 1 ? "" : "s"} of ${name === "pop" ? "pop" : name}` };
 }
 
 export async function openAudioStudio(
