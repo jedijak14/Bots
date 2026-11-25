@@ -173,6 +173,150 @@ const CALC_TOOL: Tool = {
 };
 
 /**
+ * Reading the web without a computer.
+ *
+ * `web_search` and `fetch_page` run `curl` inside the desktop sandbox, so an
+ * account with no E2B key had no way to look anything up at all — and the
+ * system prompt told it to say so. But searching and reading a page are plain
+ * HTTP; nothing about them needs a machine. These two do the same work from the
+ * server, and the desktop versions are still preferred when one exists because
+ * there the page renders the way a person would see it.
+ *
+ * These are `look_up` and `read_link`, not `search_web` / `open_page`: the 957
+ * tool library already uses `search_web` for a planner stub that writes a brief
+ * and does no searching at all.
+ */
+async function httpRaw(url: string, signal?: AbortSignal): Promise<string> {
+  const res = await doFetch(url, signal);
+  if (!res.ok) throw new Error(`That page answered ${res.status}.`);
+  return (await res.text()).slice(0, 400_000);
+}
+
+async function httpText(url: string, signal?: AbortSignal): Promise<string> {
+  let res: Response;
+  try {
+    res = await doFetch(url, signal);
+  } catch (e) {
+    // A bare "fetch failed" gives a model nothing to act on and gives the user
+    // nothing to fix. Name the failure the way the chat route already names
+    // provider failures.
+    const code = (e as Error & { cause?: { code?: string } }).cause?.code ?? "";
+    if (/ENOTFOUND|EAI_AGAIN/.test(code)) throw new Error(`The address for ${hostOf(url)} could not be resolved.`);
+    if (/CERT|TLS|SSL|VERIFY|LEAF|SIGNATURE/i.test(code)) throw new Error(`The certificate for ${hostOf(url)} could not be verified.`);
+    if (/ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR/.test(code)) throw new Error(`${hostOf(url)} did not respond.`);
+    throw new Error(`Could not reach ${hostOf(url)}.`);
+  }
+  if (!res.ok) {
+    throw new Error(`That page answered ${res.status}. ${res.status === 403 || res.status === 429 ? "It is likely blocking automated reads; tell the user the link and what to open." : ""}`.trim());
+  }
+  const type = res.headers.get("content-type") ?? "";
+  if (/json|xml|text\/plain|csv/.test(type)) return (await res.text()).slice(0, 60_000);
+  return stripHtml(await res.text());
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "that address";
+  }
+}
+
+async function doFetch(url: string, signal?: AbortSignal): Promise<Response> {
+  return fetch(url, {
+    signal,
+    redirect: "follow",
+    headers: {
+      // DuckDuckGo's HTML endpoint answers this UA and refuses a bare one; most
+      // sites serve a readable page rather than a bot wall for the same reason.
+      "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+    },
+  });
+}
+
+/** Turn a page into the words on it. Deliberately crude: tags out, entities in. */
+function stripHtml(html: string): string {
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<\/(p|div|li|h[1-6]|tr|section|article)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n");
+  return body
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCharCode(Number(d)))
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+const WEB_TOOLS: Tool[] = [
+  {
+    name: "look_up",
+    description:
+      "Search the live web and get back a numbered list of results with their links. Use it for anything current, factual, or that you are not certain of — then read the one that matters with read_link. Works with no computer.",
+    parameters: obj(
+      { query: { type: "string", description: "What to search for." } },
+      ["query"],
+    ),
+  },
+  {
+    name: "read_link",
+    description:
+      "Fetch a web page and return the text on it, with scripts and styling removed. Use it after look_up, or on any link the user gives you. Works with no computer.",
+    parameters: obj({ url: { type: "string", description: "The http or https address." } }, ["url"]),
+  },
+];
+
+/** The links in a DuckDuckGo HTML result page, in the order they appear. */
+function resultLinks(html: string): { title: string; url: string }[] {
+  const out: { title: string; url: string }[] = [];
+  const re = /<a[^>]+class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < 8) {
+    // DuckDuckGo wraps the destination in /l/?uddg=<encoded>.
+    const raw = m[1].replace(/&amp;/g, "&");
+    const target = /uddg=([^&]+)/.exec(raw);
+    const url = target ? decodeURIComponent(target[1]) : raw;
+    const title = stripHtml(m[2]).replace(/\s+/g, " ").trim();
+    if (/^https?:/i.test(url) && title) out.push({ title, url });
+  }
+  return out;
+}
+
+async function searchWeb(query: string, signal?: AbortSignal): Promise<string> {
+  const q = encodeURIComponent(query);
+  // The links have to come out of the markup, so this one reads the page raw:
+  // `httpText` returns the words with every tag removed, and an `<a href>` is
+  // precisely what a search result is.
+  const html = await httpRaw(`https://html.duckduckgo.com/html/?q=${q}`, signal).catch(() => "");
+  const links = resultLinks(html);
+  if (links.length) {
+    // The snippets are worth less than the pages themselves, and clickable
+    // addresses are what a model needs to take the next step.
+    return [
+      `Results for “${query}”:`,
+      ...links.map((l, n) => `${n + 1}. ${l.title}\n   ${l.url}`),
+      "Call read_link on the one that looks right to read it.",
+    ].join("\n");
+  }
+  // DuckDuckGo turned us away; Bing is a second opinion, and its text is still
+  // a real list of results even without the link extraction.
+  const fallback = await httpText(`https://www.bing.com/search?q=${q}`, signal).catch(() => "");
+  if (fallback.length > 200) return clip(fallback, 8000);
+  throw new Error("The search engines did not answer. Try read_link on a specific address instead, or tell the user you could not look it up.");
+}
+
+/**
  * Evaluate an arithmetic expression.
  *
  * Not `eval`: the expression is parsed here, so `process.exit()` is a syntax
@@ -447,10 +591,22 @@ export function buildToolset(opts: {
   // the schema. That is the difference between "a thousand tools available" and
   // "a thousand tool definitions in every prompt".
   const libraryMatches = opts.libraryQuery ? searchToolLibrary(opts.libraryQuery, 8) : [];
-  const matchedLibraryTools = libraryMatches.map((match) => match.tool);
+  const matchedLibraryTools = libraryMatches
+    .map((match) => match.tool)
+    // The 957-tool library contains planner stubs — `search_web` among them —
+    // that save a brief and return instructions instead of doing the work. When
+    // one shares a name with a real implementation, the stub wins by appearing
+    // later in the schema, and the user gets "search_web is ready to run" for a
+    // simple web search. A stub is never worth a name that is already taken.
+    .filter((tool) => ![...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...WEB_TOOLS, ...(e2bKey ? COMPUTER_TOOLS : []), ...(opts.packTools ?? [])].some((real) => real.name === tool.name));
+  // With a desktop, `web_search` and `fetch_page` do this job inside the
+  // sandbox. Without one these are the only way to read the web, so the two
+  // sets are never both in the schema — a model choosing between `web_search`
+  // and `search_web` would waste a step working out the difference.
+  const webTools = e2bKey ? [] : WEB_TOOLS;
   const allTools = e2bKey
     ? [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...COMPUTER_TOOLS, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools]
-    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
+    : [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...webTools, ...(opts.packTools ?? []), ...LIBRARY_META_TOOLS, ...matchedLibraryTools];
   const tools: Tool[] = allTools.filter((tool) => {
     if (tool.name === "ask_user") return true;
     if (toolAllowlist && !toolAllowlist.has(tool.name)) return false;
@@ -487,6 +643,10 @@ export function buildToolset(opts: {
         return `Ran ${clip(s("command").replace(/\s+/g, " "), 70)}`;
       case "calculate":
         return `Calculated ${clip(s("expression"), 50)}`;
+      case "look_up":
+        return `Searched “${clip(s("query"), 60)}”`;
+      case "read_link":
+        return `Read ${clip(s("url"), 70)}`;
       case "workspace_write":
         return `Saved ${clip(s("path"), 60)} to the workspace`;
       case "workspace_read":
@@ -791,7 +951,11 @@ export function buildToolset(opts: {
           : undefined,
       });
     }
-    if (opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
+    // This runs before the handlers below, so a library stub called `look_up`
+    // would swallow the real one. The filter above already keeps such names out
+    // of the schema; this guards the ordering as well.
+    const isRealTool = [ASK, ...CORE_TOOLS, ...WORKSPACE_TOOLS, CALC_TOOL, ...WEB_TOOLS].some((t) => t.name === name);
+    if (!isRealTool && opts.libraryQuery && matchedLibraryTools.some((tool) => tool.name === name)) {
       const tool = libraryToolByName(name);
       if (tool) {
         return runLibraryTool(tool, { title: String(a.title ?? tool.summary), detail: String(a.detail ?? "") }, {
@@ -887,6 +1051,20 @@ export function buildToolset(opts: {
       } catch (e) {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
+    }
+    if (name === "look_up") {
+      const query = String(a.query ?? "").trim();
+      if (!query) return { output: "Give look_up something to search for." };
+      // Thrown rather than returned so the step is marked failed and the model
+      // gets an `Error:` line it will treat as a wall to route around.
+      return { output: clip(await searchWeb(query, opts.signal), 12000) };
+    }
+    if (name === "read_link") {
+      const raw = String(a.url ?? "").trim();
+      const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+      if (!/^https?:\/\/[^\s]+$/i.test(url)) throw new Error("That is not a web address. It should look like https://example.com/page");
+      const text = await httpText(url, opts.signal);
+      return { output: text.trim() ? clip(text, 12000) : "(The page had no readable text — it may be built entirely by scripts.)" };
     }
     if (name === "workspace_write") {
       const path = String(a.path ?? "").trim().slice(0, 200);

@@ -752,7 +752,13 @@ export async function runLibraryTool(
     brief.next = "save_artifact";
   } else if (tool.action === "research") {
     brief.instructions.push(`Research ${preset.source ?? "the web"} and ${preset.verb ?? "summarise"}.`, "Return findings with links. Do not invent sources.");
-    brief.next = "web_search or fetch_page, then save_artifact the summary";
+    // `web_search` only exists on an account with a computer; a research stub
+    // that names it sends a computerless Bot looking for a tool it does not have.
+    // `writeFile` is only wired when there is a computer, so it is the signal
+    // for which pair of web tools this Bot actually has.
+    brief.next = ctx.writeFile
+      ? "web_search or fetch_page, then save_artifact the summary"
+      : "look_up then read_link on the best result, then save_artifact the summary";
   } else if (tool.action === "design_system") {
     brief.instructions.push(`Define ${preset.topic ?? "the design system"}${preset.verb ? ` (${preset.verb})` : ""}.`, "Give concrete values: hex codes, px sizes, ms durations. Not adjectives.");
     brief.next = "design_brief";

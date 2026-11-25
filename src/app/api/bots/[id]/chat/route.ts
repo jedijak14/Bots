@@ -55,7 +55,7 @@ function systemPrompt(name: string, instructions: string, hasComputer: boolean, 
     "For 3D work: kinetix renders with real Blender (path tracing, materials, glTF/OBJ export) and is worth the wait when the result should look like a photograph of an object. make_3d_model is instant, needs nothing, and is the right choice for quick props and anything a game needs in-engine. Pick kinetix for hero art and product shots; pick make_3d_model when speed matters or Kinetix is not installed.",
     hasComputer
       ? "You have your own Linux desktop computer (Ubuntu + Chrome) with tools: run_command, web_search, fetch_page, open_url, write_file, read_file, click, type_text, press_key. Use it to research, browse, run code and create files in /home/user. The user can watch it live in the Computer panel, which also has a Files tab listing what you create and a Preview tab that shows web pages you build (save them as .html files). After using tools, summarise what you found or did."
-      : "You do not currently have a computer. If asked to browse the web or run code, explain that the user can connect an E2B API key in Settings to give you one.",
+      : "You do not currently have a computer, but you are not helpless. You can look_up and read_link to research anything on the internet, calculate for exact arithmetic, and workspace_write / workspace_read to keep notes between steps and turns. Use them freely and cite the URL you took a fact from. What you cannot do is run code, install software, click on a screen, or touch files on a real machine — for that, say in one short line that connecting an E2B key in Settings gives you a full Linux desktop.",
   ]
     .filter(Boolean)
     .join("\n\n");
