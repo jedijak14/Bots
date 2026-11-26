@@ -4,6 +4,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./icons";
 import { cx } from "./ui";
+import { menuPosition, MENU_ITEM_HEIGHT, MENU_PADDING } from "@/lib/menu-position";
 
 export type MenuItem = {
   label: string;
@@ -16,9 +17,8 @@ export type MenuItem = {
 export type MenuPosition = { left: number; top: number; origin: string };
 
 export const MENU_WIDTH = 208;
-const ITEM_H = 36;
-const PAD = 5;
-const EDGE = 8;
+const ITEM_H = MENU_ITEM_HEIGHT;
+const PAD = MENU_PADDING;
 
 /**
  * Works out where a menu should open so it always stays on screen: below the
@@ -30,17 +30,7 @@ export function placeMenu(
   itemCount: number,
   opts: { width?: number; align?: "start" | "end"; gap?: number } = {},
 ): MenuPosition {
-  const width = opts.width ?? MENU_WIDTH;
-  const gap = opts.gap ?? 6;
-  const height = itemCount * ITEM_H + PAD * 2;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const wanted = opts.align === "start" ? anchor.left : anchor.right - width;
-  const left = Math.max(EDGE, Math.min(wanted, vw - width - EDGE));
-  const below = anchor.bottom + gap;
-  const fitsBelow = below + height <= vh - EDGE;
-  const top = fitsBelow ? below : Math.max(EDGE, anchor.top - gap - height);
-  return { left, top, origin: `${opts.align === "start" ? "left" : "right"} ${fitsBelow ? "top" : "bottom"}` };
+  return menuPosition(anchor, itemCount, { width: window.innerWidth, height: window.innerHeight }, { ...opts, width: opts.width ?? MENU_WIDTH });
 }
 
 /**
@@ -111,7 +101,6 @@ export function Menu({
     else if (e.key === "Home") go(0);
     else if (e.key === "End") go(buttons.length - 1);
     else if (e.key === "Tab") {
-      e.preventDefault();
       onClose();
       trigger?.focus({ preventScroll: true });
     }
@@ -124,8 +113,8 @@ export function Menu({
       aria-label={label}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
-      className="menu-in fixed z-[95] rounded-xl border border-white/10 bg-[#202024] shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
-      style={{ left: position.left, top: position.top, width, padding: PAD, transformOrigin: position.origin }}
+      className="menu-in fixed z-[95] overflow-y-auto rounded-xl border border-white/10 bg-[#202024] shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
+      style={{ left: position.left, top: position.top, width, maxWidth: "calc(100vw - 16px)", maxHeight: "calc(100dvh - 16px)", padding: PAD, transformOrigin: position.origin }}
     >
       {items.map((m) => (
         <button

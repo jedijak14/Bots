@@ -15,7 +15,7 @@ export function ModelPicker({ botId, variant = "header" }: { botId: string; vari
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
-  const effective = bot?.model || app.settings.defaultModel;
+  const effective = (app.settings.usingIncludedAi || app.settings.usingFreeCloud) ? app.settings.defaultModel : bot?.model || app.settings.defaultModel;
 
   useEffect(() => {
     if (!open) return;

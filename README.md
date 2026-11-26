@@ -1,8 +1,8 @@
 # Bots
 
 A full stack web app for creating AI companions. Every bot has its own look, its own
-conversation and — with an E2B key — its own cloud computer. You bring your own AI
-provider key; nothing is sent anywhere else.
+conversation and — with an E2B key — its own cloud computer. Use your own AI
+provider key or an optional deployment-provided inference service.
 
 Built with Next.js (App Router), Postgres and Drizzle ORM.
 
@@ -36,7 +36,7 @@ npm run dev                   # http://localhost:3000
 ```
 
 Open the app, create an account on the sign-in page and you're in. Add your AI provider
-key (and optionally an E2B key) under Settings.
+key (and optionally an E2B key) under Settings, unless the operator has configured included AI. See [Gemma and included AI](docs/gemma.md) for hosting requirements and limitations.
 
 ## Scripts
 
@@ -106,3 +106,13 @@ missing instead of just saying "couldn't send".
 The app is a normal Next.js project. Point `DATABASE_URL` at Postgres, run
 `npm run db:migrate` against it, and deploy. Migrations are idempotent where they can
 be, so they are safe to run on an existing database.
+
+## Free cloud AI (optional)
+
+Settings → AI Provider offers three explicitly opted-in anonymous routes: **Try Kilo Free** (`kilo-auto/free`), **Try Gemma via Kilo** (`google/gemma-4-26b-a4b-it:free`), and **Try OVHcloud** (`gpt-oss-20b`). No personal API key is required. Each sends the conversation, tool definitions and tool results to the selected provider and its model providers. Some free models may collect data; consult each provider's policy before opting in. Selecting a route replaces any saved personal AI provider and key after confirmation. The routes use fixed hosts and models and do not automatically fall back to a paid model or another provider.
+
+Both are rate-limited and availability or terms can change. Kilo documents a free-model limit per IP, while OVHcloud documents an anonymous limit per IP and model. These are not unlimited or guaranteed services. An agent turn can involve several model requests, so it may use multiple requests of a provider's quota. See [Kilo authentication](https://kilo.ai/docs/gateway/authentication), [Kilo usage and billing](https://kilo.ai/docs/gateway/usage-and-billing), and [OVHcloud getting started](https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-getting-started?id=kb_article_view&sysparm_article=KB0065403).
+
+### Helper Bots
+
+Ask explicitly to use Helper Bots or delegate if you want the main Bot to split a hosted-model task. Up to four helpers work concurrently, using the same selected provider and model; each can make additional model requests, which may be billed or rate-limited. They are not used for ordinary requests or by Orbit Local. Helpers can use permitted research and deterministic analysis tools and create artifacts or agent-operated audio/video projects; their tools are limited to the parent Bot's enabled permissions. They cannot access connected accounts, send email, run shell commands, or operate the screen. File and project workspaces are shared, so parallel edits to the same item can conflict. Reports are available to the parent only during the current turn; unfinished helpers are stopped when it ends.

@@ -620,6 +620,14 @@ function drumPattern(style: string, bars: number, bpm: number): { clip: Extract<
     }
   }
 
+  // "nonsense" used to be reported as "1 bar of nonsense" — the caller-visible
+  // summary named a style that does not exist, which reads as if it worked. The
+  // fallback pattern is pop, so everything downstream names pop and the message
+  // says which styles are real.
+  const KNOWN = ["pop", "rock", "house", "four-on-the-floor", "trap", "halftime", "trap-halftime", "break", "breaks", "lofi", "laidback", "laid-back", "bossa", "bossa nova", "waltz", "driving"];
+  const played = KNOWN.includes(name) ? (name === "driving" ? "rock" : name) : "pop";
+  const note = KNOWN.includes(name) ? "" : ` (there is no “${name}” style — the styles are ${["pop", "rock", "house", "trap", "halftime", "breaks", "lofi", "bossa", "waltz"].join(", ")})`;
+
   const clip: Extract<AudioClip, { kind: "synth" }> = {
     kind: "synth",
     id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
@@ -628,10 +636,12 @@ function drumPattern(style: string, bars: number, bpm: number): { clip: Extract<
     wave: "square",
     notes,
     gain: 0.5,
-    label: name === "pop" ? "Drums" : `Drums (${name})`,
+    // The label is stored and read back later, so it must name the style that
+    // is actually in the clip, not the word that was asked for.
+    label: played === "pop" ? "Drums" : `Drums (${played})`,
   };
   clip.duration = synthClipSeconds(clip, bpm);
-  return { clip, description: `${notes.length} hits, ${bars} bar${bars === 1 ? "" : "s"} of ${name === "pop" ? "pop" : name}` };
+  return { clip, description: `${notes.length} hits, ${bars} bar${bars === 1 ? "" : "s"} of ${played}${note}` };
 }
 
 export async function openAudioStudio(
@@ -785,6 +795,12 @@ export async function editAudioTrack(
   // echo and vibrato all live on the clip. `parts` says which, and `clip` picks
   // one; without an id every clip on the named track is changed.
   const clip = findAudioClip(spec, a.clip ?? a.id, a.track);
+  // A named part that does not exist is an error, not an empty loop: the call
+  // reported "cutoff, attack, detune changed" and changed nothing at all.
+  if ((a.clip ?? a.id) !== undefined && !clip) {
+    const ids = spec.tracks.flatMap((t) => t.clips.map((c) => c.id));
+    return { output: ids.length ? `No part with id “${String(a.clip ?? a.id)}”. The parts are ${ids.join(", ")}.` : `“${title}” has no parts yet, so there is nothing to change.` };
+  }
   const clips = clip ? [clip.clip] : String(a.track ?? "") ? spec.tracks.filter((t) => t.id === String(a.track)).flatMap((t) => t.clips) : [];
   const touched = new Set<string>();
   for (const c of clips) {

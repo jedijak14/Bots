@@ -81,11 +81,12 @@ export function previewTime(project: VideoProjectSpec): number {
     if (track.muted) continue;
     for (const clip of track.clips) {
       if (clip.kind === "audio" || clip.start > 0.001) continue;
-      // The clip at the head of the film: rest past its entry, inside it.
-      return Math.round(Math.min(clip.start + Math.max(0.5, clip.duration * 0.25), total - 0.01) * 100) / 100;
+      // Stay inside the opening clip, even when later clips make the film long.
+      if (clip.duration <= 0) continue;
+      return Math.max(0, clip.start + Math.min(Math.max(0.5, clip.duration * 0.25), clip.duration * 0.9, Math.max(0, total - clip.start - 0.001)));
     }
   }
-  return Math.round(Math.min(0.5, total - 0.01) * 100) / 100;
+  return Math.max(0, Math.min(0.5, total - 0.001));
 }
 
 /** How far through its entry a clip is, 0 at the first frame, 1 when done. */

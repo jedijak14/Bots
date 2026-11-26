@@ -1,4 +1,5 @@
 import "server-only";
+import { isUuid } from "./ids";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bots, messages, type ChoicesRecord, type StepRecord } from "@/db/schema";
@@ -52,7 +53,7 @@ export function toBotDTO(bot: typeof bots.$inferSelect, preview: string): BotDTO
 }
 
 export async function getBot(userId: string, id: string) {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!isUuid(id)) return null;
   const rows = await db
     .select()
     .from(bots)

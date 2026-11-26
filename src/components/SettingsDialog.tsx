@@ -1,5 +1,7 @@
 "use client";
 
+import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
+
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { isLocalBaseUrl, PROVIDER_IDS, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
@@ -51,7 +53,7 @@ const ALL_TABS = TAB_GROUPS.flatMap((group) => group.items);
 export function SettingsDialog() {
   const app = useApp();
   const pathname = usePathname();
-  const currentBotId = pathname.match(/\/bot\/([^/]+)/)?.[1] ?? null;
+  const currentBotId = pathname.match(/\/bots\/([^/]+)/)?.[1] ?? null;
   const [tab, setTab] = useState<SettingsTab>(app.settingsTab ?? "ai");
   const [query, setQuery] = useState("");
 
@@ -61,7 +63,7 @@ export function SettingsDialog() {
   const groups = needle
     ? TAB_GROUPS.map((group) => ({
         ...group,
-        items: group.items.filter((item) => `${item.label} ${item.summary}`.toLowerCase().includes(needle)),
+        items: group.items.filter((item) => `${item.label} ${item.summary} ${item.id === "ai" ? "orbit local beta gemma model" : ""}`.toLowerCase().includes(needle)),
       })).filter((group) => group.items.length)
     : TAB_GROUPS;
   const meta = ALL_TABS.find((item) => item.id === tab);
@@ -69,7 +71,7 @@ export function SettingsDialog() {
   return (
     <Modal onClose={app.closeSettings} width={900} label="Settings">
       <div className="flex h-[min(680px,calc(100dvh-2rem))] flex-col md:flex-row">
-        <nav className="shrink-0 border-b border-white/[0.06] md:w-[248px] md:border-b-0 md:border-r">
+        <nav className="shrink-0 border-b border-white/[0.06] md:flex md:min-h-0 md:w-[248px] md:flex-col md:border-b-0 md:border-r">
           {/* On a phone the nav is a scrolling strip, so it needs a title of its own
               and an edge that hints there is more to the right. */}
           <div className="flex items-center gap-2 px-4 pb-1 pt-3.5 md:mb-2 md:px-2.5 md:pb-2 md:pt-1.5">
@@ -88,7 +90,7 @@ export function SettingsDialog() {
               />
             </label>
           </div>
-          <div className="flex gap-1 overflow-x-auto p-2.5 pt-1.5 [mask-image:linear-gradient(to_right,transparent,black_6px,black_calc(100%-18px),transparent)] [scrollbar-width:none] md:flex-col md:gap-0 md:overflow-visible md:p-0 md:[mask-image:none]">
+          <div className="flex gap-1 overflow-x-auto p-2.5 pt-1.5 [mask-image:linear-gradient(to_right,transparent,black_6px,black_calc(100%-18px),transparent)] [scrollbar-width:none] md:min-h-0 md:flex-1 md:flex-col md:gap-0 md:overflow-y-auto md:overflow-x-hidden md:p-0 md:[mask-image:none]">
           {groups.map((group) => (
             <div key={group.label} className="contents md:block">
               <div className="hidden px-3 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.09em] text-neutral-600 md:block">
@@ -105,8 +107,8 @@ export function SettingsDialog() {
                 >
                   <Icon name={t.icon} size={15} className={cx("shrink-0", tab === t.id ? "text-[#a8c0ff]" : "text-neutral-500")} />
                   {t.label}
-                  {t.id === "ai" && !app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-amber-400" />}
-                  {t.id === "ai" && app.settings.hasAiKey && <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />}
+                  {t.id === "ai" && !app.settings.hasAiKey && !app.settings.preferOrbitLocal && <span className="ml-auto size-1.5 rounded-full bg-amber-400" />}
+                  {t.id === "ai" && (app.settings.hasAiKey || app.settings.preferOrbitLocal) && <span className="ml-auto size-1.5 rounded-full bg-emerald-400" />}
                 </button>
               ))}
             </div>
@@ -210,7 +212,7 @@ function AiTab() {
   const app = useApp();
   const s = app.settings;
   const [key, setKey] = useState("");
-  const [mode, setMode] = useState<string>(s.aiProviderMode || "auto");
+  const [mode, setMode] = useState<string>(s.preferOrbitLocal ? "orbit-local" : s.aiProviderMode || "auto");
   const [reasoning, setReasoning] = useState<"off" | "low" | "medium" | "high">(s.reasoning ?? "off");
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   /**
@@ -241,14 +243,13 @@ function AiTab() {
   // setting that silently does nothing.
   const [reason, setReason] = useState<{ ok: boolean; detail: string; callsPerReply: number } | null>(null);
   useEffect(() => {
-    if (reasoning === "off") {
-      setReason(null);
-      return;
-    }
-    fetch("/api/settings/reasoning")
+    if (reasoning === "off") return;
+    const controller = new AbortController();
+    fetch("/api/settings/reasoning", { signal: controller.signal })
       .then((r) => r.json())
-      .then((j) => setReason({ ok: !!j.ok, detail: String(j.detail ?? ""), callsPerReply: Number(j.callsPerReply ?? 0) }))
-      .catch(() => setReason(null));
+      .then((j) => { if (!controller.signal.aborted) setReason({ ok: !!j.ok, detail: String(j.detail ?? ""), callsPerReply: Number(j.callsPerReply ?? 0) }); })
+      .catch(() => { if (!controller.signal.aborted) setReason(null); });
+    return () => controller.abort();
   }, [reasoning, s.hasAiKey]);
 
   async function save() {
@@ -275,8 +276,65 @@ function AiTab() {
     }
   }
 
+  async function selectOrbitLocal() {
+    const ok = await app.confirm({ title: "Orbit Local — Beta report", body: ORBIT_BETA_WARNING, confirmLabel: "Use Orbit Local Beta" });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferOrbitLocal: true }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not select Orbit Local.");
+      app.setSettings(data);
+      setMode("orbit-local");
+      setMsg({ ok: true, text: "Orbit Local Beta is selected for new chats. The model downloads on first use, not now." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not select Orbit Local." });
+    } finally { setBusy(false); }
+  }
+
+  async function useHostedProvider() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferOrbitLocal: false }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not switch providers.");
+      app.setSettings(data);
+      setMode(data.aiProviderMode || "auto");
+      setMsg({ ok: true, text: "Hosted provider selected for new chats." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not switch providers." });
+    } finally { setBusy(false); }
+  }
+
+  async function selectFreeCloud(provider: "kilo-free" | "kilo-gemma-free" | "ovh-free") {
+    const kilo = provider !== "ovh-free";
+    const name = provider === "kilo-gemma-free" ? "Gemma via Kilo" : kilo ? "Kilo" : "OVHcloud";
+    const ok = await app.confirm({
+      title: `Use ${name}'s anonymous cloud AI?`,
+      body: `This sends your prompts, conversation context, tool definitions and results to ${name}${kilo ? " and its model providers; some free models may collect data" : ""}. Anonymous usage is rate-limited and availability can change; it is not unlimited. Switching replaces and removes any saved personal AI key. Continue?`,
+      confirmLabel: `Use ${name}`,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/settings/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: provider }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not configure free cloud AI.");
+      app.setSettings(data.settings);
+      setModels(data.models ?? []);
+      setModel(data.settings.defaultModel ?? "");
+      setMode("auto");
+      setBaseUrl("");
+      setReasoning("off");
+      setKey("");
+      setMsg({ ok: true, text: `${name} configured. Availability is not yet verified; try a chat.` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not configure free cloud AI." });
+    } finally { setBusy(false); }
+  }
+
   async function remove() {
-    if (!(await app.confirm({ title: "Remove AI key?", body: "Your bots won't be able to reply until you add a key again.", confirmLabel: "Remove", danger: true }))) return;
+    if (!(await app.confirm({ title: s.usingFreeCloud ? "Stop using free cloud AI?" : "Remove AI key?", body: "Your bots will use included AI if it is configured; otherwise add a key to resume chatting.", confirmLabel: "Remove", danger: true }))) return;
     const res = await fetch("/api/settings/ai", { method: "DELETE" });
     const j = await res.json();
     if (res.ok) {
@@ -288,21 +346,29 @@ function AiTab() {
   }
 
   return (
-    <Section title="AI Provider" desc="Bring your own key. Paste it and the provider is detected from the key itself — OpenAI, Anthropic, Google AI Studio, OpenRouter, Groq, xAI, DeepSeek, NVIDIA NIM and more.">
+    <Section title="AI Provider" desc="Use the deployment’s included AI when available, or connect your own provider. Included AI is hosted by the deployment operator; availability and privacy depend on that host.">
+      <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] p-3 text-[13px] text-neutral-300">
+        <div className="font-medium text-white">Orbit Local <span className="text-amber-300">Beta</span>{s.preferOrbitLocal ? " · Selected" : ""}</div>
+        <p className="mt-1 text-[12px] text-neutral-400">Gemma runs in your browser without a model-provider request quota. Experimental; device and download requirements apply.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" onClick={selectOrbitLocal} disabled={busy} className={btnWhite}>{s.preferOrbitLocal ? "Review beta report" : "Use Orbit Local Beta"}</button>
+          {s.preferOrbitLocal && <button type="button" onClick={useHostedProvider} disabled={busy} className={btnWhite}>Use hosted provider instead</button>}
+        </div>
+      </div>
       <StatusPill ok={s.hasAiKey}>
         {s.hasAiKey ? (
           <>
-            Connected to <b className="font-semibold">{s.aiProviderLabel}</b>
-            <span className="font-mono text-[12px] opacity-70">{s.aiKeyHint}</span>
+            {s.usingIncludedAi || s.usingFreeCloud ? "Configured to use" : "Connected to"} <b className="font-semibold">{s.aiProviderLabel}</b>
+            <span className="font-mono text-[12px] opacity-70">{s.usingIncludedAi || s.usingFreeCloud ? "No personal API key required" : s.aiKeyHint}</span>
           </>
         ) : (
-          "No key yet. Your bots need one to reply."
+          "No hosted provider configured. Orbit Local Beta can be selected above."
         )}
       </StatusPill>
 
       <div>
-        <Label hint={s.hasAiKey ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…, nvapi-…"}>API key</Label>
-        <SecretInput value={key} onChange={setKey} placeholder={s.hasAiKey ? "Saved — paste a new key to replace it" : "Paste your API key"} label="AI API key" />
+        <Label hint={s.hasAiKey && !s.usingIncludedAi && !s.usingFreeCloud ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…, nvapi-…"}>API key</Label>
+        <SecretInput value={key} onChange={setKey} placeholder={s.hasAiKey && !s.usingIncludedAi && !s.usingFreeCloud ? "Saved — paste a new key to replace it" : "Paste your API key"} label="AI API key" />
       </div>
 
       <div>
@@ -310,14 +376,16 @@ function AiTab() {
         <select
           value={mode}
           onChange={(e) => {
+            if (e.target.value === "orbit-local") { void selectOrbitLocal(); return; }
             setMode(e.target.value);
             if (e.target.value === "custom") setAdvanced(true);
           }}
           className={cx(inputCls, "appearance-none")}
           aria-label="Provider"
         >
+          <option value="orbit-local">Orbit Local (Beta) — runs in your browser</option>
           <option value="auto">Auto-detect from key</option>
-          {PROVIDER_IDS.map((p: ProviderId) => (
+          {PROVIDER_IDS.filter((p) => p !== "kilo-free" && p !== "kilo-gemma-free" && p !== "ovh-free").map((p: ProviderId) => (
             <option key={p} value={p}>
               {p === "custom" ? "OpenAI-compatible (custom base URL)" : PROVIDERS[p].label}
             </option>
@@ -350,7 +418,9 @@ function AiTab() {
       {s.hasAiKey && (
         <div>
           <Label hint="Used by new bots. You can also pick a model per bot from the chat header.">Default model</Label>
-          {models.length ? (
+          {s.usingIncludedAi || s.usingFreeCloud ? (
+            <p className="text-[13px] text-neutral-300">{s.defaultModel} · {s.usingFreeCloud ? "free route; subject to availability" : "configured by the deployment operator"}</p>
+          ) : models.length ? (
             <select
               value={model}
               onChange={(e) => {
@@ -377,7 +447,7 @@ function AiTab() {
               className={inputCls}
             />
           )}
-          <div className="mt-3">
+          {!s.usingFreeCloud && <div className="mt-3">
             <Label hint="Only needed when your provider serves pictures on a different model.">Image model</Label>
             <input
               value={imageModel}
@@ -387,12 +457,12 @@ function AiTab() {
               aria-label="Image model"
               className={inputCls}
             />
-          </div>
+          </div>}
 
           {/* Reasoning. The honest framing matters here: these levels buy
               accuracy with extra model calls on the user's own key, so each one
               says what it costs rather than implying a better model. */}
-          <div className="mt-3">
+          {!s.usingFreeCloud && <div className="mt-3">
             <Label hint="Runs your key through OptiLLM. Higher levels make more model calls per reply and cost more.">Reasoning</Label>
             <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1" role="radiogroup" aria-label="Reasoning level">
               {(["off", "low", "medium", "high"] as const).map((level) => (
@@ -426,7 +496,7 @@ function AiTab() {
                 ? " A reply that uses tools always runs direct, with no extra calls — reasoning only pays for itself when the model is thinking, not when it is acting."
                 : ""}
             </p>
-            {reason && (
+            {reasoning !== "off" && reason && (
               <p
                 className={cx(
                   "mt-1.5 flex items-start gap-1.5 text-[12px]",
@@ -437,20 +507,24 @@ function AiTab() {
                 <span>{reason.detail}</span>
               </p>
             )}
-          </div>
+          </div>}
         </div>
       )}
 
+      {s.usingFreeCloud && <p className="text-[12px] text-neutral-400">Anonymous cloud AI is rate-limited, not unlimited. Conversation and tool context go to {s.aiProvider !== "ovh-free" ? "Kilo and its model providers" : "OVHcloud"}. <a className="underline" href={s.aiProvider !== "ovh-free" ? "https://kilo.ai/docs/gateway/usage-and-billing" : "https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-getting-started?id=kb_article_view&sysparm_article=KB0065403"} target="_blank" rel="noreferrer">Provider policy</a></p>}
       {msg && <p className={cx("text-[13px]", msg.ok ? "text-emerald-400" : "text-[#ff6b7a]")}>{msg.text}</p>}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <button onClick={save} disabled={busy || (!key.trim() && !s.hasAiKey && !localBase)} className={btnWhite}>
+        <button onClick={save} disabled={busy || mode === "orbit-local" || (!key.trim() && (!s.hasAiKey || s.usingIncludedAi || s.usingFreeCloud) && !localBase)} className={btnWhite}>
           {busy ? <Spinner size={14} /> : null}
-          {s.hasAiKey && !key.trim() ? "Re-verify & save" : "Verify & save"}
+          {s.hasAiKey && !s.usingIncludedAi && !s.usingFreeCloud && !key.trim() ? "Re-verify & save" : "Verify & save"}
         </button>
-        {s.hasAiKey && (
+        {s.aiProvider !== "kilo-free" && <button onClick={() => selectFreeCloud("kilo-free")} disabled={busy} className={btnWhite}>Try Kilo Free</button>}
+        {s.aiProvider !== "kilo-gemma-free" && <button onClick={() => selectFreeCloud("kilo-gemma-free")} disabled={busy} className={btnWhite}>Try Gemma via Kilo</button>}
+        {s.aiProvider !== "ovh-free" && <button onClick={() => selectFreeCloud("ovh-free")} disabled={busy} className={btnWhite}>Try OVHcloud</button>}
+        {s.hasAiKey && !s.usingIncludedAi && (
           <button onClick={remove} className={btnDanger}>
-            Remove key
+            {s.usingFreeCloud ? "Stop using free cloud" : "Remove key"}
           </button>
         )}
       </div>

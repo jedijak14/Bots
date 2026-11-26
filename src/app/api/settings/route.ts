@@ -25,6 +25,7 @@ export async function PATCH(req: Request) {
     if (typeof b.followMouse === "boolean") patch.followMouse = b.followMouse;
     if (typeof b.animations === "boolean") patch.animations = b.animations;
     if (typeof b.voiceReplies === "boolean") patch.voiceReplies = b.voiceReplies;
+    if (typeof b.preferOrbitLocal === "boolean") patch.preferOrbitLocal = b.preferOrbitLocal;
     if (typeof b.defaultModel === "string") patch.defaultModel = b.defaultModel.slice(0, 200) || null;
     if (typeof b.imageModel === "string") patch.imageModel = b.imageModel.slice(0, 200) || null;
     if (b.theme === "dark" || b.theme === "light" || b.theme === "system") patch.theme = b.theme;

@@ -12,6 +12,7 @@ import {
   PROVIDERS,
   type ProviderId,
 } from "@/lib/ai/providers";
+import { anonymousFreeCloudConfig, isFreeCloudProvider } from "@/lib/ai/free-cloud";
 import { getSettings, isLocalBaseUrl, publicSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,13 @@ export async function POST(req: Request) {
       baseUrl?: string;
       model?: string;
     };
+    // Explicit opt-in only. This replaces the personal provider; never accept a
+    // caller-provided URL, key or model for the anonymous, free-only route.
+    if (isFreeCloudProvider(b.mode)) {
+      const cfg = anonymousFreeCloudConfig(b.mode);
+      await db.update(userSettings).set({ aiKeyEnc: null, aiKeyHint: null, aiProvider: cfg.provider, aiProviderMode: "auto", preferOrbitLocal: false, aiBaseUrl: null, defaultModel: cfg.defaultModel, reasoning: "off", updatedAt: new Date() }).where(eq(userSettings.userId, user.id));
+      return Response.json({ settings: publicSettings(await getSettings(user.id)), models: [cfg.defaultModel], detected: PROVIDERS[cfg.provider].label });
+    }
     const typed = String(b.apiKey ?? "").trim();
     // A server on the same machine — Ollama, LM Studio, llama.cpp, vLLM — has
     // no key to give. Requiring one shut out the cheapest way to run this app,
@@ -72,6 +80,7 @@ export async function POST(req: Request) {
         aiKeyHint: typed ? keyHint(apiKey) : current.aiKeyHint,
         aiProvider: provider,
         aiProviderMode: mode,
+        preferOrbitLocal: false,
         aiBaseUrl: baseUrl || null,
         defaultModel: model || null,
         updatedAt: new Date(),

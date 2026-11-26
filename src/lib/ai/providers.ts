@@ -1,3 +1,5 @@
+import { FREE_CLOUD_BASE_URL, OVH_FREE_BASE_URL } from "./free-cloud";
+
 export type ProviderId =
   | "openai"
   | "anthropic"
@@ -17,6 +19,9 @@ export type ProviderId =
   | "moonshot"
   | "zhipu"
   | "qwen"
+  | "kilo-free"
+  | "kilo-gemma-free"
+  | "ovh-free"
   | "custom";
 
 export type ProviderInfo = {
@@ -50,6 +55,9 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   moonshot: { label: "Moonshot (Kimi)", baseUrl: "https://api.moonshot.ai/v1", kind: "openai" },
   zhipu: { label: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4", kind: "openai" },
   qwen: { label: "Alibaba Qwen", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", kind: "openai" },
+  "kilo-free": { label: "Kilo Free (anonymous)", baseUrl: FREE_CLOUD_BASE_URL, kind: "openai" },
+  "kilo-gemma-free": { label: "Gemma via Kilo (anonymous)", baseUrl: FREE_CLOUD_BASE_URL, kind: "openai" },
+  "ovh-free": { label: "OVHcloud (anonymous)", baseUrl: OVH_FREE_BASE_URL, kind: "openai" },
   custom: { label: "OpenAI-compatible", baseUrl: "", kind: "openai" },
 };
 

@@ -42,6 +42,8 @@ create table if not exists user_settings (
   ai_key_hint text,
   ai_provider text,
   ai_provider_mode text default 'auto' not null,
+  prefer_orbit_local boolean default false not null,
+  reasoning text default 'off' not null,
   ai_base_url text,
   default_model text,
   e2b_key_enc text,
@@ -166,6 +168,8 @@ create index if not exists privacy_audit_events_user_idx on privacy_audit_events
 const ALTER_COLUMNS: ColumnAlter[] = [
   { table: "users", column: "avatar_url", definition: "text" },
   { table: "user_settings", column: "ai_provider_mode", definition: "text default 'auto' not null" },
+  { table: "user_settings", column: "prefer_orbit_local", definition: "boolean default false not null" },
+  { table: "user_settings", column: "reasoning", definition: "text default 'off' not null" },
   { table: "user_settings", column: "ai_base_url", definition: "text" },
   { table: "user_settings", column: "default_model", definition: "text" },
   { table: "user_settings", column: "image_model", definition: "text" },

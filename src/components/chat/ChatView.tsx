@@ -1,5 +1,8 @@
 "use client";
 
+import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
+import { usesComputer } from "@/lib/computer-tools";
+
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
@@ -49,9 +52,6 @@ function formatWhen(iso: string): string {
   if (sameDay(d, y)) return `Yesterday ${time}`;
   return `${d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" })} ${time}`;
 }
-
-/** Tools that don't touch the bot's computer, so they shouldn't bring the Computer panel up. */
-const NO_COMPUTER = new Set(["ask_user", "get_current_time", "draft_email", "save_artifact"]);
 
 const subscribeNothing = () => () => {};
 /** False during server rendering and hydration, true afterwards. */
@@ -116,6 +116,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [liveStart, setLiveStart] = useState<number | null>(null);
   const [optimise, setOptimise] = useState<OptimiseNote | null>(null);
   const [busy, setBusy] = useState(false);
+  const [browserOverride, setBrowserOverride] = useState<{ forDefault: boolean; value: boolean } | null>(null);
+  const browserMode = browserOverride?.forDefault === app.settings.preferOrbitLocal ? browserOverride.value : app.settings.preferOrbitLocal;
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -257,6 +259,12 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       for (const a of atts) content += `\n\n[Attached file: ${a.name}]\n\`\`\`\n${a.content}\n\`\`\``;
       content = content.trim();
       if (!content) return;
+      if (browserMode && content.length > 3000) {
+        setError({ message: "Orbit Local supports messages up to 3,000 characters. Shorten your message or use a hosted model." });
+        setInput(raw);
+        setAttachments(atts);
+        return;
+      }
 
       setError(null);
       stick.current = true;
@@ -276,6 +284,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       const ac = new AbortController();
       abortRef.current = ac;
       let finalized = false;
+      let receivedStart = false;
 
       const finalize = (info: { id: string; createdAt: string } | null) => {
         if (finalized) return;
@@ -313,6 +322,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       const handle = (ev: StreamEvent) => {
         switch (ev.t) {
           case "start":
+            receivedStart = true;
             setMessages((m) => m.map((x) => (x.id === tmpId ? { ...x, id: ev.userMessage.id, createdAt: ev.userMessage.createdAt } : x)));
             break;
           case "text":
@@ -324,7 +334,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             acc.current.steps.push({ id: ev.id, name: ev.name, label: ev.label, status: "running" });
             setWorking({ id: botId, label: ev.label });
             // Bring the computer into view the first time the bot reaches for it in this run.
-            if (!NO_COMPUTER.has(ev.name) && !panelDismissed.current) setPanelOpen(true);
+            if (usesComputer(ev.name) && !panelDismissed.current) setPanelOpen(true);
             flush();
             break;
           case "step_done": {
@@ -369,6 +379,39 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       };
 
       try {
+        if (browserMode) {
+          const { browserGemma } = await import("@/lib/ai/browser-gemma");
+          const { LOCAL_TOOL_PROMPT } = await import("@/lib/ai/local-tools");
+          const { finishLocalTurn } = await import("@/lib/ai/local-turn");
+          const recent = messages.slice(-6).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 500)}`).join("\n");
+          const prompt = `${LOCAL_TOOL_PROMPT}\nBot instructions: ${bot.instructions.slice(0, 500)}\nRecent conversation:\n${recent}\nUser: ${content}\nAssistant:`;
+          // Buffer the model output until it is clear whether it is a tool
+          // request. Never display raw tool-call JSON as if it were an answer.
+          const generated = await browserGemma([{ role: "user", content: prompt }],
+            (progress) => setWorking({ id: botId, label: progress }), () => {}, ac.signal);
+          const answer = await finishLocalTurn(generated, async (call) => {
+            setWorking({ id: botId, label: `Running ${call.tool}…` });
+            const result = await fetch(`/api/bots/${botId}/local-tool`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(call), signal: ac.signal,
+            });
+            const toolResult = await result.json().catch(() => ({}));
+            return { ok: result.ok, output: String(toolResult.output ?? ""), error: String(toolResult.error ?? "Unknown error") };
+          });
+          handle({ t: "text", d: answer });
+          const saved = await fetch(`/api/bots/${botId}/local-chat`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: content, answer }), signal: ac.signal,
+          });
+          if (!saved.ok) {
+            const data = await saved.json().catch(() => ({}));
+            throw new Error(data.error || "Could not save this local conversation.");
+          }
+          const data = await saved.json();
+          handle({ t: "start", userMessage: data.userMessage });
+          handle({ t: "done", message: data.assistantMessage });
+          return;
+        }
         const res = await fetch(`/api/bots/${botId}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -379,7 +422,8 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           const j = await res.json().catch(() => ({}));
           setError({ message: j.error || "Couldn't reach the server.", code: j.code });
           setMessages((m) => m.filter((x) => x.id !== tmpId));
-          if (j.code === "no_key") setInput(raw);
+          setInput(raw);
+          setAttachments(atts);
           finalized = true;
           setLive(null);
           setBusy(false);
@@ -404,14 +448,22 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           }
         }
       } catch (e) {
+        if (browserMode || !receivedStart) {
+          // Only complete saved exchanges belong in the transcript. Restore the
+          // draft when loading, generation or persistence fails or is stopped.
+          setMessages((m) => m.filter((x) => x.id !== tmpId));
+          setInput(raw);
+          setAttachments(atts);
+          if (browserMode) acc.current.text = "";
+        }
         if (!(e instanceof DOMException && e.name === "AbortError")) {
-          setError({ message: "The connection was interrupted." });
+          setError({ message: browserMode && e instanceof Error ? e.message : "The connection was interrupted." });
         }
       } finally {
         finalize(null);
       }
     },
-    [app, bot, botId, busy, flush, privacyActive, setWorking],
+    [app, bot, botId, busy, browserMode, messages, flush, privacyActive, setWorking],
   );
 
   const stop = () => abortRef.current?.abort();
@@ -443,7 +495,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const placeholder = awaiting ? (narrow ? "Answer, or ask something else" : "Type your answer, or talk about something else") : `Message ${bot.name}`;
 
   const runningStep = busy ? (live?.steps.filter((x) => x.status === "running").pop() ?? null) : null;
-  const usingComputer = !!runningStep && !NO_COMPUTER.has(runningStep.name);
+  const usingComputer = !!runningStep && usesComputer(runningStep.name);
 
   /** A conversation that only holds the greeting gets the full welcome screen (see `empty` above). */
 
@@ -642,6 +694,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                         {pack.title}
                       </span>
                     ))}
+                    <span className="text-[11px] text-neutral-500">Helpers make additional provider requests; charges or rate limits may apply.</span>
                     {liveHelpers.map((helper) => (
                       <span
                         key={helper.id}
@@ -654,7 +707,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                             helper.state === "done" ? "bg-emerald-400" : helper.state === "failed" ? "bg-rose-400" : "animate-pulse bg-[#7c9bff]",
                           )}
                         />
-                        Helper · {helper.name}
+                        Helper · {helper.name} · {helper.state}
                       </span>
                     ))}
                   </div>
@@ -694,9 +747,14 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           )}
 
           <div className="mx-auto w-full max-w-[820px]">
-            {!app.settings.hasAiKey && (
+            {browserMode && (
+              <div className="mx-4 mb-1 rounded-2xl border border-blue-400/20 bg-blue-400/[0.06] px-4 py-2.5 text-[12px] text-blue-100 sm:mx-6">
+                Orbit Local runs Gemma on your device without a model-provider rate limit. It is experimental, with 11 read-only tools; it cannot browse or use connected accounts. Your device downloads model files from Hugging Face; tool requests and completed messages go to this app. <a className="underline" href="https://ai.google.dev/gemma/terms" target="_blank" rel="noreferrer">Gemma terms</a>
+              </div>
+            )}
+            {!app.settings.hasAiKey && !browserMode && (
               <div className="mx-4 mb-1 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-[12.5px] text-amber-200 sm:mx-6">
-                <span>{bot.name} needs an API key to reply.</span>
+                <span>Choose Orbit Local below, or configure an AI provider to reply.</span>
                 <button onClick={() => app.openSettings("ai")} className="shrink-0 rounded-full bg-amber-300 px-3.5 py-1.5 text-[12px] font-semibold text-black transition hover:bg-amber-200">
                   Add key
                 </button>
@@ -716,7 +774,18 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               onError={(m) => app.toast(m, "err")}
               modes={
                 <>
-                  <ModelPicker botId={bot.id} variant="chip" />
+                  {!browserMode && <ModelPicker botId={bot.id} variant="chip" />}
+                  <ComposerMode
+                    active={browserMode}
+                    onClick={async () => {
+                      if (busy) return;
+                      if (browserMode) { setBrowserOverride({ forDefault: app.settings.preferOrbitLocal, value: false }); return; }
+                      const ok = await app.confirm({ title: "Run Orbit Local in this browser?", body: ORBIT_BETA_WARNING, confirmLabel: "Use Orbit Local" });
+                      if (ok) setBrowserOverride({ forDefault: app.settings.preferOrbitLocal, value: true });
+                    }}
+                    icon={<Icon name="sparkles" size={14} />}
+                    label="Toggle experimental Orbit Local"
+                  >Orbit Local</ComposerMode>
                   <ComposerMode
                     active={panelOpen}
                     onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}

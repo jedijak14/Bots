@@ -30,6 +30,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (body.botId !== undefined) {
       const botId = body.botId || null;
       if (botId) {
+        if (!isUuid(botId)) return Response.json({ error: "Bot not found." }, { status: 404 });
         const [bot] = await db.select({ id: bots.id }).from(bots).where(and(eq(bots.id, botId), eq(bots.userId, user.id))).limit(1);
         if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
       }

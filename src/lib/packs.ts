@@ -1,4 +1,5 @@
 import type { Tool } from "./ai/llm";
+import { userRequestedHelpers } from "./helper-policy";
 
 /**
  * Capability packs.
@@ -353,7 +354,7 @@ const HELPER_TOOLS: Tool[] = [
   {
     name: "spawn_helper",
     description:
-      "Start a Helper Bot: a separate agent with its own short brief that works on one slice of the job and reports back. Use two to four of them for work that genuinely splits — art, sound, copy, level design — then check on them with helper_status. They run at the same time, so this is faster than doing each part yourself in sequence. Do not spawn a helper for something you can finish in one step.",
+      "Start a Helper Bot: a separate agent with its own short brief that works on one slice of the job and reports back. Use two to four of them for work that genuinely splits — art, sound, copy, level design — then check on them with helper_status. They use the same AI provider and model and make additional requests, which may incur charges or provider rate limits. Spawn them only when the user explicitly asks for helpers or delegation. Do not spawn a helper for something you can finish in one step.",
     parameters: obj(
       {
         name: { type: "string", description: "Short name, e.g. 'Audio'." },
@@ -425,7 +426,7 @@ export const PACKS: Pack[] = [
     title: "Helper Bots",
     purpose: "Splitting a large build across agents that work at the same time.",
     tools: HELPER_TOOLS,
-    signals: /\b(make|build|create|design|generate|write|produce|code|develop)\b[\s\S]{0,80}\b(game|site|website|app|video|animation|poster|brand|presentation|experience|world)\b/i,
+    signals: /\b(helper bots?|helpers?|subagents?|sub-agents?|delegate|delegating|delegation|parallel agents?|agent team|team of agents)\b/i,
   },
 ];
 
@@ -438,7 +439,7 @@ export const PACKS: Pack[] = [
  */
 export function packsFor(message: string, opts: { hasComputer: boolean }): Pack[] {
   const text = message.toLowerCase();
-  return PACKS.filter((pack) => pack.signals.test(text) && (!pack.needsComputer || opts.hasComputer));
+  return PACKS.filter((pack) => (pack.id === "helpers" ? userRequestedHelpers(text) : pack.signals.test(text)) && (!pack.needsComputer || opts.hasComputer));
 }
 
 /** Tools for the selected packs, de-duplicated by name. */

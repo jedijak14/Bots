@@ -1,5 +1,6 @@
 import { handleError, requireUser } from "@/lib/auth";
 import { listModels, type ProviderId } from "@/lib/ai/providers";
+import { isFreeCloudProvider } from "@/lib/ai/free-cloud";
 import { aiConfigFrom, getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,8 @@ export async function GET() {
     const user = await requireUser();
     const cfg = aiConfigFrom(await getSettings(user.id));
     if (!cfg) return Response.json({ models: [], provider: null });
+    // The deployment only promises and pays for its configured model.
+    if (cfg.included || isFreeCloudProvider(cfg.provider)) return Response.json({ models: [cfg.defaultModel], provider: cfg.provider });
     const ck = `${user.id}:${cfg.provider}:${cfg.baseUrl}:${cfg.apiKey.slice(-6)}`;
     const hit = cache.get(ck);
     if (hit && Date.now() - hit.at < 5 * 60_000) return Response.json({ models: hit.models, provider: cfg.provider });

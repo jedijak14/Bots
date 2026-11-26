@@ -111,12 +111,15 @@ export type DateMath =
  * span, the other lands on the same day number in a later month — and a model
  * that knows one formula tends to apply it to both.
  */
-export function dateMath(a: { date: string; compare?: string; addDays?: number; addMonths?: number; addYears?: number }): DateMath {
+export function dateMath(a: { date: string; compare?: string; addDays?: number; addMonths?: number; addYears?: number; addBusinessDays?: number }): DateMath {
   const start = parseDay(a.date);
   if (!start) return { error: "Give the date as YYYY-MM-DD, e.g. 2026-11-24." };
+  for (const offset of [a.addDays, a.addMonths, a.addYears, a.addBusinessDays]) {
+    if (offset !== undefined && (!Number.isFinite(offset) || Math.abs(offset) > 1000000)) return { error: "Date offsets must be finite numbers between -1000000 and 1000000." };
+  }
   const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-  if (!a.compare && a.addDays === undefined && a.addMonths === undefined && a.addYears === undefined) {
+  if (!a.compare && a.addDays === undefined && a.addMonths === undefined && a.addYears === undefined && a.addBusinessDays === undefined) {
     return { kind: "weekday", date: isoDay(start), weekday: weekdays[start.getUTCDay()] };
   }
 
@@ -146,7 +149,30 @@ export function dateMath(a: { date: string; compare?: string; addDays?: number; 
     const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
     out.setUTCDate(Math.min(day, lastDay));
   }
-  if (a.addYears) out.setUTCFullYear(out.getUTCFullYear() + Math.round(a.addYears));
+  if (a.addYears) {
+    const month = out.getUTCMonth();
+    out.setUTCFullYear(out.getUTCFullYear() + Math.round(a.addYears));
+    if (out.getUTCMonth() !== month) out.setUTCDate(0);
+  }
+  if (!Number.isFinite(out.getTime())) return { error: "The resulting date is outside the supported range." };
+  if (a.addBusinessDays) {
+    // Whole weeks can be skipped once the starting day is a weekday. The
+    // remainder walks day by day, excluding the starting day and weekends.
+    let remaining = Math.abs(Math.round(a.addBusinessDays));
+    const step = a.addBusinessDays < 0 ? -1 : 1;
+    while (remaining && (out.getUTCDay() === 0 || out.getUTCDay() === 6)) {
+      out.setUTCDate(out.getUTCDate() + step);
+      if (out.getUTCDay() !== 0 && out.getUTCDay() !== 6) remaining--;
+    }
+    const weeks = Math.floor(remaining / 5);
+    out.setUTCDate(out.getUTCDate() + step * weeks * 7);
+    remaining %= 5;
+    while (remaining) {
+      out.setUTCDate(out.getUTCDate() + step);
+      if (out.getUTCDay() !== 0 && out.getUTCDay() !== 6) remaining--;
+    }
+  }
+  if (!Number.isFinite(out.getTime())) return { error: "The resulting date is outside the supported range." };
   return {
     kind: "offset",
     from: isoDay(start),
@@ -342,10 +368,14 @@ export function jsonQuery(json: string, path: string, list = false): string {
 /* -------------------------------- transforms -------------------------------- */
 
 /** The string operations that are easy to get subtly wrong by hand. */
-export function transformText(
-  text: string,
-  op: "slug" | "snake" | "camel" | "kebab" | "title" | "upper" | "lower" | "sentence" | "trim" | "dedupe-lines" | "sort-lines" | "base64" | "unbase64" | "urlencode" | "urldecode",
-): string {
+export const TEXT_OPS = [
+  "slug", "kebab", "snake", "camel", "title", "upper", "lower", "sentence",
+  "trim", "dedupe-lines", "sort-lines", "reverse-lines", "remove-blank-lines", "number-lines", "trim-lines", "base64", "unbase64", "urlencode", "urldecode",
+] as const;
+
+export type TextOp = (typeof TEXT_OPS)[number];
+
+export function transformText(text: string, op: TextOp | string): string {
   const words = () => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   switch (op) {
     case "slug":
@@ -381,6 +411,14 @@ export function transformText(
         .map((l) => l.trimEnd())
         .sort((a, b) => a.localeCompare(b))
         .join("\n");
+    case "reverse-lines":
+      return text.split("\n").reverse().join("\n");
+    case "remove-blank-lines":
+      return text.split("\n").filter((line) => line.trim().length > 0).join("\n");
+    case "number-lines":
+      return text.split("\n").map((line, i) => `${i + 1}. ${line}`).join("\n");
+    case "trim-lines":
+      return text.split("\n").map((line) => line.trim()).join("\n");
     case "base64":
       return Buffer.from(text, "utf8").toString("base64");
     case "unbase64": {
@@ -396,6 +434,10 @@ export function transformText(
       } catch {
         return "That is not valid percent-encoding.";
       }
+    default:
+      // An unknown operation ran off the end of the switch and returned
+      // undefined; the caller then crashed reading .length of it.
+      return `There is no “${String(op)}” operation. Use one of: ${TEXT_OPS.join(", ")}.`;
   }
 }
 
@@ -541,7 +583,9 @@ export function moneyTax(amount: number, ratePercent: number): { amount: number;
 }
 
 /** Split an amount into n parts, with the remainder on the first ones. */
-export function moneySplit(amount: number, parts: number): number[] {
+export function moneySplit(amount: number, parts: number): number[] | { error: string } {
+  if (!Number.isInteger(parts) || parts < 1 || parts > 10000) return { error: "Splitting needs a whole number of parts between 1 and 10000." };
+  if (!Number.isFinite(amount) || !Number.isSafeInteger(Math.round(amount * 100))) return { error: "The amount must be a finite number within the supported range." };
   const n = Math.max(1, Math.floor(parts));
   const cents = Math.round(amount * 100);
   const base = Math.floor(cents / n);

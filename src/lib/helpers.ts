@@ -3,9 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts, bots } from "@/db/schema";
 import { runAgent } from "@/lib/ai/llm";
-import { aiConfigFrom, getSettings } from "@/lib/settings";
-import { approachFor, optimisedModel, shouldOptimise, type Reasoning } from "@/lib/ai/optillm";
-import { ensureProxy } from "@/lib/ai/optillm-server";
+import { helperMayRun, helperTools, waitForHelperJobs } from "@/lib/helper-policy";
 
 /**
  * Helper Bots.
@@ -32,6 +30,8 @@ export type Helper = {
   state: HelperState;
   report: string;
   artifactId: string | null;
+  artifactIds: string[];
+  controller: AbortController;
   startedAt: number;
   endedAt: number | null;
   /** Resolved when the helper reaches a terminal state. */
@@ -49,27 +49,10 @@ export function helpersFor(turnId: string): Helper[] {
 }
 
 export function clearHelpers(turnId: string): void {
+  const list = runs.get(turnId) ?? [];
   runs.delete(turnId);
+  for (const helper of list) helper.controller.abort();
 }
-
-/**
- * Tools a Helper may use.
- *
- * Helpers can research and they can write files, but they cannot touch the
- * user's connected accounts, send mail, or drive the on-screen desktop. A
- * helper is doing a piece of the work, not acting on the user's behalf.
- */
-const HELPER_TOOL_NAMES = new Set([
-  "web_search",
-  "fetch_page",
-  "run_command",
-  "write_file",
-  "read_file",
-  "get_current_time",
-  "draw_asset",
-  "design_brief",
-  "make_asset_sheet",
-]);
 
 export type SpawnInput = {
   turnId: string;
@@ -80,6 +63,8 @@ export type SpawnInput = {
   task: string;
   context?: string;
   artifactKind?: string;
+  /** Use the same explicitly selected provider and model as the parent turn. */
+  ai: { provider: import("@/lib/ai/providers").ProviderId; apiKey: string; baseUrl: string; model: string };
   /** Tools available to helpers, already filtered for the deployment. */
   tools: import("@/lib/ai/llm").Tool[];
   runTool: (name: string, args: Record<string, unknown>, id: string) => Promise<import("@/lib/ai/llm").ToolResult>;
@@ -87,6 +72,7 @@ export type SpawnInput = {
 };
 
 export function spawnHelper(input: SpawnInput): Helper {
+  if (input.signal.aborted) throw new Error("This turn has stopped.");
   const list = runs.get(input.turnId) ?? [];
   if (list.length >= MAX_HELPERS) {
     throw new Error(`You already have ${MAX_HELPERS} Helper Bots running. Check them with helper_status before starting more.`);
@@ -102,6 +88,8 @@ export function spawnHelper(input: SpawnInput): Helper {
     state: "working",
     report: "",
     artifactId: null,
+    artifactIds: [],
+    controller: new AbortController(),
     startedAt: Date.now(),
     endedAt: null,
     settled,
@@ -110,7 +98,11 @@ export function spawnHelper(input: SpawnInput): Helper {
   runs.set(input.turnId, list);
 
   // Deliberately not awaited: the main Bot keeps working while this runs.
+  const abort = () => helper.controller.abort();
+  input.signal.addEventListener("abort", abort, { once: true });
+  if (input.signal.aborted) abort();
   void runHelper(input, helper).finally(() => {
+    input.signal.removeEventListener("abort", abort);
     helper.endedAt = Date.now();
     settle();
   });
@@ -120,19 +112,16 @@ export function spawnHelper(input: SpawnInput): Helper {
 
 async function runHelper(input: SpawnInput, helper: Helper): Promise<void> {
   try {
-    const settings = await getSettings(input.userId);
-    const cfg = aiConfigFrom(settings);
-    if (!cfg) throw new Error("No AI provider is configured.");
-
-    const allowed = input.tools.filter((tool) => HELPER_TOOL_NAMES.has(tool.name));
+    const allowed = helperTools(input.tools);
+    const allowedNames = new Set(allowed.map(tool => tool.name));
     const system = [
       `You are ${helper.name}, a Helper Bot working for ${input.botName}.`,
       `Your job, in full: ${helper.task}`,
-      input.context ? `Context from ${input.botName}:\n${input.context}` : "",
+      input.context ? `Context from ${input.botName}:\n${input.context.slice(0, 6000)}` : "",
       input.artifactKind
-        ? `Save what you produce with save_artifact as kind "${input.artifactKind}" — the user will see it as a card.`
+        ? `If save_artifact is available, save your work as kind "${input.artifactKind.slice(0, 40)}"; otherwise return it in your report.`
         : "Reply with your finished work in the message. Be complete rather than describing what you would do.",
-      "You cannot send email, use the user's connected accounts, or control their screen. Do not ask questions — nobody is watching this thread. Make a sensible choice and say which one you made.",
+      "Use only the tools provided. You cannot send email, use connected accounts, run shell commands, or control the screen. Files and artifacts are shared with the parent: avoid editing the same project concurrently. Do not ask questions — nobody is watching this thread. Make a sensible choice and say which one you made.",
       "Finish with a short report: what you produced, and anything the main Bot should know.",
     ]
       .filter(Boolean)
@@ -145,50 +134,41 @@ async function runHelper(input: SpawnInput, helper: Helper): Promise<void> {
     // first version of this looped nine times on one draw_asset.
     const done: string[] = [];
     const seen = new Set<string>();
-    // Helpers are where reasoning is worth the most: a helper does one task
-    // with nobody watching, so a wrong first answer waits for a human to notice.
-    // Same rule as the chat — only when the helper has no tool left to call.
-    const reasoning = (["low", "medium", "high"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
-    let optimise: { url: string; model: string; approach: string } | undefined;
-    if (shouldOptimise(reasoning, !!cfg.apiKey)) {
-      const started = await ensureProxy(
-        { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, provider: cfg.provider, reasoning },
-        { port: Number(process.env.OPTILLM_PORT ?? 8000) || 8000 },
-      ).catch(() => ({ error: "the proxy could not start" } as const));
-      if ("url" in started) {
-        optimise = { url: started.url, model: optimisedModel(cfg.defaultModel ?? "", reasoning), approach: approachFor(reasoning) ?? "re2" };
-      }
-    }
     await runAgent({
-      provider: cfg.provider,
-      apiKey: cfg.apiKey,
-      baseUrl: cfg.baseUrl,
-      model: cfg.defaultModel ?? "",
-      optimise,
+      provider: input.ai.provider,
+      apiKey: input.ai.apiKey,
+      baseUrl: input.ai.baseUrl,
+      model: input.ai.model,
       system,
       history: [{ role: "user", content: helper.task }],
       tools: allowed,
-      signal: input.signal,
+      signal: helper.controller.signal,
       maxSteps: HELPER_STEPS,
       onText: (delta) => {
         report += delta;
       },
       runTool: async (name, args, id) => {
+        if (helper.controller.signal.aborted) throw new DOMException("Helper stopped", "AbortError");
+        if (!helperMayRun(allowedNames, name)) return { output: "This tool is not available to this Helper." };
         const key = `${name}:${JSON.stringify(args)}`;
         if (seen.has(key) && name !== "read_file" && name !== "helper_status") {
           return { output: "You have already run exactly this step; its result is above. Do not repeat it — reply with your report now." };
         }
         seen.add(key);
         const result = await input.runTool(name, args, `${helper.id}:${id}`);
-        if (result.artifactId) helper.artifactId = result.artifactId;
+        if (result.artifactId) {
+          helper.artifactId = result.artifactId;
+          if (!helper.artifactIds.includes(result.artifactId)) helper.artifactIds.push(result.artifactId);
+        }
         done.push(`${name}: ${result.output.slice(0, 160)}`);
         return result;
       },
     });
 
+    if (helper.controller.signal.aborted) throw new DOMException("Helper stopped", "AbortError");
     helper.report =
       report.trim() ||
-      (done.length ? `Completed these steps:\n${done.map((line) => `- ${line}`).join("\n")}` : "Finished without producing anything.");
+      (done.length ? `Steps attempted:\n${done.map((line) => `- ${line}`).join("\n")}` : "Finished without producing anything.");
     helper.state = "done";
   } catch (error) {
     helper.state = "failed";
@@ -199,35 +179,20 @@ async function runHelper(input: SpawnInput, helper: Helper): Promise<void> {
 /** A compact view for the tool result the main Bot reads. */
 export function helperSummary(helper: Helper): Record<string, unknown> {
   return {
+    id: helper.id,
     name: helper.name,
     state: helper.state,
     seconds: Math.round(((helper.endedAt ?? Date.now()) - helper.startedAt) / 1000),
     artifactId: helper.artifactId,
+    artifactIds: helper.artifactIds.slice(0, HELPER_STEPS),
     report: helper.report.slice(0, 4000) || (helper.state === "working" ? "Still working." : ""),
   };
 }
 
 /** Wait until every helper settles, or until the caller's patience runs out. */
 export async function waitForHelpers(turnId: string, seconds: number, signal: AbortSignal): Promise<void> {
-  const list = runs.get(turnId) ?? [];
-  const pending = list.filter((helper) => helper.state === "working").map((helper) => helper.settled);
-  if (!pending.length) return;
-  const budget = Math.max(0, Math.min(seconds, 25)) * 1000;
-  if (!budget) return;
-  await Promise.race([
-    Promise.allSettled(pending),
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, budget);
-      signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
-    }),
-  ]);
+  const pending = (runs.get(turnId) ?? []).filter(helper => helper.state === "working").map(helper => helper.settled);
+  await waitForHelperJobs(pending, seconds, signal);
 }
 
 /** The artifact card a Helper saved, so the main Bot can name it. */

@@ -210,6 +210,26 @@ const CALC_TOOL: Tool = {
  */
 const EXACT_TOOLS: Tool[] = [
   {
+    name: "describe_numbers",
+    description: "Calculate descriptive statistics for a list: mean, median, quartiles, range, sum, population and sample standard deviation. Quartiles use linear interpolation. No computer or paid calls required.",
+    parameters: obj({ values: { type: "array", items: { type: "number" }, description: "1–10000 finite numbers." } }, ["values"]),
+  },
+  {
+    name: "convert_time_zones",
+    description: "Convert an unambiguous instant to multiple IANA time zones using daylight saving rules. Input must include Z or an explicit UTC offset; do not guess an ambiguous local time.",
+    parameters: obj({ instant: { type: "string", description: "ISO timestamp with Z or offset, e.g. 2026-11-24T12:00:00Z." }, zones: { type: "array", items: { type: "string" }, description: "IANA zone names such as America/Los_Angeles." } }, ["instant", "zones"]),
+  },
+  {
+    name: "estimate_loan",
+    description: "Estimate fixed-rate loan payments, total payments and interest. Excludes fees, taxes and insurance; not a lender quote.",
+    parameters: obj({ principal: { type: "number", description: "Loan principal." }, annualRate: { type: "number", description: "Annual interest rate as a percentage, e.g. 6.5." }, months: { type: "number", description: "Number of monthly payments." } }, ["principal", "annualRate", "months"]),
+  },
+  {
+    name: "compare_texts",
+    description: "Compare two versions of text line by line, identifying added, removed and unchanged lines using a longest common subsequence. Use for reviewing edits.",
+    parameters: obj({ before: { type: "string", description: "Original text." }, after: { type: "string", description: "Revised text." } }, ["before", "after"]),
+  },
+  {
     name: "convert_units",
     description:
       "Convert between units exactly. Length, mass, volume, area, speed, data and time all convert, and temperature converts between c, f and k. Use it instead of estimating: 12 km is 7.456454 miles, not 'about 7.5'. Works with no computer.",
@@ -225,7 +245,7 @@ const EXACT_TOOLS: Tool[] = [
   {
     name: "date_math",
     description:
-      "Work out dates exactly: which weekday a date is, the span between two dates in days, weeks and business days, and what date N days, months or years later is. Month arithmetic clamps to the end of the month, so 31 January plus one month is 28 February. Works with no computer.",
+      "Work out dates exactly: which weekday a date is, the span between two dates in days, weeks and business days, and what date N days, months or years later is. Month and year arithmetic clamps to the end of the month. Business-day offsets skip weekends, not holidays. Works with no computer.",
     parameters: obj(
       {
         date: { type: "string", description: "The starting date as YYYY-MM-DD." },
@@ -233,6 +253,7 @@ const EXACT_TOOLS: Tool[] = [
         addDays: { type: "number", description: "Days to add; negative goes backwards." },
         addMonths: { type: "number", description: "Months to add." },
         addYears: { type: "number", description: "Years to add." },
+        addBusinessDays: { type: "number", description: "Weekdays to add, excluding weekends but not holidays; negative goes backwards." },
       },
       ["date"],
     ),
@@ -271,13 +292,13 @@ const EXACT_TOOLS: Tool[] = [
   {
     name: "transform_text",
     description:
-      "Change text in one exact way: slug, kebab, snake, camel, title, upper, lower, sentence, trim, dedupe-lines, sort-lines, base64, unbase64, urlencode or urldecode. Use it instead of hand-editing strings, which is where quoting and case mistakes come from. Works with no computer.",
+      "Change text in one exact way: slug, kebab, snake, camel, title, upper, lower, sentence, trim, dedupe-lines, sort-lines, reverse-lines, remove-blank-lines, number-lines, trim-lines, base64, unbase64, urlencode or urldecode. Use it instead of hand-editing strings, which is where quoting and case mistakes come from. Works with no computer.",
     parameters: obj(
       {
         text: { type: "string", description: "The text to transform." },
         op: {
           type: "string",
-          enum: ["slug", "kebab", "snake", "camel", "title", "upper", "lower", "sentence", "trim", "dedupe-lines", "sort-lines", "base64", "unbase64", "urlencode", "urldecode"],
+          enum: ["slug", "kebab", "snake", "camel", "title", "upper", "lower", "sentence", "trim", "dedupe-lines", "sort-lines", "reverse-lines", "remove-blank-lines", "number-lines", "trim-lines", "base64", "unbase64", "urlencode", "urldecode"],
           description: "Which transformation.",
         },
       },
@@ -1099,6 +1120,7 @@ export function buildToolset(opts: {
   /** Display name of the Bot, used when a Helper introduces itself. */
   botName?: string;
   onHelper?: (helper: Helper) => void;
+  helperAi?: { provider: import("@/lib/ai/providers").ProviderId; apiKey: string; baseUrl: string; model: string };
 }) {
   const { userId, bot, e2bKey, ev } = opts;
   let stripScriptReady = false;
@@ -1614,6 +1636,7 @@ export function buildToolset(opts: {
             }
           : undefined,
         spawn: (input) => {
+          if (!opts.helperAi) throw new Error("Helper Bots are not available on this turn.");
           const helper = spawnHelper({
             turnId: opts.turnId,
             userId,
@@ -1623,6 +1646,7 @@ export function buildToolset(opts: {
             task: input.task,
             context: input.context,
             artifactKind: input.artifactKind,
+            ai: opts.helperAi,
             tools,
             runTool: run,
             signal: opts.signal,
@@ -1654,6 +1678,14 @@ export function buildToolset(opts: {
         return { output: `${e instanceof Error ? e.message : "Could not evaluate that."} Write it as plain arithmetic, e.g. (1250 * 0.08) / 3.` };
       }
     }
+    if (["describe_numbers", "convert_time_zones", "estimate_loan", "compare_texts"].includes(name)) {
+      const { describeNumbers, convertTime, loanEstimate, compareLines } = await import("@/lib/advanced-tools");
+      const result = name === "describe_numbers" ? describeNumbers(a.values)
+        : name === "convert_time_zones" ? convertTime(String(a.instant ?? ""), a.zones)
+        : name === "estimate_loan" ? loanEstimate(a.principal, a.annualRate, a.months)
+        : compareLines(String(a.before ?? ""), String(a.after ?? ""));
+      return { output: "error" in result && result.error ? result.error : JSON.stringify(result) };
+    }
     if (name === "check_contrast") {
       const { contrastRatio } = await import("@/lib/utilities");
       const result = contrastRatio(String(a.foreground ?? ""), String(a.background ?? ""));
@@ -1683,7 +1715,8 @@ export function buildToolset(opts: {
         return { output: `${tidy(result.amount)} plus ${tidy(Number(a.rate) || 0)}% tax is ${tidy(result.total)} — tax ${tidy(result.tax)}.` };
       }
       if (kind === "split") {
-        const parts = moneySplit(Number(a.amount) || 0, Number(a.parts) || 1);
+        const parts = moneySplit(Number(a.amount), Number(a.parts));
+        if ("error" in parts) return { output: parts.error };
         return { output: `${tidy(Number(a.amount) || 0)} split ${parts.length} ways: ${parts.map(tidy).join(", ")} (total ${tidy(moneySum(parts).total)}).` };
       }
       const amounts = Array.isArray(a.amounts) ? a.amounts.map(Number).filter((n) => Number.isFinite(n)) : [];
@@ -1713,6 +1746,7 @@ export function buildToolset(opts: {
         ...(a.addDays !== undefined && a.addDays !== "" ? { addDays: Number(a.addDays) } : {}),
         ...(a.addMonths !== undefined && a.addMonths !== "" ? { addMonths: Number(a.addMonths) } : {}),
         ...(a.addYears !== undefined && a.addYears !== "" ? { addYears: Number(a.addYears) } : {}),
+        ...(a.addBusinessDays !== undefined && a.addBusinessDays !== "" ? { addBusinessDays: Number(a.addBusinessDays) } : {}),
       });
       if ("error" in result) return { output: result.error };
       if (result.kind === "weekday") return { output: `${result.date} is a ${result.weekday}.` };

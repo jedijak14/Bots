@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { VideoClip, VideoProjectSpec } from "@/lib/video-studio-spec";
 import { gradeFilter, previewTime, projectDuration, transitionProgress } from "@/lib/video-studio-spec";
 import { Icon } from "../icons";
@@ -78,13 +78,14 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
         for (const clip of track.clips) {
           // A voiced clip has no media to fetch: the browser speaks it. Asking
           // for an artifact called "narration" produced a 404 on every load.
+          if (cancelled) return;
           if (clip.kind === "text" || clip.speak || !clip.source || loaded.has(clip.source)) continue;
           try {
             const url = await resolveUrl(clip);
             if (clip.kind === "image") {
               const img = new Image();
               img.src = url;
-              await img.decode().catch(() => {});
+              await img.decode();
               loaded.set(clip.source, img);
             } else if (clip.kind === "video") {
               const video = document.createElement("video");
@@ -92,10 +93,16 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
               video.muted = true;
               video.playsInline = true;
               video.preload = "auto";
-              await new Promise<void>((done) => {
-                video.onloadeddata = () => done();
-                video.onerror = () => done();
-                setTimeout(done, 4000);
+              await new Promise<void>((resolve, reject) => {
+                const timeout = window.setTimeout(() => finish(false), 4000);
+                const finish = (ok: boolean) => {
+                  window.clearTimeout(timeout);
+                  video.onloadeddata = null;
+                  video.onerror = null;
+                  if (ok) resolve(); else reject(new Error("Video could not load."));
+                };
+                video.onloadeddata = () => finish(true);
+                video.onerror = () => finish(false);
               });
               loaded.set(clip.source, video);
             } else {
@@ -129,7 +136,7 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
   }, [spec]);
 
   // Draw one frame at `t` seconds.
-  const draw = (t: number) => {
+  const draw = useCallback((t: number) => {
     const canvas = canvasRef.current;
     if (!canvas || !spec) return;
     const ctx = canvas.getContext("2d");
@@ -248,7 +255,7 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
         ctx.restore();
       }
     }
-  };
+  }, [spec, sources.loaded]);
 
   // The playback clock. rAF rather than setInterval so a slow frame does not
   // drift the audio, and every frame redraws from the ground truth of elapsed
@@ -272,7 +279,7 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, duration]);
+  }, [playing, duration, draw]);
 
   // Narration.
   //
@@ -284,7 +291,8 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     if (!spec || !playing) {
-      window.speechSynthesis.cancel();
+      if (spokenRef.current) window.speechSynthesis.cancel();
+      spokenRef.current = "";
       return;
     }
     const due = spec.tracks
@@ -292,7 +300,8 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
       .flatMap((t) => t.clips)
       .filter((c) => c.speak && time >= c.start && time < c.start + c.duration);
     if (!due.length) {
-      window.speechSynthesis.cancel();
+      if (spokenRef.current) window.speechSynthesis.cancel();
+      spokenRef.current = "";
       return;
     }
     // The line is spoken once, at the moment it starts, not re-queued on every
@@ -304,6 +313,11 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(due.map((c) => c.speak).join(" ").slice(0, 1200)));
   }, [time, playing, spec]);
+
+  useEffect(() => () => {
+    if (spokenRef.current && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    spokenRef.current = "";
+  }, []);
 
   // Follow the clips with `time`, not with a boolean.
   //
@@ -330,15 +344,14 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
         }
       }
     }
-  }, [time, playing, spec]);
+  }, [time, playing, spec, sources.loaded]);
 
   useEffect(() => {
     if (!ready || !spec) return;
     // Rest past any entry effect, so the card opens on a real frame.
     const rest = previewTime(spec);
-    setTime(rest);
     draw(rest);
-  }, [ready]);
+  }, [ready, spec, draw]);
 
   if (!spec) {
     return (
@@ -368,12 +381,13 @@ export function VideoStudioCard({ artifact }: { artifact: { id: string; title: s
           <button
             type="button"
             onClick={() => {
-              startedAt.current = time >= duration - 0.05 ? 0 : time;
-              if (startedAt.current === 0) setTime(0);
+              startedAt.current = 0;
+              setTime(0);
               setPlaying(true);
             }}
+            disabled={!ready}
             className="absolute inset-0 grid place-items-center bg-black/25 transition hover:bg-black/10"
-            aria-label="Play"
+            aria-label={ready ? "Play" : "Loading preview"}
           >
             <span className="grid size-12 place-items-center rounded-full bg-white/90 text-black shadow-lg">
               <Icon name="play" className="size-5" />

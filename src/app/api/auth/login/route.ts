@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { email?: string; password?: string };
+    const parsed: unknown = await req.json().catch(() => null);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return Response.json({ error: "Invalid request." }, { status: 400 });
+    const body = parsed as { email?: string; password?: string };
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
     const ip = req.headers.get("x-forwarded-for") ?? "local";

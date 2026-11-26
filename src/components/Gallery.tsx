@@ -115,8 +115,8 @@ export function Gallery() {
                       <span className="mt-3 w-full truncate text-[14px] font-medium text-white">{b.name}</span>
                       <span className="mt-0.5 line-clamp-2 w-full text-[12px] leading-snug text-neutral-500">{b.preview}</span>
                       <span className="mt-3 flex items-center gap-1.5 text-[11px] text-neutral-600">
-                        <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-[#7c9bff]" : "bg-neutral-700")} />
-                        {s.hasAiKey ? "Ready" : "Needs an API key"}
+                        <span className={cx("size-1.5 rounded-full", s.hasAiKey || s.preferOrbitLocal ? "bg-[#7c9bff]" : "bg-neutral-700")} />
+                        {s.preferOrbitLocal ? "Orbit Local · Beta" : s.hasAiKey ? "Ready" : "Choose an AI provider"}
                       </span>
                     </div>
                   </div>
@@ -167,8 +167,9 @@ export function Gallery() {
               <span className="text-[11px] font-medium uppercase tracking-[0.09em] text-neutral-500">Everything else</span>
               <span aria-hidden className="h-px flex-1 bg-white/[0.06]" />
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
               {[
+                { label: "AI Provider", hint: "Orbit Local Beta & more", icon: "sparkles" as const, tab: "ai" as const },
                 { label: "Goals", hint: "Shared with every Bot", icon: "target" as const, tab: "goals" as const },
                 { label: "Artifacts", hint: "Work your Bots saved", icon: "archive" as const, tab: "artifacts" as const },
                 { label: "History", hint: "Cleared conversations", icon: "clock" as const, tab: "history" as const },
@@ -204,8 +205,8 @@ export function Gallery() {
           onClick={() => app.openSettings("ai")}
           className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/[0.07] bg-[#101013]/90 px-3.5 py-2 text-[12px] text-neutral-400 backdrop-blur transition hover:bg-[#19191d] hover:text-white"
         >
-          <span className={cx("size-1.5 rounded-full", s.hasAiKey ? "bg-emerald-400" : "bg-amber-400")} />
-          {s.hasAiKey ? `AI · ${s.aiProviderLabel}` : "Add your AI key"}
+          <span className={cx("size-1.5 rounded-full", s.hasAiKey || s.preferOrbitLocal ? "bg-emerald-400" : "bg-amber-400")} />
+          {s.preferOrbitLocal ? "AI · Orbit Local Beta" : s.hasAiKey ? `AI · ${s.aiProviderLabel}` : "Choose AI provider"}
         </button>
         <button
           onClick={() => app.openSettings("computer")}

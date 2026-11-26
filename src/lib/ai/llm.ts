@@ -83,7 +83,9 @@ async function failure(res: Response, label: string): Promise<Error> {
     }
   } catch {}
   msg = msg.slice(0, 400);
-  if (res.status === 401 || res.status === 403) return new Error(`${label} rejected your API key. Check it in Settings. ${msg}`);
+  if (res.status === 401 || res.status === 403) return (label === "Kilo Free (anonymous)" || label === "Gemma via Kilo (anonymous)" || label === "OVHcloud (anonymous)")
+    ? new Error(`${label} denied anonymous access. Its policy or availability may have changed. ${msg}`)
+    : new Error(`${label} rejected your API key. Check it in Settings. ${msg}`);
   if (res.status === 429) return new Error(`${label} rate limit or quota reached. ${msg}`);
   return new Error(`${label} error (${res.status}). ${msg}`);
 }
@@ -117,7 +119,7 @@ async function reasonInstead(o: AgentOptions, msgs: Record<string, unknown>[], f
   try {
     const res = await fetch(`${opt.url}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.apiKey}` },
+      headers: { "Content-Type": "application/json", ...(o.apiKey ? { Authorization: `Bearer ${o.apiKey}` } : {}) },
       body: JSON.stringify({ model: opt.model, messages: msgs, stream: true }),
       signal: o.signal,
     });
@@ -195,10 +197,10 @@ async function openaiLoop(o: AgentOptions) {
     // to answer in prose rather than act.
     const res = await fetch(`${o.baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.apiKey}` },
+      headers: { "Content-Type": "application/json", ...(o.apiKey ? { Authorization: `Bearer ${o.apiKey}` } : {}) },
       body: JSON.stringify({
         model: o.model,
-        prompt_cache_key: `bot-${o.model}`,
+        ...(o.provider === "ovh-free" ? {} : { prompt_cache_key: `bot-${o.model}` }),
         messages: msgs,
         stream: true,
         ...(tools ? { tools } : {}),

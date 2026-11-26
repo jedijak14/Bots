@@ -253,6 +253,8 @@ export function AudioStudioCard({ artifact }: { artifact: { id: string; title: s
   const ctxRef = useRef<AudioContext | null>(null);
   const samplesRef = useRef<Map<string, AudioBuffer>>(new Map());
   const nodesRef = useRef<AudioScheduledSourceNode[]>([]);
+  const attemptRef = useRef(0);
+  const startingRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -272,88 +274,102 @@ export function AudioStudioCard({ artifact }: { artifact: { id: string; title: s
   // Sample clips are fetched once, decoded, and kept as AudioBuffers. Decoding
   // needs a context, so this runs on first play rather than on mount — a chat
   // full of projects must not open an AudioContext each.
-  async function loadSamples(ctx: AudioContext) {
+  async function loadSamples(ctx: AudioContext, attempt: number) {
     if (!spec) return;
-    setLoading(true);
-    try {
-      for (const track of spec.tracks) {
-        for (const clip of track.clips) {
-          if (clip.kind !== "sample" || samplesRef.current.has(clip.source)) continue;
-          let url = clip.source;
-          if (!/^(data:|https?:)/.test(url)) {
-            const res = await fetch(`/api/artifacts/${clip.source}`);
-            if (!res.ok) throw new Error(`Could not load the sample (${res.status}).`);
-            url = ((await res.json()) as { content?: string }).content ?? "";
-          }
-          if (!url) continue;
-          const bytes = await (await fetch(url)).arrayBuffer();
-          samplesRef.current.set(clip.source, await ctx.decodeAudioData(bytes));
+    for (const track of spec.tracks) {
+      for (const clip of track.clips) {
+        if (attemptRef.current !== attempt) return;
+        if (clip.kind !== "sample" || samplesRef.current.has(clip.source)) continue;
+        let url = clip.source;
+        if (!/^(data:|https?:)/.test(url)) {
+          const res = await fetch(`/api/artifacts/${encodeURIComponent(clip.source)}`);
+          if (!res.ok) throw new Error(`Could not load the sample (${res.status}).`);
+          url = ((await res.json()) as { content?: string }).content ?? "";
         }
+        if (!url) throw new Error("The sample has no audio data.");
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Could not load the sample (${response.status}).`);
+        const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
+        if (attemptRef.current !== attempt) return;
+        samplesRef.current.set(clip.source, buffer);
       }
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "A sample could not be decoded.");
-    } finally {
-      setLoading(false);
     }
   }
 
   async function play() {
-    if (!spec) return;
-    const ctx = (ctxRef.current ??= new AudioContext());
-    await ctx.resume();
-    await loadSamples(ctx);
-    const startAt = ctx.currentTime + 0.08;
+    if (!spec || startingRef.current) return;
+    startingRef.current = true;
+    const attempt = ++attemptRef.current;
+    setLoading(true);
+    setError("");
+    try {
+      const ctx = (ctxRef.current ??= new AudioContext());
+      await ctx.resume();
+      await loadSamples(ctx, attempt);
+      if (attemptRef.current !== attempt) return;
+      const startAt = ctx.currentTime + 0.08;
 
-    const master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(ctx.destination);
+      const master = ctx.createGain();
+      master.gain.value = 0.9;
+      master.connect(ctx.destination);
 
-    for (const track of spec.tracks) {
-      if (track.muted) continue;
-      // Per-track gain and pan, so a mixer move is audible.
-      const trackGain = ctx.createGain();
-      trackGain.gain.value = track.gain ?? 0.2;
-      const pan = ctx.createStereoPanner();
-      pan.pan.value = ((track.pan ?? 0.5) - 0.5) * 2;
-      trackGain.connect(pan).connect(master);
+      for (const track of spec.tracks) {
+        if (track.muted) continue;
+        // Per-track gain and pan, so a mixer move is audible.
+        const trackGain = ctx.createGain();
+        trackGain.gain.value = track.gain ?? 0.2;
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = ((track.pan ?? 0.5) - 0.5) * 2;
+        trackGain.connect(pan).connect(master);
 
-      for (const clip of track.clips) {
-        const at = startAt + clip.start;
-        if (clip.kind === "synth") {
-          scheduleSynth(ctx, trackGain, clip, spec.bpm, at);
-        } else {
-          const buffer = samplesRef.current.get(clip.source);
-          if (!buffer) continue;
-          const src = ctx.createBufferSource();
-          src.buffer = buffer;
-          const g = ctx.createGain();
-          g.gain.value = clip.gain ?? 0.8;
-          src.connect(g).connect(trackGain);
-          src.start(at, clip.in ?? 0, Math.max(0.05, clip.duration));
-          nodesRef.current.push(src);
+        for (const clip of track.clips) {
+          const at = startAt + clip.start;
+          if (clip.kind === "synth") {
+            scheduleSynth(ctx, trackGain, clip, spec.bpm, at);
+          } else {
+            const buffer = samplesRef.current.get(clip.source);
+            if (!buffer) continue;
+            const src = ctx.createBufferSource();
+            src.buffer = buffer;
+            const g = ctx.createGain();
+            g.gain.value = clip.gain ?? 0.8;
+            src.connect(g).connect(trackGain);
+            src.start(at, clip.in ?? 0, Math.max(0.05, clip.duration));
+            nodesRef.current.push(src);
+          }
         }
       }
-    }
 
-    setPlaying(true);
-    const startedWall = performance.now();
-    const tick = () => {
-      const t = (performance.now() - startedWall) / 1000;
-      if (t >= duration) {
-        stop();
-        return;
-      }
-      setTime(t);
+      setPlaying(true);
+      const tick = () => {
+        const t = Math.max(0, ctx.currentTime - startAt);
+        if (t >= duration) {
+          stop();
+          return;
+        }
+        setTime(t);
+        rafRef.current = requestAnimationFrame(tick);
+      };
       rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    void startAt;
+    } catch (e) {
+      if (attemptRef.current === attempt) {
+        void ctxRef.current?.close().catch(() => {});
+        ctxRef.current = null;
+        setError(e instanceof Error ? e.message : "Audio could not be played.");
+      }
+    } finally {
+      if (attemptRef.current === attempt) {
+        startingRef.current = false;
+        setLoading(false);
+      }
+    }
   }
 
   const rafRef = useRef(0);
 
   function stop() {
+    attemptRef.current++;
+    startingRef.current = false;
     cancelAnimationFrame(rafRef.current);
     for (const node of nodesRef.current) {
       try {
@@ -371,7 +387,17 @@ export function AudioStudioCard({ artifact }: { artifact: { id: string; title: s
     setTime(0);
   }
 
-  useEffect(() => () => stop(), []);
+  useEffect(() => () => {
+    attemptRef.current++;
+    startingRef.current = false;
+    cancelAnimationFrame(rafRef.current);
+    for (const node of nodesRef.current) {
+      try { node.stop(); } catch { /* already ended */ }
+    }
+    nodesRef.current = [];
+    void ctxRef.current?.close().catch(() => {});
+    ctxRef.current = null;
+  }, []);
 
   if (!spec) {
     return (

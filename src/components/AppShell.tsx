@@ -117,7 +117,7 @@ function ConfirmDialog() {
   };
   return (
     <Modal onClose={() => close(false)} width={390} label={c.title} z={80}>
-      <div className="p-6">
+      <div className="min-h-0 overflow-y-auto p-6">
         <h3 className="text-[16px] font-semibold tracking-tight">{c.title}</h3>
         <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-400">{c.body}</p>
         <div className="mt-6 flex justify-end gap-2">
@@ -259,7 +259,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     setMenu({ bot: b, position: placeMenu(at, 3, { align: "start", gap: 2 }), trigger: null });
   };
 
-  const needsKey = !app.settings.hasAiKey;
+  const needsKey = !app.settings.hasAiKey && !app.settings.preferOrbitLocal;
   const label = cx("min-w-0 flex-1 truncate transition-opacity duration-200 motion-reduce:transition-none", collapsed && "md:opacity-0");
   const row = (active: boolean) =>
     cx(

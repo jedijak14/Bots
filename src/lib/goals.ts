@@ -1,4 +1,5 @@
 import "server-only";
+import { isUuid } from "./ids";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { goals } from "@/db/schema";
@@ -66,7 +67,7 @@ export async function updateGoal(
   id: string,
   patch: { title?: string; detail?: string; status?: GoalStatus; dueAt?: string | null },
 ): Promise<GoalDTO | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!isUuid(id)) return null;
   const values: Partial<typeof goals.$inferInsert> = { updatedAt: new Date() };
   if (patch.title !== undefined) values.title = patch.title.trim().slice(0, 300);
   if (patch.detail !== undefined) values.detail = patch.detail.trim().slice(0, 4000);
@@ -84,7 +85,7 @@ export async function updateGoal(
 }
 
 export async function deleteGoal(userId: string, id: string): Promise<boolean> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
+  if (!isUuid(id)) return false;
   const rows = await db
     .delete(goals)
     .where(and(eq(goals.id, id), eq(goals.userId, userId)))

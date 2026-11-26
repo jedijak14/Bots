@@ -1,0 +1,1 @@
+ALTER TABLE "user_settings" ADD COLUMN "prefer_orbit_local" boolean DEFAULT false NOT NULL;

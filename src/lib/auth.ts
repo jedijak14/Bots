@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
-import { db } from "@/db";
+import { db, schemaReady } from "@/db";
 import { withDbRetry } from "./retry";
 import { sessions, users, userSettings } from "@/db/schema";
 
@@ -41,6 +41,7 @@ let dummyHash: string | null = null;
  * amount of time whether or not the account exists.
  */
 export async function signInWithPassword(email: string, password: string, ip: string): Promise<AuthResult> {
+  await schemaReady;
   const key = `login:${ip}:${email}`;
   if (!throttle(key)) {
     return { ok: false, error: "Too many attempts. Try again in a few minutes.", status: 429 };
@@ -67,6 +68,7 @@ export async function signUpWithAccount(
   name: string,
   ip: string,
 ): Promise<AuthResult> {
+  await schemaReady;
   if (!EMAIL.test(email) || email.length > 200) {
     return { ok: false, error: "Enter a valid email address.", status: 400 };
   }
@@ -122,6 +124,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
+  await schemaReady;
   // This is the first query every page runs, so it is also where a dropped
   // connection would take the whole render down. A read is safe to repeat.
   const rows = await withDbRetry(() => db
