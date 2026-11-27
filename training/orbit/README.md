@@ -1,6 +1,6 @@
-# Orbit Local: experimental tool-use fine-tuning
+# Historical Orbit Local: experimental Gemma tool-use fine-tuning
 
-This is an **unrun prototype**, not a trained adapter. Orbit Local currently uses the unmodified WebLLM Gemma 2 2B instruction model and a prompt-based, five-tool bridge. No fine-tuned checkpoint or adapter has been produced or tested.
+This is an **unrun prototype**, not a trained adapter. The former Orbit Local used the unmodified WebLLM Gemma 2 2B instruction model. This prototype does not train the current Bots Local model. No fine-tuned checkpoint or adapter has been produced or tested.
 
 `make-dataset.mjs` generates synthetic examples (no user data) matching the app's current `LOCAL_TOOL_PROMPT` and exact tool-call format. It includes positive calls for each allowed tool and a few unsupported-action examples. The separate seven-item holdout is only a smoke test, **far too small to establish quality or safety**. Improve the data, broaden test cases, and check its license and accuracy before training. A model may overfit this small set, make incorrect calls, or falsely claim to have taken actions.
 

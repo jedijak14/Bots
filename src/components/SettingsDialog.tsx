@@ -1,6 +1,6 @@
 "use client";
 
-import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
+import { LOCAL_BETA_WARNING, rememberLocalConsent } from "@/lib/ai/local-model-info";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -279,18 +279,19 @@ function AiTab() {
   }
 
   async function selectOrbitLocal() {
-    const ok = await app.confirm({ title: "Orbit Local — Beta report", body: ORBIT_BETA_WARNING, confirmLabel: "Use Orbit Local Beta" });
+    const ok = await app.confirm({ title: "Bots Local — Beta report", body: LOCAL_BETA_WARNING, confirmLabel: "Use Bots Local Beta" });
     if (!ok) return;
     setBusy(true);
     try {
       const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferOrbitLocal: true }) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not select Orbit Local.");
+      if (!res.ok) throw new Error(data.error || "Could not select Bots Local.");
       app.setSettings(data);
+      rememberLocalConsent();
       setMode("orbit-local");
-      setMsg({ ok: true, text: "Orbit Local Beta is selected for new chats. The model downloads on first use, not now." });
+      setMsg({ ok: true, text: "Bots Local Beta is selected for new chats. The model downloads on first use, not now." });
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not select Orbit Local." });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not select Bots Local." });
     } finally { setBusy(false); }
   }
 
@@ -350,10 +351,10 @@ function AiTab() {
   return (
     <Section title="AI Provider" desc="Use the deployment’s included AI when available, or connect your own provider. Included AI is hosted by the deployment operator; availability and privacy depend on that host.">
       <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] p-3 text-[13px] text-neutral-300">
-        <div className="font-medium text-white">Orbit Local <span className="text-amber-300">Beta</span>{s.preferOrbitLocal ? " · Selected" : ""}</div>
-        <p className="mt-1 text-[12px] text-neutral-400">Gemma runs in your browser without a model-provider request quota. Experimental; device and download requirements apply.</p>
+        <div className="font-medium text-white">Bots Local <span className="text-amber-300">Beta</span>{s.preferOrbitLocal ? " · Selected" : ""}</div>
+        <p className="mt-1 text-[12px] text-neutral-400">Qwen3 4B runs on your device. Pretrained by Qwen, not trained by this app. Experimental; about 2.5 GB download and compatible WebGPU hardware required.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" onClick={selectOrbitLocal} disabled={busy} className={btnWhite}>{s.preferOrbitLocal ? "Review beta report" : "Use Orbit Local Beta"}</button>
+          <button type="button" onClick={selectOrbitLocal} disabled={busy} className={btnWhite}>{s.preferOrbitLocal ? "Review beta report" : "Use Bots Local Beta"}</button>
           {s.preferOrbitLocal && <button type="button" onClick={useHostedProvider} disabled={busy} className={btnWhite}>Use hosted provider instead</button>}
         </div>
       </div>
@@ -364,7 +365,7 @@ function AiTab() {
             <span className="font-mono text-[12px] opacity-70">{s.usingIncludedAi || s.usingFreeCloud ? "No personal API key required" : s.aiKeyHint}</span>
           </>
         ) : (
-          "No hosted provider configured. Orbit Local Beta can be selected above."
+          "No hosted provider configured. Bots Local Beta can be selected above."
         )}
       </StatusPill>
       {modelAuthError && <p role="alert" className="text-[12px] leading-relaxed text-amber-300">{modelAuthError}</p>}
@@ -386,7 +387,7 @@ function AiTab() {
           className={cx(inputCls, "appearance-none")}
           aria-label="Provider"
         >
-          <option value="orbit-local">Orbit Local (Beta) — runs in your browser</option>
+          <option value="orbit-local">Bots Local (Beta) — runs in your browser</option>
           <option value="auto">Auto-detect from key</option>
           {PROVIDER_IDS.filter((p) => p !== "kilo-free" && p !== "kilo-gemma-free" && p !== "ovh-free").map((p: ProviderId) => (
             <option key={p} value={p}>

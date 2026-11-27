@@ -38,7 +38,7 @@ export function parseLocalToolCall(text: string): LocalToolCall | null {
   try { const parsed: unknown = JSON.parse(candidate); return validLocalToolCall(parsed) ? parsed : null; } catch { return null; }
 }
 
-export const LOCAL_TOOL_PROMPT = `You are Orbit Local, a helpful assistant powered by Gemma. You have read-only tools. To use exactly one tool, respond with ONLY a JSON object: {"tool":"name","args":{...}}. Otherwise respond normally. Never claim a tool ran if you did not request it. Available tools:
+export const LOCAL_TOOL_PROMPT = `You are Bots Local, a helpful assistant powered by Qwen3 4B from Qwen. Answer open-ended questions naturally, admit uncertainty, and never invent current information. You have read-only tools. To use exactly one tool, respond with ONLY a JSON object: {"tool":"name","args":{...}}. Otherwise respond normally. Never claim a tool ran if you did not request it. Available tools:
 calculate: {"expression":"(2 + 3) * 4"}
 convert_units: {"amount":12,"from":"km","to":"mi"}
 check_contrast: {"foreground":"#000000","background":"#ffffff"}

@@ -235,7 +235,7 @@ export function Composer({
                 {
                   label: "New lyric video",
                   icon: "volume",
-                  onSelect: () => localMode ? onError("Orbit Local cannot build lyric videos yet. Switch to a hosted provider first.") : setLyricSheet(true),
+                  onSelect: () => localMode ? onError("Bots Local cannot build lyric videos yet. Switch to a hosted provider first.") : setLyricSheet(true),
                 },
               ]}
             />

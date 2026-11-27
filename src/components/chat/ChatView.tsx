@@ -1,6 +1,6 @@
 "use client";
 
-import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
+import { LOCAL_BETA_WARNING, hasLocalConsent, rememberLocalConsent } from "@/lib/ai/local-model-info";
 import { usesComputer } from "@/lib/computer-tools";
 import { isUuid } from "@/lib/ids";
 import { chatHttpError } from "@/lib/http-errors";
@@ -279,12 +279,17 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       content = content.trim();
       if (!content) return;
       if (browserMode && content.length > 3000) {
-        setError({ message: "Orbit Local supports messages up to 3,000 characters. Shorten your message or use a hosted model." });
+        setError({ message: "Bots Local supports messages up to 3,000 characters. Shorten your message or use a hosted model." });
         setInput(raw);
         setAttachments(atts);
         return;
       }
 
+      if (browserMode && !hasLocalConsent()) {
+        const ok = await app.confirm({ title: "Use the new Bots Local model?", body: LOCAL_BETA_WARNING, confirmLabel: "Use Bots Local" });
+        if (!ok) { setInput(raw); setAttachments(atts); return; }
+        rememberLocalConsent();
+      }
       setError(null);
       stick.current = true;
       const tmpId = `tmp-${Date.now()}`;
@@ -399,14 +404,18 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
 
       try {
         if (browserMode) {
-          const { browserGemma } = await import("@/lib/ai/browser-gemma");
+          const { browserLocal } = await import("@/lib/ai/browser-local");
           const { LOCAL_TOOL_PROMPT } = await import("@/lib/ai/local-tools");
           const { finishLocalTurn } = await import("@/lib/ai/local-turn");
-          const recent = messages.slice(-6).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 500)}`).join("\n");
-          const prompt = `${LOCAL_TOOL_PROMPT}\nBot instructions: ${bot.instructions.slice(0, 500)}\nRecent conversation:\n${recent}\nUser: ${content}\nAssistant:`;
+          const recent = messages.slice(-6).map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 400) }));
+          const prompt = [
+            { role: "system" as const, content: `${LOCAL_TOOL_PROMPT}\nBot instructions: ${bot.instructions.slice(0, 500)}` },
+            ...recent,
+            { role: "user" as const, content },
+          ];
           // Buffer the model output until it is clear whether it is a tool
           // request. Never display raw tool-call JSON as if it were an answer.
-          const generated = await browserGemma([{ role: "user", content: prompt }],
+          const generated = await browserLocal(prompt,
             (progress) => setWorking({ id: botId, label: progress }), () => {}, ac.signal);
           const answer = await finishLocalTurn(generated, async (call) => {
             setWorking({ id: botId, label: `Running ${call.tool}…` });
@@ -631,7 +640,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
       {/* Not `relative` on purpose: the computer panel's full view is positioned against the whole chat, header included. */}
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
-          {empty ? (
+          {empty && !error ? (
             <EmptyChat
               botId={bot.id}
               name={bot.name}
@@ -769,12 +778,12 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           <div className="mx-auto w-full max-w-[820px]">
             {browserMode && (
               <div className="mx-4 mb-1 rounded-2xl border border-blue-400/20 bg-blue-400/[0.06] px-4 py-2.5 text-[12px] text-blue-100 sm:mx-6">
-                Orbit Local runs Gemma on your device without a model-provider rate limit. It is experimental, with 11 read-only tools; it cannot browse or use connected accounts. Your device downloads model files from Hugging Face; tool requests and completed messages go to this app. <a className="underline" href="https://ai.google.dev/gemma/terms" target="_blank" rel="noreferrer">Gemma terms</a>
+                Bots Local uses the unmodified Qwen3 4B model on your device. It is experimental, cannot browse, and may be wrong. Model files download from Hugging Face; tool requests and completed messages go to this app. <a className="underline" href="https://huggingface.co/Qwen/Qwen3-4B" target="_blank" rel="noreferrer">Model details and license</a>
               </div>
             )}
             {!app.settings.hasAiKey && !browserMode && (
               <div className="mx-4 mb-1 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-[12.5px] text-amber-200 sm:mx-6">
-                <span>Choose Orbit Local below, or configure an AI provider to reply.</span>
+                <span>Choose Bots Local below, or configure an AI provider to reply.</span>
                 <button onClick={() => app.openSettings("ai")} className="shrink-0 rounded-full bg-amber-300 px-3.5 py-1.5 text-[12px] font-semibold text-black transition hover:bg-amber-200">
                   Add key
                 </button>
@@ -801,12 +810,12 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     onClick={async () => {
                       if (busy) return;
                       if (browserMode) { setBrowserOverride({ forDefault: app.settings.preferOrbitLocal, value: false }); return; }
-                      const ok = await app.confirm({ title: "Run Orbit Local in this browser?", body: ORBIT_BETA_WARNING, confirmLabel: "Use Orbit Local" });
-                      if (ok) setBrowserOverride({ forDefault: app.settings.preferOrbitLocal, value: true });
+                      const ok = await app.confirm({ title: "Run Bots Local in this browser?", body: LOCAL_BETA_WARNING, confirmLabel: "Use Bots Local" });
+                      if (ok) { rememberLocalConsent(); setBrowserOverride({ forDefault: app.settings.preferOrbitLocal, value: true }); }
                     }}
                     icon={<Icon name="sparkles" size={14} />}
-                    label="Toggle experimental Orbit Local"
-                  >Orbit Local</ComposerMode>
+                    label="Toggle experimental Bots Local"
+                  >Bots Local</ComposerMode>
                   <ComposerMode
                     active={panelOpen}
                     onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}

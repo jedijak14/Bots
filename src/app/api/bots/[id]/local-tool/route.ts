@@ -17,7 +17,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const parsed = await readLimitedJson(req, 48_000);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: parsed.status });
   const call = parsed.value;
-  if (!validLocalToolCall(call)) return Response.json({ error: "Tool or arguments are not allowed in Orbit Local." }, { status: 400 });
+  if (!validLocalToolCall(call)) return Response.json({ error: "Tool or arguments are not allowed in Bots Local." }, { status: 400 });
   const enabled = await db.select({ allowedTools: skills.allowedTools }).from(skills).where(and(eq(skills.userId, user.id), eq(skills.enabled, true), or(isNull(skills.botId), eq(skills.botId, bot.id))));
   const allowedTools = enabled.length ? [...new Set(enabled.flatMap(s => s.allowedTools ?? []))] : undefined;
   if (allowedTools && !allowedTools.includes(call.tool)) return Response.json({ error: "This tool is not allowed by the Bot's enabled skills." }, { status: 403 });
