@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { userSettings } from "@/db/schema";
 import { handleError, HttpError, requireUser } from "@/lib/auth";
+import { normalizeApiKey, credentialProblem, canReuseKey } from "@/lib/ai/credentials";
 import { decrypt, encrypt, keyHint } from "@/lib/crypto";
 import {
   detectProvider,
@@ -35,19 +36,21 @@ export async function POST(req: Request) {
       await db.update(userSettings).set({ aiKeyEnc: null, aiKeyHint: null, aiProvider: cfg.provider, aiProviderMode: "auto", preferOrbitLocal: false, aiBaseUrl: null, defaultModel: cfg.defaultModel, reasoning: "off", updatedAt: new Date() }).where(eq(userSettings.userId, user.id));
       return Response.json({ settings: publicSettings(await getSettings(user.id)), models: [cfg.defaultModel], detected: PROVIDERS[cfg.provider].label });
     }
-    const typed = String(b.apiKey ?? "").trim();
-    // A server on the same machine — Ollama, LM Studio, llama.cpp, vLLM — has
-    // no key to give. Requiring one shut out the cheapest way to run this app,
-    // and the "sk-no-key" placeholder was a lie in the settings panel. A key is
-    // required for anything that is not loopback, because those APIs do.
-    const localServer = isLocalBaseUrl(String(b.baseUrl ?? ""));
-    const apiKey = typed || decrypt(current.aiKeyEnc) || (localServer ? "sk-local" : "");
-    if (!apiKey) throw new HttpError(400, "Paste your API key first.");
+    const typed = normalizeApiKey(String(b.apiKey ?? ""));
     const mode = b.mode && (b.mode === "auto" || isProvider(b.mode)) ? b.mode : "auto";
     let baseUrl = String(b.baseUrl ?? "").trim();
     if (baseUrl && !/^https?:\/\//i.test(baseUrl)) throw new HttpError(400, "Base URL must start with http:// or https://");
     baseUrl = baseUrl.replace(/\/+$/, "");
     if (mode === "custom" && !baseUrl) throw new HttpError(400, "OpenAI-compatible providers need a base URL.");
+    const localServer = isLocalBaseUrl(baseUrl);
+    const savedKey = decrypt(current.aiKeyEnc);
+    if (!typed && savedKey && !localServer && !canReuseKey(current.aiProvider, current.aiBaseUrl, mode, baseUrl)) {
+      throw new HttpError(400, "To change provider or base URL, paste the key for the new destination. Your saved key was not sent.");
+    }
+    const apiKey = typed || (!localServer ? savedKey : null) || (localServer ? "sk-local" : "");
+    if (!apiKey) throw new HttpError(400, "Paste your API key first.");
+    const problem = credentialProblem(apiKey, mode);
+    if (problem) throw new HttpError(400, problem);
 
     let provider: ProviderId;
     let models: string[] = [];
@@ -76,8 +79,8 @@ export async function POST(req: Request) {
     await db
       .update(userSettings)
       .set({
-        aiKeyEnc: typed ? encrypt(apiKey) : current.aiKeyEnc,
-        aiKeyHint: typed ? keyHint(apiKey) : current.aiKeyHint,
+        aiKeyEnc: typed ? encrypt(apiKey) : localServer ? null : current.aiKeyEnc,
+        aiKeyHint: typed ? keyHint(apiKey) : localServer ? null : current.aiKeyHint,
         aiProvider: provider,
         aiProviderMode: mode,
         preferOrbitLocal: false,

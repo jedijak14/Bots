@@ -228,15 +228,16 @@ function AiTab() {
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [modelAuthError, setModelAuthError] = useState("");
   const [advanced, setAdvanced] = useState(!!s.aiBaseUrl || s.aiProviderMode === "custom");
 
   useEffect(() => {
     if (!s.hasAiKey) return;
     fetch("/api/models")
       .then((r) => r.json())
-      .then((j) => setModels(j.models ?? []))
+      .then((j) => { setModels(j.models ?? []); setModelAuthError(typeof j.authError === "string" ? j.authError : ""); })
       .catch(() => {});
-  }, [s.hasAiKey]);
+  }, [s.hasAiKey, s.aiProvider, s.aiKeyHint, s.aiBaseUrl]);
 
   // Whether reasoning can actually run here. Checked when a level is chosen, so
   // the panel can say "not installed" instead of letting the user pay for a
@@ -265,6 +266,7 @@ function AiTab() {
       if (!res.ok) throw new Error(j.error || "Couldn't verify that key.");
       app.setSettings(j.settings);
       setModels(j.models ?? []);
+      setModelAuthError("");
       setModel(j.settings.defaultModel ?? "");
       setImageModel(j.settings.imageModel ?? "");
       setKey("");
@@ -358,13 +360,14 @@ function AiTab() {
       <StatusPill ok={s.hasAiKey}>
         {s.hasAiKey ? (
           <>
-            {s.usingIncludedAi || s.usingFreeCloud ? "Configured to use" : "Connected to"} <b className="font-semibold">{s.aiProviderLabel}</b>
+            {"Configured to use"} <b className="font-semibold">{s.aiProviderLabel}</b>
             <span className="font-mono text-[12px] opacity-70">{s.usingIncludedAi || s.usingFreeCloud ? "No personal API key required" : s.aiKeyHint}</span>
           </>
         ) : (
           "No hosted provider configured. Orbit Local Beta can be selected above."
         )}
       </StatusPill>
+      {modelAuthError && <p role="alert" className="text-[12px] leading-relaxed text-amber-300">{modelAuthError}</p>}
 
       <div>
         <Label hint={s.hasAiKey && !s.usingIncludedAi && !s.usingFreeCloud ? "Leave blank to keep your saved key." : "sk-…, sk-ant-…, AIza…, gsk_…, xai-…, sk-or-…, nvapi-…"}>API key</Label>
@@ -392,6 +395,8 @@ function AiTab() {
           ))}
         </select>
       </div>
+
+      {mode === "nvidia" && <p className="text-[12px] leading-relaxed text-neutral-400">Use an NVIDIA API catalog key (usually <code>nvapi-…</code>). Leave the base URL empty for NVIDIA’s hosted API. If you change providers, paste the new provider’s key; a saved key is not sent to a different destination.</p>}
 
       <div>
         <button onClick={() => setAdvanced((a) => !a)} className="flex items-center gap-1.5 text-[13px] text-neutral-400 transition hover:text-white">

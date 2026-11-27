@@ -162,7 +162,10 @@ export async function listModels(
     cache: "no-store",
   });
   if (res.status === 401 || res.status === 403) {
-    throw new KeyRejectedError(`${PROVIDERS[provider].label} rejected this key.`);
+    if (provider === "nvidia") throw new KeyRejectedError(res.status === 401
+      ? "NVIDIA NIM could not authenticate this key. Select NVIDIA NIM, clear an unintended base URL override, and paste a valid NVIDIA API catalog key (usually starts with nvapi-). If necessary, generate a new key in NVIDIA. Do not paste your key into chat."
+      : "NVIDIA NIM denied access (403). Check the key’s permissions and NVIDIA account access.");
+    throw new KeyRejectedError(`${PROVIDERS[provider].label} denied access. Check the key and its permissions.`);
   }
   if (!res.ok) throw new Error(`${PROVIDERS[provider].label} returned ${res.status} when listing models.`);
   const json = (await res.json()) as { data?: { id?: string; name?: string }[]; models?: { name?: string }[] };

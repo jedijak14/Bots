@@ -1,5 +1,5 @@
 import { handleError, requireUser } from "@/lib/auth";
-import { listModels, type ProviderId } from "@/lib/ai/providers";
+import { listModels, KeyRejectedError, type ProviderId } from "@/lib/ai/providers";
 import { isFreeCloudProvider } from "@/lib/ai/free-cloud";
 import { aiConfigFrom, getSettings } from "@/lib/settings";
 
@@ -20,8 +20,9 @@ export async function GET() {
     let models: string[] = [];
     try {
       models = await listModels(cfg.provider as ProviderId, cfg.apiKey, cfg.baseUrl);
-    } catch {
-      /* fall through with empty list */
+    } catch (error) {
+      if (error instanceof KeyRejectedError) return Response.json({ models: [], provider: cfg.provider, authError: error.message });
+      /* Some providers do not support listing models. */
     }
     if (models.length) cache.set(ck, { at: Date.now(), models });
     return Response.json({ models, provider: cfg.provider });

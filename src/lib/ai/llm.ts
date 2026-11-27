@@ -1,3 +1,4 @@
+import { authFailure } from "./credentials";
 import { PROVIDERS, type ProviderId } from "./providers";
 
 export type Tool = {
@@ -85,7 +86,8 @@ async function failure(res: Response, label: string): Promise<Error> {
   msg = msg.slice(0, 400);
   if (res.status === 401 || res.status === 403) return (label === "Kilo Free (anonymous)" || label === "Gemma via Kilo (anonymous)" || label === "OVHcloud (anonymous)")
     ? new Error(`${label} denied anonymous access. Its policy or availability may have changed. ${msg}`)
-    : new Error(`${label} rejected your API key. Check it in Settings. ${msg}`);
+    : label === "NVIDIA NIM" ? new Error(authFailure("nvidia", res.status))
+    : new Error(`${label}: ${authFailure("custom", res.status)}`);
   if (res.status === 429) return new Error(`${label} rate limit or quota reached. ${msg}`);
   return new Error(`${label} error (${res.status}). ${msg}`);
 }
