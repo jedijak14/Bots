@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     const b = parsed.value as Record<string, unknown>;
     const { botId, uploadId, kind, index, totalBytes, data, title, mime } = b;
     if (typeof botId !== 'string' || !(await getBot(user.id, botId))) return Response.json({ error: 'Bot not found.' }, { status: 404 });
-    if ((kind !== 'audio' && kind !== 'image') || typeof title !== 'string' || typeof mime !== 'string' || mediaType(kind, title, mime) !== mime || typeof index !== 'number' || typeof totalBytes !== 'number' || typeof data !== 'string' || totalBytes > MEDIA_LIMITS[kind] || !validMediaChunk(data, index, totalBytes)) return Response.json({ error: 'Invalid file or upload chunk.' }, { status: 400 });
+    if ((kind !== 'audio' && kind !== 'image' && kind !== 'video') || typeof title !== 'string' || typeof mime !== 'string' || mediaType(kind, title, mime) !== mime || typeof index !== 'number' || typeof totalBytes !== 'number' || typeof data !== 'string' || totalBytes > MEDIA_LIMITS[kind] || !validMediaChunk(data, index, totalBytes)) return Response.json({ error: 'Invalid file or upload chunk.' }, { status: 400 });
     const prefix = `data:${mime};base64,`;
     const complete = (index + 1) * MEDIA_CHUNK_BYTES >= totalBytes;
     if (index === 0) {

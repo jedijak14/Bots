@@ -159,7 +159,7 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-semibold tracking-tight text-white">New lyric video</h2>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-neutral-500">
-              Upload a song and lyrics, then send the prepared message to your Bot. This creates an interactive player, not an MP4 file. Timed lyrics work best; plain text gets approximate timing.
+              Upload a song and lyrics, then send the prepared message to your Bot. This creates a preview; use Render MP4 on its card to save the finished video. Timed lyrics work best; plain text gets approximate timing.
             </p>
           </div>
         </div>

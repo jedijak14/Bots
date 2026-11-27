@@ -1,12 +1,13 @@
 /** Keep each base64 request comfortably below Vercel's 4.5 MB body limit. */
 export const MEDIA_CHUNK_BYTES = 768 * 1024; // divisible by three, so chunks concatenate as base64
-export const MEDIA_LIMITS = { audio: 24 * 1024 * 1024, image: 3 * 1024 * 1024 } as const;
+export const MEDIA_LIMITS = { audio: 24 * 1024 * 1024, image: 3 * 1024 * 1024, video: 32 * 1024 * 1024 } as const;
 const TYPES: Record<string, string> = {
+  mp4: 'video/mp4',
   mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
 };
 const ALIASES: Record<string, string> = { 'audio/mp3': 'audio/mpeg', 'audio/x-wav': 'audio/wav', 'audio/x-m4a': 'audio/mp4' };
-export function mediaType(kind: 'audio' | 'image', name: string, browserType: string): string | null {
+export function mediaType(kind: 'audio' | 'image' | 'video', name: string, browserType: string): string | null {
   const extension = name.toLowerCase().split('.').pop() ?? '';
   const fallback = TYPES[extension];
   const normalized = ALIASES[browserType.toLowerCase()] ?? browserType.toLowerCase();

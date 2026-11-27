@@ -7,6 +7,8 @@ test('media formats tolerate missing browser mime but enforce kind', () => {
   assert.equal(mediaType('audio', 'song.wav', 'audio/x-wav'), 'audio/wav');
   assert.equal(mediaType('image', 'cover.jpg', ''), 'image/jpeg');
   assert.equal(mediaType('audio', 'cover.png', 'image/png'), null);
+  assert.equal(mediaType('video', 'song.mp4', 'video/mp4'), 'video/mp4');
+  assert.equal(mediaType('video', 'song.mp4', 'audio/mp4'), null);
 });
 test('chunk validation handles boundaries, padding and out of order indexes', () => {
   const bytes = Buffer.alloc(MEDIA_CHUNK_BYTES + 2, 0x7f);

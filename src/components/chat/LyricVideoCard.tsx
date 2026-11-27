@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSWRConfig } from "swr";
+import { downloadBlob, fetchMediaBlob, uploadVideo } from "@/lib/media-client";
 import type { LyricVideoSpec } from "@/lib/lyric-video-spec";
 import { timePlainLyrics } from "@/lib/lyric-timing";
 import { LYRIC_PRESETS } from "@/lib/lyric-video-spec";
@@ -27,6 +29,12 @@ type BraccatoElement = HTMLElement & {
  */
 export function LyricVideoCard({ artifact }: { artifact: { id: string; title: string; content: string } }) {
   const app = useApp();
+  const { mutate } = useSWRConfig();
+  const renderAbort = useRef<AbortController | null>(null);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [renderStatus, setRenderStatus] = useState("");
+  const [renderError, setRenderError] = useState("");
+  const [unsavedMp4, setUnsavedMp4] = useState<Blob | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lyricsRef = useRef<BraccatoElement | null>(null);
@@ -44,6 +52,42 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    return () => { renderAbort.current?.abort(); };
+  }, []);
+
+  async function renderVideo() {
+    if (!spec || renderAbort.current) return;
+    const controller = new AbortController();
+    renderAbort.current = controller;
+    setRenderError(""); setUnsavedMp4(null); setRenderStatus("Preparing MP4…");
+    try {
+      audioRef.current?.pause();
+      const response = await fetch(`/api/artifacts/${artifact.id}`, { signal: controller.signal });
+      const preview = await response.json();
+      if (!response.ok || typeof preview.botId !== "string") throw new Error(preview.error || "Could not load the preview.");
+      const { renderLyricMp4 } = await import("@/lib/render-lyric-mp4");
+      const blob = await renderLyricMp4(spec, audioRef.current?.duration || 0, controller.signal, setRenderStatus);
+      setUnsavedMp4(blob);
+      setRenderStatus("Saving MP4 artifact…");
+      const title = `${spec.title.replace(/[^a-z0-9 _.-]/gi, "").slice(0, 100) || "lyric-video"}.mp4`;
+      const id = await uploadVideo(blob, preview.botId, title, controller.signal);
+      const link = await fetch(`/api/artifacts/${artifact.id}/lyric-video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: id }), signal: controller.signal });
+      if (!link.ok) throw new Error("The MP4 was saved in Artifacts, but could not be linked to this preview.");
+      setVideoId(id); setUnsavedMp4(null);
+      void mutate((key: unknown) => typeof key === "string" && key.startsWith("/api/artifacts"));
+    } catch (reason) {
+      if (!controller.signal.aborted) setRenderError(reason instanceof Error ? reason.message : "Could not render the MP4.");
+    } finally {
+      if (!controller.signal.aborted) setRenderStatus("");
+      if (renderAbort.current === controller) renderAbort.current = null;
+    }
+  }
+
+  async function downloadVideo(id: string) {
+    try { downloadBlob(await fetchMediaBlob(id), `${spec?.title || "lyric-video"}.mp4`); }
+    catch (reason) { setRenderError(reason instanceof Error ? reason.message : "Could not download the MP4."); }
+  }
 
   useEffect(() => {
     if (!spec) return;
@@ -153,7 +197,7 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
           {spec.artist && <div className="truncate text-[11.5px] text-neutral-500">{spec.artist}</div>}
         </div>
         <span className="shrink-0 rounded-full border border-white/[0.09] bg-white/[0.04] px-2 py-0.5 text-[10.5px] font-medium text-neutral-400">
-          interactive preview · not MP4
+          interactive preview
         </span>
       </div>
 
@@ -204,6 +248,26 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
           <Scrubber audioRef={audioRef} />
           <audio ref={audioRef} src={`/api/artifacts/${spec.audioId}/raw`} preload="metadata" className="hidden" />
         </div>
+      </div>
+      <div className="space-y-2 border-t border-white/[0.07] px-4 py-3">
+        {(videoId || spec.videoId) ? (
+          <>
+            <p className="text-[12px] font-medium text-white">Rendered MP4 artifact</p>
+            <video controls playsInline preload="metadata" className="w-full rounded-xl bg-black" src={`/api/artifacts/${videoId || spec.videoId}/raw`} />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void downloadVideo((videoId || spec.videoId)!)} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-medium text-black">Download MP4</button>
+              <button type="button" onClick={() => void renderVideo()} disabled={!ready || !!renderStatus} className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white disabled:opacity-50">{renderStatus || "Render again"}</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[11.5px] text-neutral-400">Render a 640 × 360 MP4 with your song and lyrics. Rendering runs on your device; keep this page open. Up to 10 minutes and 32 MB. Plain lyrics use approximate timing.</p>
+            <button type="button" onClick={() => void renderVideo()} disabled={!ready || !!renderStatus} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-medium text-black disabled:opacity-50">{renderStatus || "Render MP4"}</button>
+          </>
+        )}
+        {renderStatus && <p role="status" className="text-[12px] text-neutral-400">{renderStatus}</p>}
+        {renderError && <p role="alert" className="text-[12px] text-rose-300">{renderError}</p>}
+        {unsavedMp4 && <button type="button" onClick={() => downloadBlob(unsavedMp4, `${spec.title}.mp4`)} className="text-[12px] text-white underline">Download rendered MP4</button>}
       </div>
     </div>
   );

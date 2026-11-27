@@ -6,6 +6,8 @@ export type LyricVideoSpec = {
   version: 1;
   title: string;
   artist?: string;
+  /** Rendered MP4 artifact, if the user has exported this preview. */
+  videoId?: string;
   /** Artifact id of the uploaded song. */
   audioId: string;
   /** Artifact id of the album art, when one was uploaded. */

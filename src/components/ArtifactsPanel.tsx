@@ -17,8 +17,8 @@ const fetcher = async (url: string): Promise<Artifact[]> => {
 };
 
 const isEmail = (kind: string) => kind.startsWith("email_") || kind === "sent_email";
-/** Uploaded songs and covers back a lyric video; they are not documents. */
-const isMedia = (kind: string) => kind === "audio" || kind === "image";
+/** Binary media is downloaded from the raw route, not as a text document. */
+const isMedia = (kind: string) => kind === "audio" || kind === "image" || kind === "video";
 
 function artifactBlob(artifact: Artifact) {
   const type = artifact.kind === "html" || artifact.kind === "website" ? "text/html" : isEmail(artifact.kind) ? "application/json" : "text/plain";
@@ -163,7 +163,7 @@ export function ArtifactsPanel() {
                       : isEmail(artifact.kind)
                         ? "mail"
                         : isMedia(artifact.kind)
-                          ? artifact.kind === "audio" ? "volume" : "image"
+                          ? artifact.kind === "audio" ? "volume" : artifact.kind === "video" ? "file" : "image"
                           : "file"
                   }
                   size={16}
@@ -208,6 +208,11 @@ export function ArtifactsPanel() {
             ) : isEmail(artifact.kind) ? (
               <div className="mt-3">
                 <EmailDraftCard artifact={artifact} />
+              </div>
+            ) : artifact.kind === "video" ? (
+              <div className="mt-3">
+                <video controls playsInline preload="metadata" className="w-full rounded-xl bg-black" src={`/api/artifacts/${artifact.id}/raw`} />
+                <button type="button" onClick={() => downloadArtifact(artifact)} className={cx(btnQuiet, "mt-2")}>Download MP4</button>
               </div>
             ) : isMedia(artifact.kind) ? (
               <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
