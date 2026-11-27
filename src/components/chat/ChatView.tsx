@@ -3,6 +3,7 @@
 import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
 import { usesComputer } from "@/lib/computer-tools";
 import { isUuid } from "@/lib/ids";
+import { chatHttpError } from "@/lib/http-errors";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import useSWR from "swr";
@@ -437,7 +438,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
         });
         if (!res.ok || !res.body) {
           const j = await res.json().catch(() => ({}));
-          setError({ message: j.error || "Couldn't reach the server.", code: j.code });
+          setError({ message: typeof j.error === "string" && j.error ? j.error : res.ok ? "The server returned an empty reply. Please try again." : chatHttpError(res.status), code: j.code });
           setMessages((m) => m.filter((x) => x.id !== tmpId));
           setInput(raw);
           setAttachments(atts);
@@ -464,6 +465,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
             } catch {}
           }
         }
+        if (!finalized && !ac.signal.aborted) throw new Error("The server closed the reply before it finished. Please try again.");
       } catch (e) {
         if (browserMode || !receivedStart) {
           // Only complete saved exchanges belong in the transcript. Restore the
@@ -474,7 +476,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
           if (browserMode) acc.current.text = "";
         }
         if (!(e instanceof DOMException && e.name === "AbortError")) {
-          setError({ message: browserMode && e instanceof Error ? e.message : "The connection was interrupted." });
+          setError({ message: e instanceof Error && (browserMode || e.message.startsWith("The server closed")) ? e.message : "The connection was interrupted. Check your connection and try again." });
         }
       } finally {
         finalize(null);

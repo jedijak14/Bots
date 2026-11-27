@@ -7,7 +7,7 @@
  * caller can opt out for a statement that is not idempotent.
  */
 
-const CONNECTION_ERROR = /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|Connection terminated|connection is closed|Client has encountered a connection error|terminating connection|sorry, too many clients/i;
+const CONNECTION_ERROR = /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|Connection terminated|connection is closed|Client has encountered a connection error|terminating connection|sorry, too many clients|timeout exceeded when trying to connect|connection timeout|remaining connection slots are reserved/i;
 
 export function isConnectionError(error: unknown): boolean {
   const message = error instanceof Error ? `${error.message} ${(error as { cause?: unknown }).cause ?? ""}` : String(error);

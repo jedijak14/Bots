@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { bots, conversationArchives, messages, privacySessions, skills, users, type ChoicesRecord, type StepRecord } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { isConnectionError, withDbRetry } from "@/lib/retry";
 import { getBot } from "@/lib/bots";
 import { runAgent, type Hist } from "@/lib/ai/llm";
 import { fitHistory } from "@/lib/ai/history";
@@ -82,13 +83,27 @@ function systemPrompt(name: string, instructions: string, hasComputer: boolean, 
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    return await startChat(req, ctx);
+  } catch (error) {
+    // Database errors can contain SQL parameters (including message text).
+    // Log only a bounded code, not the query, credentials, or user content.
+    const cause = error instanceof Error ? (error as Error & { cause?: { code?: unknown } }).cause : undefined;
+    const code = typeof cause?.code === "string" && /^[A-Z0-9_]{1,30}$/.test(cause.code) ? cause.code : "unknown";
+    console.error("[chat] request failed before streaming", { code });
+    if (isConnectionError(error)) return Response.json({ error: "The database connection is temporarily unavailable. Please try again shortly.", code: "database_unavailable" }, { status: 503 });
+    return Response.json({ error: "The server couldn't start this reply (HTTP 500). Please try again.", code: "chat_start_failed" }, { status: 500 });
+  }
+}
+
+async function startChat(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Please sign in." }, { status: 401 });
   const { id } = await ctx.params;
-  const bot = await getBot(user.id, id);
+  const bot = await withDbRetry(() => getBot(user.id, id));
   if (!bot) return Response.json({ error: "Bot not found." }, { status: 404 });
 
-  const [privacySession] = await db.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1);
+  const [privacySession] = await withDbRetry(() => db.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1));
   if (privacySession) return Response.json({ error: "Privacy Mode is active. Press I'm Done before resuming the Bot.", code: "privacy_mode_active" }, { status: 423 });
 
   const body = (await req.json().catch(() => ({}))) as { content?: string; wantShots?: boolean };
@@ -96,7 +111,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!content) return Response.json({ error: "Say something first." }, { status: 400 });
   if (content.length > 60_000) return Response.json({ error: "That message is too long." }, { status: 400 });
 
-  const settings = await getSettings(user.id);
+  const settings = await withDbRetry(() => getSettings(user.id));
   const cfg = aiConfigFrom(settings);
   if (!cfg) {
     return Response.json(
@@ -109,11 +124,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return Response.json({ error: "Pick a model in Settings or from the model menu.", code: "no_model" }, { status: 400 });
   }
   const e2bKey = e2bKeyFrom(settings);
-  const [archives, enabledSkills, goalList] = await Promise.all([
+  const [archives, enabledSkills, goalList] = await withDbRetry(() => Promise.all([
     db.select({ title: conversationArchives.title, messages: conversationArchives.messages }).from(conversationArchives).where(and(eq(conversationArchives.botId, id), eq(conversationArchives.userId, user.id))).orderBy(desc(conversationArchives.createdAt)).limit(4),
     db.select({ name: skills.name, instructions: skills.instructions, allowedTools: skills.allowedTools, allowedConnectors: skills.allowedConnectors }).from(skills).where(and(eq(skills.userId, user.id), eq(skills.enabled, true), or(isNull(skills.botId), eq(skills.botId, id)))).orderBy(desc(skills.updatedAt)),
     listGoals(user.id).catch(() => []),
-  ]);
+  ]));
   const archivedContext = archives.reverse().map((archive) => {
     const userRequests = archive.messages.filter((message) => message.role === "user").slice(-3).map((message) => `- ${message.content.slice(0, 180)}`).join("\n");
     const lastOutcome = archive.messages.filter((message) => message.role === "assistant").slice(-1).map((message) => message.content.slice(0, 240))[0] ?? "";
@@ -123,26 +138,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const allowedTools = enabledSkills.length ? [...new Set(enabledSkills.flatMap((skill) => skill.allowedTools ?? []))] : undefined;
   const allowedConnectors = enabledSkills.length ? [...new Set(enabledSkills.flatMap((skill) => skill.allowedConnectors ?? []))] : undefined;
 
-  const [userMsg] = await db.insert(messages).values({ botId: id, userId: user.id, role: "user", content }).returning();
-
-  const recent = await db
+  // Do all retryable reads before inserting the user's message. A failed read
+  // must not leave a hidden duplicate behind when the person retries.
+  const recent = await withDbRetry(() => db
     .select()
     .from(messages)
     .where(and(eq(messages.botId, id), eq(messages.userId, user.id)))
     .orderBy(desc(messages.createdAt))
-    .limit(40);
-  const history: Hist[] = fitHistory(
-    recent
-    .reverse()
-    .map((m) => {
+    .limit(39));
+  const priorHistory: Hist[] = recent.reverse().map((m) => {
       let c = m.content;
       if (m.role === "assistant") {
         if (m.steps?.length) c += `\n\n(Actions taken: ${m.steps.map((s) => s.label).join("; ")})`;
         if (m.choices) c += `\n\n(You asked the user: "${m.choices.question}" with options: ${m.choices.options.join(" | ")})`;
       }
       return { role: m.role as "user" | "assistant", content: c.trim() };
-    })
-    .filter((m) => m.content),
+    }).filter((m) => m.content);
+  const history: Hist[] = fitHistory(
+    [...priorHistory, { role: "user", content }],
     // Enough for a long working session without letting two pasted documents
     // crowd the current question out of the window.
     Number(process.env.HISTORY_TOKEN_BUDGET) || 24_000,
@@ -159,6 +172,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const packs = packsFor(content, { hasComputer: !!e2bKey });
   const packTools = toolsForPacks(packs);
   const turnId = crypto.randomUUID();
+  const [userMsg] = await db.insert(messages).values({ botId: id, userId: user.id, role: "user", content }).returning();
 
   const ac = new AbortController();
   req.signal.addEventListener("abort", () => ac.abort());
@@ -191,151 +205,162 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       send({ t: "start", userMessage: { id: userMsg.id, createdAt: userMsg.createdAt.toISOString() } });
       if (packs.length) send({ t: "packs", packs: packs.map((pack) => ({ id: pack.id, title: pack.title })) });
 
-      const toolset = buildToolset({
-        userId: user.id,
-        bot: { id: bot.id, sandboxId: bot.sandboxId },
-        e2bKey,
-        wantShots: !!body.wantShots,
-        signal: ac.signal,
-        allowedTools,
-        allowedConnectors,
-        packTools,
-        libraryQuery: content,
-        imageConfig: cfg && !isFreeCloudProvider(cfg.provider) ? { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, imageModel: cfg.imageModel } : undefined,
-        turnId,
-        botName: bot.name,
-        helperAi: { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model },
-        // Helper progress is part of the turn's stream: the chat shows a lane
-        // for each one as it starts and finishes.
-        onHelper: (helper: { id: string; name: string; state: string; settled: Promise<void> }) => {
-          send({ t: "helper", helper: { id: helper.id, name: helper.name, state: helper.state } });
-          void helper.settled.then(() => {
-            const live = helpersFor(turnId).find((h) => h.id === helper.id);
-            if (live) send({ t: "helper", helper: { id: live.id, name: live.name, state: live.state } });
-          });
-        },
-        ev: {
-          onStepStart: (s) => send({ t: "step", ...s }),
-          onStepEnd: (s) => {
-            steps.push(s);
-            send({ t: "step_done", ...s });
-          },
-          onShot: (data) => send({ t: "shot", data }),
-          onChoices: (c) => {
-            choices = c;
-            send({ t: "choices", ...c });
-          },
-        },
-      });
-
-      // Reasoning is opt-in. When it is on, this turn is worth an optimising
-      // proxy; when the proxy cannot start, say so once in the transcript and
-      // run the turn plainly rather than failing it.
-      const reasoning = (["low", "medium", "high", "off"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
-      const approach = shouldOptimise(reasoning, !!cfg.apiKey) && !ac.signal.aborted ? approachFor(reasoning) : null;
-      let optimise: { url: string; model: string; approach: string } | undefined;
-      if (approach) {
-        // The proxy needs a port of its own; 8000 is OptiLLM's default and is
-        // shared by every account on this host, so the base is derived from
-        // OPTILLM_PORT when the operator had to move it.
-        const base = Number(process.env.OPTILLM_PORT ?? 8000);
-        const started = await ensureProxy(
-          { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, provider: cfg.provider, reasoning },
-          { port: Number.isFinite(base) ? base : 8000 },
-        );
-        if ("url" in started) {
-          optimise = { url: started.url, model: optimisedModel(model, reasoning), approach };
-          send({ t: "optimise", state: "on", level: reasoning, why: whyFor(reasoning) });
-        } else {
-          send({ t: "optimise", state: "off", level: reasoning, why: started.error });
-        }
-      }
-
       try {
-        await runAgent({
-          provider: cfg.provider,
-          apiKey: cfg.apiKey,
-          baseUrl: cfg.baseUrl,
-          model,
-          system: [systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList), packsPrompt(packs)), requestsBrief(requests)]
-            .filter(Boolean)
-            .join("\n\n"),
-          history,
-          tools: toolset.tools,
+        const toolset = buildToolset({
+          userId: user.id,
+          bot: { id: bot.id, sandboxId: bot.sandboxId },
+          e2bKey,
+          wantShots: !!body.wantShots,
           signal: ac.signal,
-          onText: (d) => {
-            text += d;
-            send({ t: "text", d });
+          allowedTools,
+          allowedConnectors,
+          packTools,
+          libraryQuery: content,
+          imageConfig: cfg && !isFreeCloudProvider(cfg.provider) ? { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, imageModel: cfg.imageModel } : undefined,
+          turnId,
+          botName: bot.name,
+          helperAi: { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model },
+          // Helper progress is part of the turn's stream: the chat shows a lane
+          // for each one as it starts and finishes.
+          onHelper: (helper: { id: string; name: string; state: string; settled: Promise<void> }) => {
+            send({ t: "helper", helper: { id: helper.id, name: helper.name, state: helper.state } });
+            void helper.settled.then(() => {
+              const live = helpersFor(turnId).find((h) => h.id === helper.id);
+              if (live) send({ t: "helper", helper: { id: live.id, name: live.name, state: live.state } });
+            });
           },
-          runTool: toolset.run,
-          optimise,
-          onOptimiseFailed: (reason) => send({ t: "optimise", state: "failed", level: reasoning, why: reason.slice(0, 240) }),
+          ev: {
+            onStepStart: (s) => send({ t: "step", ...s }),
+            onStepEnd: (s) => {
+              steps.push(s);
+              send({ t: "step_done", ...s });
+            },
+            onShot: (data) => send({ t: "shot", data }),
+            onChoices: (c) => {
+              choices = c;
+              send({ t: "choices", ...c });
+            },
+          },
         });
-      } catch (e) {
-        if (!ac.signal.aborted) send({ t: "error", message: describeModelError(e) });
-      }
 
-      if (interruptedByPrivacy) {
+        // Reasoning is opt-in. When it is on, this turn is worth an optimising
+        // proxy; when the proxy cannot start, say so once in the transcript and
+        // run the turn plainly rather than failing it.
+        const reasoning = (["low", "medium", "high", "off"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
+        const approach = shouldOptimise(reasoning, !!cfg.apiKey) && !ac.signal.aborted ? approachFor(reasoning) : null;
+        let optimise: { url: string; model: string; approach: string } | undefined;
+        if (approach) {
+          // The proxy needs a port of its own; 8000 is OptiLLM's default and is
+          // shared by every account on this host, so the base is derived from
+          // OPTILLM_PORT when the operator had to move it.
+          const base = Number(process.env.OPTILLM_PORT ?? 8000);
+          const started = await ensureProxy(
+            { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, provider: cfg.provider, reasoning },
+            { port: Number.isFinite(base) ? base : 8000 },
+          );
+          if ("url" in started) {
+            optimise = { url: started.url, model: optimisedModel(model, reasoning), approach };
+            send({ t: "optimise", state: "on", level: reasoning, why: whyFor(reasoning) });
+          } else {
+            send({ t: "optimise", state: "off", level: reasoning, why: started.error });
+          }
+        }
+
+        try {
+          await runAgent({
+            provider: cfg.provider,
+            apiKey: cfg.apiKey,
+            baseUrl: cfg.baseUrl,
+            model,
+            system: [systemPrompt(bot.name, bot.instructions, !!e2bKey, savedSkills, archivedContext, goalsForPrompt(goalList), packsPrompt(packs)), requestsBrief(requests)]
+              .filter(Boolean)
+              .join("\n\n"),
+            history,
+            tools: toolset.tools,
+            signal: ac.signal,
+            onText: (d) => {
+              text += d;
+              send({ t: "text", d });
+            },
+            runTool: toolset.run,
+            optimise,
+            onOptimiseFailed: (reason) => send({ t: "optimise", state: "failed", level: reasoning, why: reason.slice(0, 240) }),
+          });
+        } catch (e) {
+          if (!ac.signal.aborted) send({ t: "error", message: describeModelError(e) });
+        }
+
+        if (interruptedByPrivacy) {
+          clearHelpers(turnId);
+          send({ t: "done", message: null });
+          closed = true;
+          stopPrivacyPoll?.();
+          try { controller.close(); } catch {}
+          return;
+        }
+
+        // Did the reply actually cover everything that was asked? A small model
+        // will finish the first job and stop, and the reply looks complete
+        // because it ends. Nothing here can do the missing work — that would be a
+        // second paid turn — but the user can be told plainly what is still open,
+        // which is the difference between "it forgot" and "it forgot and nobody
+        // noticed".
+        if (multiRequest && text.trim()) {
+          const missed = unansweredParts(requests, text, { steps: steps.map((s) => s.label).join(" ") });
+          if (missed.length) {
+            const note = [
+              "",
+              "",
+              `**Not covered yet:** ${missed.map((part) => `“${part}”`).join(", ")}.`,
+              "Say “continue” and I will pick those up.",
+            ].join("\n");
+            text += note;
+            send({ t: "text", d: note });
+          }
+        }
+
+        try {
+          if (text.trim() || steps.length || choices) {
+            const saved = await db.transaction(async (tx) => {
+              await tx.select({ id: users.id }).from(users).where(eq(users.id, user.id)).for("update");
+              const [activeSession] = await tx.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1);
+              if (activeSession) return null;
+              const [message] = await tx.insert(messages).values({ botId: id, userId: user.id, role: "assistant", content: text.replace(/\n{3,}/g, "\n\n").trim(), steps: steps.length ? steps : null, choices }).returning();
+              return message ?? null;
+            });
+            if (!saved) {
+              send({ t: "done", message: null });
+              closed = true;
+              stopPrivacyPoll?.();
+              try { controller.close(); } catch {}
+              return;
+            }
+            send({ t: "done", message: { id: saved.id, createdAt: saved.createdAt.toISOString() } });
+          } else {
+            send({ t: "done", message: null });
+          }
+          await db.update(bots).set({ updatedAt: new Date() }).where(eq(bots.id, id));
+        } catch (e) {
+          console.error(e);
+          send({ t: "error", message: "Couldn't save the reply." });
+        }
+        ac.abort(); // Stop any unfinished Helper tool work before ending the turn.
         clearHelpers(turnId);
-        send({ t: "done", message: null });
         closed = true;
         stopPrivacyPoll?.();
+        try {
+          controller.close();
+        } catch {}
+      } catch (error) {
+        console.error("[chat] stream setup failed", { name: error instanceof Error ? error.name : "unknown" });
+        send({ t: "error", message: "The server couldn't start this reply. Please try again." });
+        send({ t: "done", message: null });
+        ac.abort();
+        clearHelpers(turnId);
+        stopPrivacyPoll?.();
+        closed = true;
         try { controller.close(); } catch {}
-        return;
       }
-
-      // Did the reply actually cover everything that was asked? A small model
-      // will finish the first job and stop, and the reply looks complete
-      // because it ends. Nothing here can do the missing work — that would be a
-      // second paid turn — but the user can be told plainly what is still open,
-      // which is the difference between "it forgot" and "it forgot and nobody
-      // noticed".
-      if (multiRequest && text.trim()) {
-        const missed = unansweredParts(requests, text, { steps: steps.map((s) => s.label).join(" ") });
-        if (missed.length) {
-          const note = [
-            "",
-            "",
-            `**Not covered yet:** ${missed.map((part) => `“${part}”`).join(", ")}.`,
-            "Say “continue” and I will pick those up.",
-          ].join("\n");
-          text += note;
-          send({ t: "text", d: note });
-        }
-      }
-
-      try {
-        if (text.trim() || steps.length || choices) {
-          const saved = await db.transaction(async (tx) => {
-            await tx.select({ id: users.id }).from(users).where(eq(users.id, user.id)).for("update");
-            const [activeSession] = await tx.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1);
-            if (activeSession) return null;
-            const [message] = await tx.insert(messages).values({ botId: id, userId: user.id, role: "assistant", content: text.replace(/\n{3,}/g, "\n\n").trim(), steps: steps.length ? steps : null, choices }).returning();
-            return message ?? null;
-          });
-          if (!saved) {
-            send({ t: "done", message: null });
-            closed = true;
-            stopPrivacyPoll?.();
-            try { controller.close(); } catch {}
-            return;
-          }
-          send({ t: "done", message: { id: saved.id, createdAt: saved.createdAt.toISOString() } });
-        } else {
-          send({ t: "done", message: null });
-        }
-        await db.update(bots).set({ updatedAt: new Date() }).where(eq(bots.id, id));
-      } catch (e) {
-        console.error(e);
-        send({ t: "error", message: "Couldn't save the reply." });
-      }
-      ac.abort(); // Stop any unfinished Helper tool work before ending the turn.
-      clearHelpers(turnId);
-      closed = true;
-      stopPrivacyPoll?.();
-      try {
-        controller.close();
-      } catch {}
     },
     cancel() {
       ac.abort();
