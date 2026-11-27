@@ -73,7 +73,7 @@ const CORE_TOOLS: Tool[] = [
   {
     name: "make_lyric_video",
     description:
-      "Build a lyric video from a song and lyrics the user uploaded. Use the artifact ids from their upload message. Prefer lyricsId over retyping the file.",
+      "Build an interactive lyric-video player from uploaded audio and lyrics. This does not render or export an MP4. Use the artifact ids from their upload message. Prefer lyricsId over retyping the file.",
     parameters: obj(
       {
         title: { type: "string", description: "Song title." },
@@ -1453,7 +1453,7 @@ export function buildToolset(opts: {
         kind: "lyric_video",
         content: JSON.stringify(spec),
       }).returning({ id: artifacts.id });
-      return { output: `Lyric video ready (artifact ${row.id}). It is now a card in the chat with a player. Tell the user to press play.`, artifactId: row.id };
+      return { output: `Interactive lyric-video player ready (artifact ${row.id}). Tell the user to press play. This is not an MP4 file; MP4 rendering and export are not available, so do not claim a video file was generated.`, artifactId: row.id };
     }
     if (name === "save_artifact" || name === "draft_email") {
       const title = String(a.title ?? (name === "draft_email" ? `Email to ${String(a.to ?? "recipient")}` : "Untitled artifact")).trim().slice(0, 160);

@@ -177,12 +177,12 @@ export function ArtifactsPanel() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
-                {!isEmail(artifact.kind) && !isMedia(artifact.kind) && (
+                {!isEmail(artifact.kind) && !isMedia(artifact.kind) && artifact.kind !== "lyric_video" && (
                   <button type="button" onClick={() => openArtifact(artifact)} className={btnQuiet}>
                     Open
                   </button>
                 )}
-                {!isMedia(artifact.kind) && (
+                {!isMedia(artifact.kind) && artifact.kind !== "lyric_video" && (
                   <button type="button" onClick={() => downloadArtifact(artifact)} className={btnQuiet}>
                     Save
                   </button>

@@ -153,7 +153,7 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
           {spec.artist && <div className="truncate text-[11.5px] text-neutral-500">{spec.artist}</div>}
         </div>
         <span className="shrink-0 rounded-full border border-white/[0.09] bg-white/[0.04] px-2 py-0.5 text-[10.5px] font-medium text-neutral-400">
-          lyric video
+          interactive preview · not MP4
         </span>
       </div>
 
