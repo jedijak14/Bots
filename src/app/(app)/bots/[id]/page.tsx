@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/db";
 import { privacySessions } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { isUuid } from "@/lib/ids";
 import { getBot, insertGreeting, listMessages } from "@/lib/bots";
 import { ChatView } from "@/components/chat/ChatView";
 
@@ -23,12 +24,17 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
   const { id } = await params;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const bot = await getBot(user.id, id);
+  if (!isUuid(id)) notFound();
+  const [bot, activePrivacyRows, initialMessages] = await Promise.all([
+    getBot(user.id, id),
+    db.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1),
+    listMessages(user.id, id),
+  ]);
   // Silently teleporting to the gallery left people wondering whether they had
   // clicked the wrong bot. Say the Bot is gone and let them pick another.
   if (!bot) notFound();
-  const [activePrivacy] = await db.select({ id: privacySessions.id }).from(privacySessions).where(and(eq(privacySessions.userId, user.id), eq(privacySessions.status, "active"))).limit(1);
-  let messages = await listMessages(user.id, bot.id);
+  const activePrivacy = activePrivacyRows[0];
+  let messages = initialMessages;
   if (!messages.length) {
     await insertGreeting(user.id, bot.id, bot.name);
     messages = await listMessages(user.id, bot.id);

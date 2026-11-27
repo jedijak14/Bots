@@ -123,6 +123,8 @@ create table if not exists artifacts (
   created_at timestamp with time zone default now() not null
 );
 
+create index if not exists artifacts_user_idx on artifacts (user_id, created_at);
+
 create table if not exists skills (
   id uuid primary key default gen_random_uuid() not null,
   user_id uuid not null references users(id) on delete cascade,
@@ -198,9 +200,28 @@ const ALTER_COLUMNS: ColumnAlter[] = [
 
 let bootstrap: Promise<void> | null = null;
 
-async function run(pool: Pool): Promise<void> {
+// All checks are read-only. A healthy, already-migrated deployment avoids
+// acquiring DDL locks and dozens of sequential database round trips on every
+// serverless cold start. Missing schema still takes the full bootstrap path.
+const REQUIRED_RELATIONS = [
+  "users", "sessions", "user_settings", "bots", "messages", "goals", "conversation_archives", "artifacts", "skills", "privacy_sessions", "privacy_audit_events",
+  "sessions_user_idx", "bots_user_idx", "messages_bot_idx", "messages_user_idx", "goals_user_idx", "conversation_archives_user_idx", "conversation_archives_bot_idx", "artifacts_user_idx", "skills_user_idx", "skills_bot_idx", "privacy_sessions_user_idx", "privacy_audit_events_user_idx",
+];
+
+export async function bootstrapSchema(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
+    const { rows } = await client.query<{ ready: boolean }>(`
+      select
+        not exists (select 1 from unnest($1::text[]) as r(name) where to_regclass(name) is null)
+        and not exists (
+          select 1 from jsonb_to_recordset($2::jsonb) as c("table" text, "column" text)
+          where not exists (select 1 from pg_attribute a where a.attrelid = to_regclass(c."table") and a.attname = c."column" and a.attnum > 0 and not a.attisdropped)
+        )
+        and exists (select 1 from pg_constraint where conname = 'artifacts_bot_id_bots_id_fk' and conrelid = to_regclass('artifacts'))
+        and exists (select 1 from pg_constraint where conname = 'artifacts_user_id_users_id_fk' and conrelid = to_regclass('artifacts')) as ready
+    `, [REQUIRED_RELATIONS, JSON.stringify(ALTER_COLUMNS.map(({ table, column }) => ({ table, column })))]);
+    if (rows[0]?.ready) return;
     // `gen_random_uuid()` is built in from Postgres 13; older servers need
     // pgcrypto. It is optional: a managed database may not offer the extension,
     // and failing to create it must not stop the tables from being created.
@@ -210,9 +231,7 @@ async function run(pool: Pool): Promise<void> {
       .catch((error) => console.warn("[db] pgcrypto unavailable:", error instanceof Error ? error.message : error));
     await client.query("begin");
     await client.query(CREATE_TABLES);
-    for (const { table, column, definition } of ALTER_COLUMNS) {
-      await client.query(`alter table ${table} add column if not exists ${column} ${definition}`);
-    }
+    await client.query(ALTER_COLUMNS.map(({ table, column, definition }) => `alter table ${table} add column if not exists ${column} ${definition};`).join("\n"));
     // Foreign keys the additive tables reference, added only when missing so a
     // database from an older release picks them up.
     await client.query(`
@@ -251,7 +270,7 @@ async function run(pool: Pool): Promise<void> {
  * request during an outage would only add load.
  */
 export function ensureSchema(pool: Pool): Promise<void> {
-  bootstrap ??= run(pool).catch((error) => {
+  bootstrap ??= bootstrapSchema(pool).catch((error) => {
     console.error("[db] schema bootstrap skipped:", error instanceof Error ? error.message : error);
   });
   return bootstrap;

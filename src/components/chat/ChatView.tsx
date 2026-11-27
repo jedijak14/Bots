@@ -2,6 +2,7 @@
 
 import { ORBIT_BETA_WARNING } from "@/lib/ai/orbit-info";
 import { usesComputer } from "@/lib/computer-tools";
+import { isUuid } from "@/lib/ids";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import useSWR from "swr";
@@ -128,7 +129,9 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   const [computerOn, setComputerOn] = useState(!!bot?.hasSandbox);
   const [share, setShare] = useState<{ position: MenuPosition; trigger: HTMLElement } | null>(null);
   const [botMenu, setBotMenu] = useState<{ position: ReturnType<typeof placeMenu>; trigger: HTMLElement } | null>(null);
-  const [artifacts, setArtifacts] = useState<Record<string, ArtifactRef>>({});
+  const [artifacts, setArtifacts] = useState<Record<string, ArtifactRef | null>>({});
+  const requestedArtifacts = useRef(new Set<string>());
+  const chatMounted = useRef(false);
   const mounted = useHydrated();
   // Hooks must stay above the `if (!bot) return null` below.
   const narrow = useNarrow();
@@ -146,27 +149,41 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
   /* ---------- artifacts referenced by steps ---------- */
   const wanted = (() => {
     const ids = new Set<string>();
-    for (const m of messages) for (const s of m.steps ?? []) if (s.artifactId) ids.add(s.artifactId);
-    for (const s of live?.steps ?? []) if (s.artifactId) ids.add(s.artifactId);
-    return [...ids].filter((id) => !artifacts[id]);
+    for (const m of messages) for (const s of m.steps ?? []) if (s.artifactId && isUuid(s.artifactId)) ids.add(s.artifactId);
+    for (const s of live?.steps ?? []) if (s.artifactId && isUuid(s.artifactId)) ids.add(s.artifactId);
+    return [...ids].filter((id) => !(id in artifacts));
   })();
   const wantedKey = wanted.join(",");
 
   useEffect(() => {
+    chatMounted.current = true;
+    return () => { chatMounted.current = false; };
+  }, []);
+
+  useEffect(() => {
     if (!wantedKey) return;
-    let alive = true;
-    for (const id of wantedKey.split(",")) {
-      fetch(`/api/artifacts/${id}`, { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((a: ArtifactRef | null) => {
-          if (alive && a?.id) setArtifacts((prev) => ({ ...prev, [a.id]: a }));
-        })
-        .catch(() => {});
+    const ids = wantedKey.split(",").filter((id) => !requestedArtifacts.current.has(id));
+    for (const id of ids) requestedArtifacts.current.add(id);
+    // A single response for each group prevents the old per-card waterfall:
+    // every arriving card changed wantedKey and restarted all remaining fetches.
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const batch = ids.slice(offset, offset + 100);
+      void fetch("/api/artifacts/batch", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: batch }), cache: "no-store",
+      }).then(async (response) => {
+        if (!response.ok) throw new Error("Could not load artifact cards.");
+        const data = await response.json() as { artifacts: ArtifactRef[] };
+        const found = new Map(data.artifacts.map((a) => [a.id, a]));
+        if (chatMounted.current) setArtifacts((prev) => ({ ...prev, ...Object.fromEntries(batch.map((id) => [id, found.get(id) ?? null])) }));
+      }).catch(() => {
+        if (chatMounted.current) {
+          setArtifacts((prev) => ({ ...prev, ...Object.fromEntries(batch.map((id) => [id, null])) }));
+          toast("Some artifact cards couldn't load. Refresh to try again.", "err");
+        }
+      });
     }
-    return () => {
-      alive = false;
-    };
-  }, [wantedKey]);
+  }, [wantedKey, toast]);
 
   /**
    * The artifacts a message produced, one of each.
