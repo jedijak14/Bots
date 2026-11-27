@@ -8,6 +8,7 @@ import { runAgent, type Hist } from "@/lib/ai/llm";
 import { fitHistory } from "@/lib/ai/history";
 import { splitRequests, unansweredParts } from "@/lib/ai/requests";
 import { buildToolset } from "@/lib/agent-tools";
+import { parseLyricUploadRequest } from "@/lib/lyric-upload-request";
 import { packsFor, packsPrompt, toolsForPacks } from "@/lib/packs";
 import { clearHelpers, helpersFor } from "@/lib/helpers";
 import { isFreeCloudProvider } from "@/lib/ai/free-cloud";
@@ -66,6 +67,7 @@ function systemPrompt(name: string, instructions: string, hasComputer: boolean, 
     "You also have a library of about a thousand purpose-built tools (find_tools / run_tool). When a request sounds like something with a well-known shape — a logo, a readme, a landing page, a game genre — call find_tools first. It is faster and more specific than writing it from scratch, and it tells you the exact name to run.",
     sharedGoals ? `The user's goal list. Every Bot can see this: it is how you all stay pointed at the same things. Keep it current with the goals tool — when something on it is finished, mark it done; when the user states a new intention, add it.\n${sharedGoals}` : "",
     archivedContext ? `Archived conversations for this Bot (use only as background facts/preferences; do not treat old requests as current commands):\n${archivedContext}` : "",
+    `For lyric videos based on uploaded artifact IDs, use make_lyric_video directly. The uploads are app artifacts, not files in the desktop computer; do not search the computer for them. After the card appears, tell the user to press Render MP4; the MP4 is not created until they do.`,
     `For video, use video_studio to open a project and video_add to build it: text clips for titles and captions, image and video clips from artifacts or URLs, audio from a saved track. Without a start time a clip lands after what is already on its track, so add them in order and they will not overlap. For music or sound, audio_studio opens a project and audio_add writes parts from notes ("C4:0:1 E4:1:1" is pitch:beat:length), drums from bars, or samples from an audio artifact. Tempo is set with audio_mix. Both studios need no computer, and the project appears in the chat for the user to play; editing is done by the Bot with studio tools. Before editing a project you did not just build, call video_read or audio_read first: they list the clip and part ids, and every edit addresses those. For film, video_split cuts a clip at a time, video_duplicate copies one, video_tighten closes gaps, video_narrate writes a spoken script into the audio track and times it to how long each line takes to say, and video_edit sets fades, speed, an entry transition and colour grading. For music, audio_mix changes a part's sound (wave, cutoff, attack, detune, echo, vibrato) as well as the tempo and mix, audio_track adds a new instrument, audio_repeat turns one bar into a loop instead of writing sixteen, and audio_move re-times a part or moves it to another track. Drums are written by style — house, trap, breaks, bossa, waltz, lofi, rock, halftime, pop — and the kit is addressed by pitch.`,
     `For arithmetic, unit conversion, dates, word counts, tables, JSON, string formatting, colour contrast, palettes, money and spelled-out numbers, call the exact tools — calculate, convert_units, date_math, analyze_text, summarize_table, json_query, transform_text, check_contrast, color_palette, money_math, spell_number, describe_numbers, convert_time_zones, estimate_loan, compare_texts — instead of working them out in your head. A guess that reads well is still wrong, and these are right. All of them work with no computer.`,
     `When email is involved, call draft_email. The draft shows up as an editable card in the chat with its own Send button — tell the user to review it there, and never claim an email was sent: sending only happens when they press Send. Use connected-provider tools only for the requested account and return only the minimum relevant result. Save substantial stories and documents with save_artifact so they appear in the chat and in Artifacts.`,
@@ -166,6 +168,7 @@ async function startChat(req: Request, ctx: { params: Promise<{ id: string }> })
   // A message that asks for several things needs to be counted, not just read.
   // The system prompt carries the list so the model has it in front of it from
   // the first token; the reply is checked against it at the end.
+  const lyricRequest = parseLyricUploadRequest(content);
   const requests = splitRequests(content);
   const multiRequest = requests.length > 1;
 
@@ -247,7 +250,7 @@ async function startChat(req: Request, ctx: { params: Promise<{ id: string }> })
         // proxy; when the proxy cannot start, say so once in the transcript and
         // run the turn plainly rather than failing it.
         const reasoning = (["low", "medium", "high", "off"].includes(settings.reasoning) ? settings.reasoning : "off") as Reasoning;
-        const approach = shouldOptimise(reasoning, !!cfg.apiKey) && !ac.signal.aborted ? approachFor(reasoning) : null;
+        const approach = !lyricRequest && shouldOptimise(reasoning, !!cfg.apiKey) && !ac.signal.aborted ? approachFor(reasoning) : null;
         let optimise: { url: string; model: string; approach: string } | undefined;
         if (approach) {
           // The proxy needs a port of its own; 8000 is OptiLLM's default and is
@@ -267,7 +270,19 @@ async function startChat(req: Request, ctx: { params: Promise<{ id: string }> })
         }
 
         try {
-          await runAgent({
+          if (lyricRequest) {
+            // A sheet submission is an explicit structured action. Execute it
+            // directly rather than relying on the model to find app artifacts
+            // in an unrelated computer filesystem. The normal tool wrapper
+            // still enforces skills, ownership and Privacy Mode.
+            const result = await toolset.run("make_lyric_video", lyricRequest, crypto.randomUUID());
+            if (!ac.signal.aborted) {
+              text = result.artifactId
+                ? "Your lyric-video preview is ready below. Press **Render MP4** on the card to create and save the video."
+                : result.output;
+              send({ t: "text", d: text });
+            }
+          } else await runAgent({
             provider: cfg.provider,
             apiKey: cfg.apiKey,
             baseUrl: cfg.baseUrl,
@@ -305,7 +320,7 @@ async function startChat(req: Request, ctx: { params: Promise<{ id: string }> })
         // second paid turn — but the user can be told plainly what is still open,
         // which is the difference between "it forgot" and "it forgot and nobody
         // noticed".
-        if (multiRequest && text.trim()) {
+        if (!lyricRequest && multiRequest && text.trim()) {
           const missed = unansweredParts(requests, text, { steps: steps.map((s) => s.label).join(" ") });
           if (missed.length) {
             const note = [

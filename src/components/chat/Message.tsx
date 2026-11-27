@@ -320,7 +320,7 @@ export function ChoiceCard({
  */
 const BUBBLE_LIMIT = 900;
 
-export function UserBubble({ text }: { text: string }) {
+export function UserBubble({ text, onRetryLyric, retryDisabled = false }: { text: string; onRetryLyric?: () => void; retryDisabled?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const long = text.length > BUBBLE_LIMIT;
   const shown = long && !expanded ? `${text.slice(0, BUBBLE_LIMIT).trimEnd()}…` : text;
@@ -338,6 +338,7 @@ export function UserBubble({ text }: { text: string }) {
           </button>
         )}
       </div>
+      {onRetryLyric && <button type="button" disabled={retryDisabled} onClick={onRetryLyric} className="mt-1 rounded-lg px-2 py-1 text-[11.5px] text-neutral-400 hover:text-white disabled:opacity-50">Retry lyric video</button>}
       <CopyLink text={text} align="right" />
     </div>
   );

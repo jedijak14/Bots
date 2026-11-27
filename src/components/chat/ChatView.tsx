@@ -17,6 +17,7 @@ import { cx } from "../ui";
 import { Composer, ComposerMode, type Attachment } from "./Composer";
 import { ComputerPanel, type ComputerTab } from "./ComputerPanel";
 import { AssistantBlock, UserBubble, type ArtifactRef, type LiveStep } from "./Message";
+import { parseLyricUploadRequest } from "@/lib/lyric-upload-request";
 import { ModelPicker } from "./ModelPicker";
 import { BriefCard } from "./BriefCard";
 import type { IconName } from "../icons";
@@ -657,7 +658,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
                     <div key={m.id} className="contents">
                       {showTime && <div className="py-3 text-center text-[11.5px] text-neutral-600">{formatWhen(m.createdAt)}</div>}
                       {m.role === "user" ? (
-                        <UserBubble text={m.content} />
+                        <UserBubble text={m.content} onRetryLyric={!browserMode && parseLyricUploadRequest(m.content) ? () => void send(m.content) : undefined} retryDisabled={busy || privacyActive} />
                       ) : (
                         <AssistantBlock
                           text={m.content}
