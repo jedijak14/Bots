@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts } from "@/db/schema";
 import { handleError, requireUser } from "@/lib/auth";
@@ -8,8 +8,8 @@ export async function GET(req: Request) {
   try {
     const user = await requireUser();
     const includeArchived = new URL(req.url).searchParams.get("includeArchived") === "true";
-    const filters = includeArchived ? eq(artifacts.userId, user.id) : and(eq(artifacts.userId, user.id), eq(artifacts.archived, false));
-    return Response.json(await db.select({ id: artifacts.id, botId: artifacts.botId, title: artifacts.title, kind: artifacts.kind, content: artifacts.content, archived: artifacts.archived, createdAt: artifacts.createdAt }).from(artifacts).where(filters).orderBy(desc(artifacts.createdAt)), { headers: { "Cache-Control": "no-store" } });
+    const filters = and(eq(artifacts.userId, user.id), ne(artifacts.kind, "media_upload_pending"), includeArchived ? undefined : eq(artifacts.archived, false));
+    return Response.json(await db.select({ id: artifacts.id, botId: artifacts.botId, title: artifacts.title, kind: artifacts.kind, content: sql<string>`case when ${artifacts.kind} in ('audio', 'image') then '' else ${artifacts.content} end`, archived: artifacts.archived, createdAt: artifacts.createdAt }).from(artifacts).where(filters).orderBy(desc(artifacts.createdAt)), { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return handleError(error); }
 }
 

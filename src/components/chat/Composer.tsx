@@ -36,6 +36,7 @@ export function Composer({
   inputRef,
   onError,
   modes,
+  localMode = false,
   hint = "Enter to send · Shift + Enter for a new line",
 }: {
   value: string;
@@ -52,6 +53,7 @@ export function Composer({
   onError: (m: string) => void;
   /** Extra controls rendered in the chip row (computer, voice, …). */
   modes?: ReactNode;
+  localMode?: boolean;
   hint?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -233,7 +235,7 @@ export function Composer({
                 {
                   label: "New lyric video",
                   icon: "volume",
-                  onSelect: () => setLyricSheet(true),
+                  onSelect: () => localMode ? onError("Orbit Local cannot build lyric videos yet. Switch to a hosted provider first.") : setLyricSheet(true),
                 },
               ]}
             />

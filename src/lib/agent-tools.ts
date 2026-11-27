@@ -1,4 +1,5 @@
 import "server-only";
+import { isUuid } from "./ids";
 import { splitRecipients } from "./email";
 import type { Sandbox } from "@e2b/desktop";
 import path from "node:path";
@@ -1391,7 +1392,7 @@ export function buildToolset(opts: {
       const audioId = String(a.audioId ?? "");
       const title = String(a.title ?? "").trim();
       if (!title) return { output: "A lyric video needs a song title." };
-      if (!audioId) return { output: "I need the audio artifact id. Ask the user to upload the song in the chat first." };
+      if (!isUuid(audioId)) return { output: "I need the audio artifact id. Ask the user to upload the song in the chat first." };
       // The id must belong to this user and be a real audio upload.
       const { and, eq } = await import("drizzle-orm");
       const { db } = await import("@/db");
@@ -1403,6 +1404,7 @@ export function buildToolset(opts: {
       const lyricsId = String(a.lyricsId ?? "");
       let lyrics = String(a.lyrics ?? "");
       if (lyricsId) {
+        if (!isUuid(lyricsId)) return { output: "That lyrics artifact id is invalid. Ask the user to upload the file again." };
         const { eq: eqOp } = await import("drizzle-orm");
         const { db: mediaDb } = await import("@/db");
         const { artifacts: mediaArtifacts } = await import("@/db/schema");
@@ -1427,12 +1429,18 @@ export function buildToolset(opts: {
       if (!lineCount) return { output: "Those lyrics did not parse into timed lines. Ask the user for an .lrc, .srt, .ttml or .qrc file, or their plain lyrics one line at a time." };
       const presetRaw = String(a.preset ?? "aurora");
       const preset = presetRaw in LYRIC_PRESETS ? (presetRaw as keyof typeof LYRIC_PRESETS) : "aurora";
+      const artId = a.artId ? String(a.artId) : undefined;
+      if (artId) {
+        if (!isUuid(artId)) return { output: "That cover art id is invalid. Please upload it again." };
+        const [cover] = await db.select({ kind: artifacts.kind }).from(artifacts).where(and(eq(artifacts.id, artId), eq(artifacts.userId, userId))).limit(1);
+        if (!cover || cover.kind !== "image") return { output: "That cover art is not one of your uploads." };
+      }
       const spec = {
         version: 1 as const,
         title,
         artist: a.artist ? String(a.artist) : undefined,
         audioId,
-        artId: a.artId ? String(a.artId) : undefined,
+        artId,
         lyrics,
         lyricFormat: a.lyricFormat ? String(a.lyricFormat) : undefined,
         preset,

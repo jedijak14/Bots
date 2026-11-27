@@ -43,12 +43,35 @@ export function ArtifactsPanel() {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
   function downloadArtifact(artifact: Artifact) {
+    if (isMedia(artifact.kind)) { void downloadMedia(artifact); return; }
     const url = URL.createObjectURL(artifactBlob(artifact));
     const link = document.createElement("a");
     link.href = url;
     link.download = artifactFileName(artifact);
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+  async function downloadMedia(artifact: Artifact) {
+    try {
+      const chunks: Blob[] = [];
+      let offset = 0;
+      let total = Infinity;
+      while (offset < total) {
+        const response = await fetch(`/api/artifacts/${artifact.id}/raw`, { headers: { Range: `bytes=${offset}-` } });
+        if (!response.ok) throw new Error("Could not download this file.");
+        const range = response.headers.get("Content-Range");
+        const chunk = await response.blob();
+        if (!chunk.size) throw new Error("The download was interrupted.");
+        chunks.push(chunk);
+        offset += chunk.size;
+        total = range ? Number(range.split("/")[1]) : offset;
+        if (!Number.isFinite(total)) throw new Error("The download was interrupted.");
+      }
+      const url = URL.createObjectURL(new Blob(chunks, { type: chunks[0].type }));
+      const link = document.createElement("a");
+      link.href = url; link.download = artifact.title; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Could not download this file."); }
   }
   async function setArchived(artifact: Artifact, archived: boolean) {
     setActionError("");

@@ -761,6 +761,7 @@ export function ChatView({ botId, initialMessages, initialPrivacyMode = false }:
               </div>
             )}
             <Composer
+              localMode={browserMode}
               value={input}
               onChange={setInput}
               onSend={submit}

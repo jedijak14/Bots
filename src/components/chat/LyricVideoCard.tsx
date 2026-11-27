@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LyricVideoSpec } from "@/lib/lyric-video-spec";
+import { timePlainLyrics } from "@/lib/lyric-timing";
 import { LYRIC_PRESETS } from "@/lib/lyric-video-spec";
 import { useApp } from "../AppProvider";
 import { Icon } from "../icons";
@@ -63,7 +64,8 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
 
       const parser = parsers.detectParser(spec.lyrics);
       const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : undefined;
-      const lines = parser.parse(spec.lyrics, durationMs);
+      const parsedLines = parser.parse(spec.lyrics, durationMs);
+      const lines = timePlainLyrics(parsedLines, durationMs);
       if (!lines.length) {
         setError("No timed lines were found in that lyrics file.");
         return;
@@ -89,6 +91,8 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
     // Duration is often unknown until metadata arrives, and an LRC without
     // explicit line lengths needs it to size the lines.
     if (audio && audio.readyState < 1) {
+      const onError = () => { if (!cancelled) setError("The song could not be loaded. Check that the audio artifact still exists and the file is playable."); };
+      audio.addEventListener("error", onError);
       const onMeta = () => {
         audio.removeEventListener("loadedmetadata", onMeta);
         start();
@@ -97,6 +101,7 @@ export function LyricVideoCard({ artifact }: { artifact: { id: string; title: st
       return () => {
         cancelled = true;
         audio.removeEventListener("loadedmetadata", onMeta);
+        audio.removeEventListener("error", onError);
       };
     }
     start();

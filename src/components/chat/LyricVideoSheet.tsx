@@ -3,9 +3,10 @@
 import { useRef, useState } from "react";
 import { useApp } from "../AppProvider";
 import { Icon, Spinner } from "../icons";
+import { MEDIA_CHUNK_BYTES, MEDIA_LIMITS, mediaType } from "@/lib/media-upload";
 import { btnGhost, btnWhite, cx, inputCls, Modal } from "../ui";
 
-const readDataUrl = (file: File) =>
+const readDataUrl = (file: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ""));
@@ -49,15 +50,32 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
   const [error, setError] = useState("");
 
   async function upload(file: File, kind: "audio" | "image") {
-    const dataUrl = await readDataUrl(file);
-    const response = await fetch("/api/artifacts/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ botId, kind, title: file.name, dataUrl }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error ?? "That file could not be uploaded.");
-    return { id: body.id as string, name: file.name };
+    const mime = mediaType(kind, file.name, file.type);
+    if (!mime) throw new Error(kind === "audio" ? "Use an mp3, wav, ogg or m4a file." : "Use a PNG, JPEG, WebP or GIF image.");
+    if (!file.size) throw new Error("That file is empty.");
+    if (file.size > MEDIA_LIMITS[kind]) throw new Error(kind === "audio" ? "That song is over 24 MB." : "That image is over 3 MB.");
+    let id: string | null = null;
+    try {
+      const count = Math.ceil(file.size / MEDIA_CHUNK_BYTES);
+      for (let index = 0; index < count; index++) {
+        const chunk = file.slice(index * MEDIA_CHUNK_BYTES, (index + 1) * MEDIA_CHUNK_BYTES);
+        const dataUrl = await readDataUrl(chunk);
+        const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        const response: Response = await fetch("/api/artifacts/upload/chunk", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ botId, kind, title: file.name, mime, index, totalBytes: file.size, uploadId: id, data }),
+        });
+        const body: { id?: string; complete?: boolean; error?: string } = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error ?? `Upload failed (${response.status}). Please try again.`);
+        if (typeof body.id !== "string" || body.complete !== (index === count - 1)) throw new Error("The upload was interrupted. Please try again.");
+        id = body.id;
+      }
+      if (!id) throw new Error("The upload was interrupted. Please try again.");
+      return { id, name: file.name };
+    } catch (error) {
+      if (id) void fetch(`/api/artifacts/upload/chunk?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+      throw error;
+    }
   }
 
   async function pickAudio(file: File) {
@@ -128,7 +146,7 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
       .filter(Boolean)
       .join("\n");
     onReady(note);
-    app.toast("Uploads ready — the Bot is building your lyric video.");
+    app.toast("Uploads ready — send the message to ask the Bot to build your lyric video.");
   }
 
   return (
@@ -141,7 +159,7 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-semibold tracking-tight text-white">New lyric video</h2>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-neutral-500">
-              A song, its synced lyrics, and optionally the cover. Word-by-word animation, built by the Bot.
+              Upload a song and lyrics, then send the prepared message to your Bot. Timed lyrics work best; plain text gets approximate timing.
             </p>
           </div>
         </div>
@@ -152,6 +170,7 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
             hint="mp3, wav, ogg or m4a · up to 24 MB"
             done={audio?.name}
             busy={busy === "audio"}
+            disabled={!!busy}
             onClick={() => audioInput.current?.click()}
           />
           <Drop
@@ -159,13 +178,15 @@ export function LyricVideoSheet({ botId, onClose, onReady }: { botId: string; on
             hint="LRC, SRT, TTML, QRC or plain text"
             done={lyrics?.name}
             busy={busy === "lyrics"}
+            disabled={!!busy}
             onClick={() => lyricsInput.current?.click()}
           />
           <Drop
             label="Cover art"
-            hint="Optional · PNG, JPEG or WebP"
+            hint="Optional · PNG, JPEG or WebP · up to 3 MB"
             done={art?.name}
             busy={busy === "art"}
+            disabled={!!busy}
             onClick={() => artInput.current?.click()}
             optional
           />
@@ -242,6 +263,7 @@ function Drop({
   done,
   busy,
   optional,
+  disabled,
   onClick,
 }: {
   label: string;
@@ -249,13 +271,14 @@ function Drop({
   done?: string;
   busy: boolean;
   optional?: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy}
+      disabled={disabled}
       className={cx(
         "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
         done ? "border-emerald-400/25 bg-emerald-400/[0.06]" : "border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]",
